@@ -1,0 +1,10 @@
+/.idea
+/.env
+/docs
+/frontend/node_modules
+/frontend/dist
+/frontend/*.local
+/backend/data
+/backend/.env
+/backend/config.yml
+

@@ -1,0 +1,61 @@
+server:
+  addr: ":8080"
+  publicBaseUrl: "http://localhost:8080"
+log:
+  level: "info"
+  dir: "data/logs"
+plugin:
+  sharedToken: "${BCTS_PLUGIN_TOKEN}"   # 与插件 config_web.yml 的 shared-token 一致
+  heartbeatSeconds: 15
+  purchaseTimeoutSeconds: 10
+realtime:
+  trainTimeoutSeconds: 30
+  clientSendBuffer: 64
+auth:
+  microsoft:
+    clientId: "${MS_CLIENT_ID}"
+    clientSecret: "${MS_CLIENT_SECRET}"
+    redirectPath: "/api/v1/auth/callback"
+  jwtSecret: "${BCTS_JWT_SECRET}"
+  testAuthEnabled: false
+  testAuthUUIDs: []
+db:
+  driver: "${BCTS_DB_DRIVER}" # 留空默认 mysql；可填 mysql 或 sqlite
+  dsn: "${BCTS_DB_DSN}"
+  path: "${BCTS_DB_PATH}"
+
+frontend:
+  realtimeWsPath: "/api/v1/realtime"
+  defaultRouteResults: 10
+  maxRouteCandidates: 20
+  defaultWorld: "world1"
+  defaultPricePerKm: 0.2
+  avatarUrlTemplate: "https://mineskin.eu/helm/{player}"
+  worldTiles:
+    world1:
+      tileUrl: ""
+      zoom: 4
+      tileSize: 256
+      opacity: 0.3
+      minNativeZoom: 0
+      minZoom: 12
+      maxNativeZoom: 12
+      maxZoom: 12
+      scheme: "xyz"
+      gameTopLeft: [0, 0]
+      tileTopLeft: [0, 0]
+      pixelGameSize: 1
+  mapStyle:
+    lineWidth: 3
+    highlightWidth: 7
+    dimOpacity: 0.2
+    lineOpacity: 0.9
+    stationRadius: 6
+    stationStrokeWidth: 2
+    stationTextSize: 12
+    stationMergePixelDistance: 28
+    trainIconSize: 0.6
+  trainIcons:
+    express: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
+    normal: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%2342a5f5'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
+  defaultSystemLogo: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='20'%20height='20'%20viewBox='0%200%2020%2020'%3E%3Crect%20width='20'%20height='20'%20rx='4'%20fill='%233a3f4b'/%3E%3Cpath%20d='M6%205h8v7a3%203%200%200%201-3%203H9a3%203%200%200%201-3-3z'%20fill='%238a90a0'/%3E%3Ccircle%20cx='8'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3Ccircle%20cx='12'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3C/svg%3E"
