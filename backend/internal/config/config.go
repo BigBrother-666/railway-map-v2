@@ -83,9 +83,8 @@ type WorldTileConfig struct {
 	MinZoom       float64   `yaml:"minZoom,omitempty" json:"minZoom,omitempty"`
 	MaxZoom       float64   `yaml:"maxZoom,omitempty" json:"maxZoom,omitempty"`
 	Scheme        string    `yaml:"scheme,omitempty" json:"scheme,omitempty"`
-	GameTopLeft   []float64 `yaml:"gameTopLeft,omitempty" json:"gameTopLeft,omitempty"`
-	TileTopLeft   []float64 `yaml:"tileTopLeft,omitempty" json:"tileTopLeft,omitempty"`
-	PixelGameSize float64   `yaml:"pixelGameSize,omitempty" json:"pixelGameSize,omitempty"`
+	MapScale      float64   `yaml:"mapScale,omitempty" json:"mapScale,omitempty"`
+	MapOffset     []float64 `yaml:"mapOffset,omitempty" json:"mapOffset,omitempty"`
 }
 
 type MapStyleConfig struct {

@@ -132,9 +132,10 @@ export interface WorldTileConfig {
   minZoom?: number;
   maxZoom?: number;
   scheme?: 'xyz' | 'tms';
-  gameTopLeft?: [number, number];
-  tileTopLeft?: [number, number];
-  pixelGameSize?: number;
+  /** 1 个游戏方块对应多少「原生瓦片像素」，整体缩放，默认 1。 */
+  mapScale?: number;
+  /** [x, z] 游戏坐标整体平移（游戏单位），用于对准瓦片，默认 [0, 0]。 */
+  mapOffset?: [number, number];
 }
 
 export interface FrontendConfig {

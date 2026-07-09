@@ -496,8 +496,11 @@ export class MapController {
       has = true;
     }
     if (has) {
-      this.map.fitBounds(bounds, { padding: 60, maxZoom: tile?.zoom ?? 16, duration: 0 });
-      if (tile?.zoom !== undefined) this.map.setZoom(tile.zoom);
+      // 用数据自身范围框选缩放；上限用世界 maxZoom，避免被「默认 zoom」压成一个点。
+      this.map.fitBounds(bounds, { padding: 60, maxZoom: tile?.maxZoom ?? 18, duration: 0 });
+    } else if (tile?.zoom !== undefined) {
+      // 无数据可框时，才回退到配置的默认缩放级别。
+      this.map.setZoom(tile.zoom);
     }
   }
 

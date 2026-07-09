@@ -43,9 +43,8 @@ frontend:
       maxNativeZoom: 12
       maxZoom: 12
       scheme: "xyz"
-      gameTopLeft: [0, 0]
-      tileTopLeft: [0, 0]
-      pixelGameSize: 1
+      mapScale: 1        # 1 个游戏方块 = 多少原生瓦片像素（整体缩放）。
+      mapOffset: [0, 0]  # [x, z] 游戏坐标整体平移（游戏单位）。
   mapStyle:
     lineWidth: 3
     highlightWidth: 7
