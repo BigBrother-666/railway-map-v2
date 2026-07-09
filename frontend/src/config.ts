@@ -7,6 +7,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   defaultRouteResults: 10,
   maxRouteCandidates: 20,
   defaultWorld: 'world1',
+  currencyName: '帕元',
   worldTiles: { world1: { zoom: 14 } },
   mapStyle: {
     lineWidth: 3,

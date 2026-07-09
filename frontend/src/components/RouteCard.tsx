@@ -3,6 +3,7 @@ import type { MouseEventHandler } from 'react';
 import { useStore } from '../store/useStore';
 import { api } from '../api/client';
 import type { PurchaseReason, RoutePath, StationStep } from '../types';
+import {getConfig} from "../config.ts";
 
 const REASON_TEXT: Record<PurchaseReason, string> = {
   'player-offline': '请先进入游戏，在线后才能交付车票',
@@ -59,7 +60,7 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
         <span className="route-rank">路线 {index + 1}</span>
         <div className="route-metrics">
           <span className="route-distance">{path.distance.toFixed(2)} km</span>
-          <span className="route-price">{path.estimatedFare.toFixed(2)} 银币</span>
+          <span className="route-price">{path.estimatedFare.toFixed(2)} {getConfig().currencyName}</span>
         </div>
       </div>
 
@@ -84,7 +85,7 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
             <div key={d.systemId} className="fare-row">
               <span>{d.systemName}</span>
               <span>{d.distance.toFixed(2)} km</span>
-              <span>{d.price.toFixed(2)} 银币</span>
+              <span>{d.price.toFixed(2)} {getConfig().currencyName}</span>
             </div>
           ))}
         </details>

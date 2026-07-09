@@ -142,6 +142,7 @@ export interface FrontendConfig {
   defaultRouteResults: number;
   maxRouteCandidates: number;
   defaultWorld: string;
+  currencyName: string;
   worldTiles: Record<string, WorldTileConfig>;
   mapStyle: {
     lineWidth: number;
