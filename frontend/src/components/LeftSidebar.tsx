@@ -46,25 +46,27 @@ function StationPanel() {
           ×
         </button>
       </div>
-      <div className="panel-section">
-        <div className="label">所属线路</div>
-        <div className="chips">
-          {lineList.length === 0 && <span className="muted">—</span>}
-          {lineList.map((l) => (
-            <span key={l.id} className="chip" style={{ background: l.color }}>
-              {l.name}
-            </span>
-          ))}
+      <div className="panel-body">
+        <div className="panel-section">
+          <div className="label">所属线路</div>
+          <div className="chips">
+            {lineList.length === 0 && <span className="muted">—</span>}
+            {lineList.map((l) => (
+              <span key={l.id} className="chip" style={{ background: l.color }}>
+                {l.name}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
-      <div className="panel-section">
-        <div className="label">所属铁路系统</div>
-        <div className="chips">
-          {[...systemIds].map((sid) => (
-            <span key={sid} className="chip chip-outline">
-              {systems.get(sid)?.name ?? sid}
-            </span>
-          ))}
+        <div className="panel-section">
+          <div className="label">所属铁路系统</div>
+          <div className="chips">
+            {[...systemIds].map((sid) => (
+              <span key={sid} className="chip chip-outline">
+                {systems.get(sid)?.name ?? sid}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
       <button className="btn primary" onClick={() => openRoutePanel(name)}>
@@ -90,7 +92,7 @@ function HistoryPanel() {
           ×
         </button>
       </div>
-      <div className="history-list">
+      <div className="panel-body history-list">
         {loading && <div className="muted">加载中…</div>}
         {!loading && history?.items.length === 0 && <div className="muted">暂无乘车历史</div>}
         {history?.items.map((item) => (
@@ -180,7 +182,7 @@ function RoutePanel() {
           ×
         </button>
       </div>
-      <div className="panel-section">
+      <div className="panel-section route-search-fixed">
         <StationSearch
           value={startStation}
           placeholder={nextPick === 'start' ? '选择起点（或点击地图车站）' : '起点'}
@@ -197,7 +199,7 @@ function RoutePanel() {
         />
         <div className="hint muted">下一次点击地图车站将设为：{nextPick === 'start' ? '起点' : '终点'}</div>
       </div>
-      <div className="panel-section route-list">
+      <div className="panel-body route-list">
         {startStation && endStation && candidates.length === 0 && (
           <div className="muted">所选两站间暂无可用路线（直达 / 联程票）</div>
         )}

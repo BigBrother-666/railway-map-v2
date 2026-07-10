@@ -232,11 +232,34 @@ body,
 }
 .sidebar-left .panel {
   height: 100%;
+  padding: 0;
   border-top: none;
   border-bottom: none;
   border-left: none;
   border-radius: 0 8px 8px 0;
   box-shadow: 8px 0 24px rgba(0, 0, 0, 0.22);
+  /* 头部固定 + 中部滚动：整体不滚动，由 .panel-body 接管 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* 左侧栏各面板：头部与底部固定，仅 body 滚动 */
+.sidebar-left .panel-header {
+  flex-shrink: 0;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+.sidebar-left .panel > .btn.primary,
+.sidebar-left .panel > .pager {
+  flex-shrink: 0;
+  margin: 0 16px 16px;
 }
 .panel-fill {
   display: flex;
@@ -556,6 +579,13 @@ body,
   height: 22px;
   border-radius: 4px;
   object-fit: cover;
+}
+/* 路线查询：起终点搜索固定在头部下方，不随候选列表滚动 */
+.route-search-fixed {
+  flex-shrink: 0;
+  padding: 14px 16px 4px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
 }
 .history-list {
   display: flex;
