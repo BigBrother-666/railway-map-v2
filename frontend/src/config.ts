@@ -8,6 +8,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   maxRouteCandidates: 20,
   defaultWorld: 'world1',
   currencyName: '帕元',
+  themeColor: '#ffd400',
   worldTiles: { world1: { zoom: 14 } },
   mapStyle: {
     lineWidth: 3,
@@ -62,6 +63,14 @@ export function setRuntimeConfig(config: FrontendConfig) {
     mapStyle: { ...DEFAULT_CONFIG.mapStyle, ...config.mapStyle },
     trainIcons: { ...DEFAULT_CONFIG.trainIcons, ...config.trainIcons },
   };
+  applyThemeColor(runtimeConfig.themeColor);
+}
+
+/** 把主题色写入 CSS 变量 --accent；非法（非 #RRGGBB）时忽略，保留样式表默认值。 */
+function applyThemeColor(color: string | undefined) {
+  if (typeof document === 'undefined') return; // Worker/SSR 环境无 document
+  if (!color || !/^#[0-9a-fA-F]{6}$/.test(color)) return;
+  document.documentElement.style.setProperty('--accent', color);
 }
 
 export function getConfig(): FrontendConfig {

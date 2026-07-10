@@ -100,6 +100,7 @@ web-link:
 | `frontend.defaultWorld`                       | string  | `world1`                            | 默认显示的世界名。                                                      |
 | `frontend.defaultPricePerKm`                  | number  | `0.2`                               | 前端估算票价时使用的默认每公里价格。                                             |
 | `frontend.currencyName`                       | string  | `帕元`                                | 票价展示使用的货币名称。                                                   |
+| `frontend.themeColor`                         | string  | `#ffd400`                           | 主题色（强调色），16 进制 `#RRGGBB`；应用于按钮、高亮等 `--accent`。非法值忽略并保留默认黄色。 |
 | `frontend.maxDistanceResults`                 | int     | `5`                                 | 展示「距离最近」的路线条数（`<=0` 不限制）。与插件 `search.max-distance-results` 对齐。 |
 | `frontend.maxPriceResults`                    | int     | `5`                                 | 展示「票价最低」的路线条数（`<=0` 不限制）。                                      |
 | `frontend.searchWeightDistance`               | number  | `0.5`                               | 混合排序距离权重：候选集内距离归一化后 ×此值，权重越小越靠前。                               |

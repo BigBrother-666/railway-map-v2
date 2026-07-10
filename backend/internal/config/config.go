@@ -66,6 +66,8 @@ type FrontendConfig struct {
 	MaxRouteCandidates  int                        `yaml:"maxRouteCandidates" json:"maxRouteCandidates"`
 	DefaultWorld        string                     `yaml:"defaultWorld" json:"defaultWorld"`
 	CurrencyName        string                     `yaml:"currencyName" json:"currencyName"`
+	// 主题色（强调色），16 进制 #RRGGBB。留空用默认黄色 #ffd400。
+	ThemeColor string `yaml:"themeColor" json:"themeColor"`
 	WorldTiles          map[string]WorldTileConfig `yaml:"worldTiles" json:"worldTiles"`
 	MapStyle            MapStyleConfig             `yaml:"mapStyle" json:"mapStyle"`
 	TrainIcons          TrainIconsConfig           `yaml:"trainIcons" json:"trainIcons"`
@@ -238,6 +240,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Frontend.DefaultPricePerKm <= 0 {
 		c.Frontend.DefaultPricePerKm = 0.2
+	}
+	if c.Frontend.ThemeColor == "" {
+		c.Frontend.ThemeColor = "#ffd400"
 	}
 	if c.Frontend.CurrencyName == "" {
 		c.Frontend.CurrencyName = "帕元"

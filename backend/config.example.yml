@@ -32,6 +32,7 @@ frontend:
   defaultPricePerKm: 0.2
   avatarUrlTemplate: "https://mineskin.eu/helm/{player}"
   currencyName: "帕元"
+  themeColor: "#ffd400"   # 主题色（强调色），16 进制 #RRGGBB；留空用默认黄色 #ffd400
   # 搜索结果排序（复刻插件 search.*，与游戏内购票菜单一致）
   # 显示「距离最近」的路线条数（<=0 不限制）
   maxDistanceResults: 10

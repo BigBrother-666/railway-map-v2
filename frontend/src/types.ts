@@ -171,6 +171,8 @@ export interface FrontendConfig {
   maxRouteCandidates: number;
   defaultWorld: string;
   currencyName: string;
+  /** 主题色（强调色），16 进制 #RRGGBB。 */
+  themeColor: string;
   worldTiles: Record<string, WorldTileConfig>;
   mapStyle: {
     lineWidth: number;
