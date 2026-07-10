@@ -65,7 +65,7 @@ export function MapView() {
     if (readyRef.current && ctrlRef.current) ctrlRef.current.setHiddenLines(hiddenLines);
   }, [hiddenLines]);
 
-  // 高亮选中路线（联程票高亮各段并集，并标记换乘站）
+  // 高亮选中路线（联程票高亮各段并集）
   useEffect(() => {
     if (!readyRef.current || !ctrlRef.current) return;
     const route = selectedRouteIndex != null ? candidates[selectedRouteIndex] : null;
@@ -74,10 +74,7 @@ export function MapView() {
       return;
     }
     if (route.kind === 'through' && route.journey) {
-      ctrlRef.current.highlightRoute(
-        route.journey.legs.map((l) => l.nodeIds),
-        route.journey.transferStations,
-      );
+      ctrlRef.current.highlightRoute(route.journey.legs.map((l) => l.nodeIds));
     } else {
       ctrlRef.current.highlightRoute([route.nodeIds]);
     }

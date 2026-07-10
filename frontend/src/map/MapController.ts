@@ -147,7 +147,7 @@ export class MapController {
    * 高亮一条路线（节点 id 序列）：在同一 lines source 上用 lines-highlight 图层按边 id 过滤，
    * 加粗并用<b>线路本身颜色</b>（问题 2）；其余线路淡化。null 时清除高亮、恢复正常（问题 1）。
    */
-  highlightRoute(legs: string[][] | null, transferStations: string[] = []) {
+  highlightRoute(legs: string[][] | null) {
     if (!this.fc || !this.map.getLayer('lines-highlight')) return;
     const validLegs = (legs ?? []).filter((leg) => leg.length >= 2);
     if (validLegs.length === 0) {
@@ -171,13 +171,13 @@ export class MapController {
     this.applyLineFilters();
     // 其它线路淡化，突出高亮
     this.map.setPaintProperty('lines-layer', 'line-opacity', getConfig().mapStyle.dimOpacity);
-    // 端点：整程起点（首段首节点）、终点（末段末节点），换乘站单独打点
+    // 端点：整程起点（首段首节点）、终点（末段末节点）
     const first = validLegs[0];
     const last = validLegs[validLegs.length - 1];
-    this.setRouteEndpoints(first[0], last[last.length - 1], transferStations);
+    this.setRouteEndpoints(first[0], last[last.length - 1]);
   }
 
-  private setRouteEndpoints(startId: string | null, endId?: string, transferStations: string[] = []) {
+  private setRouteEndpoints(startId: string | null, endId?: string) {
     if (!this.fc || !this.map.getSource(SRC_ENDPOINTS)) return;
     const src = this.map.getSource(SRC_ENDPOINTS) as maplibregl.GeoJSONSource;
     if (!startId || !endId) {
@@ -200,20 +200,7 @@ export class MapController {
     };
     pushByNodeId(startId, 'start');
     pushByNodeId(endId, 'end');
-    // 换乘站：按站名取任一站台节点坐标打点（联程票专用）
-    for (const name of transferStations) {
-      const f = this.fc.features.find((feat) => {
-        const p = feat.properties as PointProps;
-        return feat.geometry?.type === 'Point' && p.type === 'station' && p.name === name;
-      });
-      if (!f || f.geometry?.type !== 'Point') continue;
-      const c = (f.geometry as GeoJSON.Point).coordinates;
-      features.push({
-        type: 'Feature',
-        properties: { role: 'transfer' },
-        geometry: { type: 'Point', coordinates: gameToLngLat(c[0], c[1], this.world) },
-      });
-    }
+    // 联程票换乘站不额外打点，保持默认车站样式
     src.setData({ type: 'FeatureCollection', features });
   }
 
@@ -310,14 +297,7 @@ export class MapController {
       source: SRC_ENDPOINTS,
       paint: {
         'circle-radius': getConfig().mapStyle.stationRadius + 2,
-        'circle-color': [
-          'case',
-          ['==', ['get', 'role'], 'start'],
-          '#2fbf71',
-          ['==', ['get', 'role'], 'transfer'],
-          '#f5a623',
-          '#ef4444',
-        ],
+        'circle-color': ['case', ['==', ['get', 'role'], 'start'], '#2fbf71', '#ef4444'],
         'circle-stroke-color': '#ffffff',
         'circle-stroke-width': 2,
       },
