@@ -98,6 +98,8 @@ type WorldTileConfig struct {
 	Scheme        string    `yaml:"scheme,omitempty" json:"scheme,omitempty"`
 	MapScale      float64   `yaml:"mapScale,omitempty" json:"mapScale,omitempty"`
 	MapOffset     []float64 `yaml:"mapOffset,omitempty" json:"mapOffset,omitempty"`
+	// 进入页面时的初始镜头中心（游戏坐标 [x, z]）。未配置则回退到数据范围中心。
+	Center []float64 `yaml:"center,omitempty" json:"center,omitempty"`
 }
 
 type MapStyleConfig struct {

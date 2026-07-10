@@ -161,6 +161,8 @@ export interface WorldTileConfig {
   mapScale?: number;
   /** [x, z] 游戏坐标整体平移（游戏单位），用于对准瓦片，默认 [0, 0]。 */
   mapOffset?: [number, number];
+  /** 进入页面时的初始镜头中心（游戏坐标 [x, z]）。未配置则回退到数据范围中心。 */
+  center?: [number, number];
 }
 
 export interface FrontendConfig {

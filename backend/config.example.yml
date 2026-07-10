@@ -61,6 +61,7 @@ frontend:
       scheme: "xyz"
       mapScale: 1        # 1 个游戏方块 = 多少原生瓦片像素（整体缩放）。
       mapOffset: [0, 0]  # [x, z] 游戏坐标整体平移（游戏单位）。
+      center: [0, 0]   # 进入页面时的初始镜头中心（游戏坐标 [x, z]）；不配则用数据范围中心。
   mapStyle:
     lineWidth: 3
     highlightWidth: 7
