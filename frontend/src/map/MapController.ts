@@ -33,9 +33,12 @@ export class MapController {
       refreshExpiredTiles: false,
       // 关闭世界副本：不显示重复地图
       renderWorldCopies: false,
-      // 直通式约束：原样返回镜头中心与缩放，禁用 MaplibreGL 默认的「把世界锁进视口」约束，
-      // 从而在不显示重复地图的前提下也能任意拖出瓦片/世界范围。
-      transformConstrain: (lngLat, zoom) => ({ center: lngLat, zoom: zoom ?? 0 }),
+      // 直通式约束：中心原样返回（禁用「把世界锁进视口」约束，可任意拖出瓦片/世界范围，
+      // 且不显示重复地图）；缩放仍夹取到当前 min/max，保证 minZoom/maxZoom 生效。
+      transformConstrain: (lngLat, zoom) => ({
+        center: lngLat,
+        zoom: this.clampZoom(zoom ?? 0),
+      }),
       style: {
         version: 8,
         // 纯色底图（无外部瓦片依赖；如配置了世界瓦片，可在此扩展 raster source）
@@ -519,17 +522,24 @@ export class MapController {
       bounds.extend(gameToLngLat(c[0], c[1], this.world));
       has = true;
     }
-    if (!has) {
-      if (tile?.zoom !== undefined) this.map.setZoom(tile.zoom);
-      return;
-    }
+    // 配置了 center（游戏坐标）则用作初始镜头中心，否则回退数据范围中心。
+    const cfgCenter = tile?.center;
+    const center =
+      cfgCenter && cfgCenter.length === 2
+        ? gameToLngLat(cfgCenter[0], cfgCenter[1], this.world)
+        : has
+          ? bounds.getCenter()
+          : null;
     const padding = { top: 60, bottom: 60, right: 60, left: 60 + this.leftInset };
     if (tile?.zoom !== undefined) {
-      // 配置了初始缩放：以数据中心为镜头中心，用配置的 zoom 级别（不自动框选整片范围）。
-      this.map.jumpTo({ center: bounds.getCenter(), zoom: tile.zoom, padding });
-    } else {
-      // 未配置 zoom：按数据范围自动框选，maxZoom 兜底避免压成一个点。
+      // 配置了初始缩放：用配置的 zoom 级别定位到指定/数据中心（不自动框选整片范围）。
+      if (center) this.map.jumpTo({ center, zoom: tile.zoom, padding });
+      else this.map.setZoom(tile.zoom);
+    } else if (has) {
+      // 未配置 zoom：按数据范围自动框选缩放，maxZoom 兜底避免压成一个点。
       this.map.fitBounds(bounds, { padding, maxZoom: tile?.maxZoom ?? 18, duration: 0 });
+      // 若额外配置了 center，框选后把镜头平移到该中心（缩放沿用框选结果）。
+      if (cfgCenter && center) this.map.setCenter(center);
     }
   }
 
@@ -561,6 +571,15 @@ export class MapController {
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
+  }
+
+  /** 把缩放夹取到当前世界的 min/max 范围（直通约束下手动补上这层限制）。 */
+  private clampZoom(zoom: number): number {
+    // 构造期回调可能早于 map 赋值；用配置兜底。
+    const tile = getConfig().worldTiles[this.world];
+    const min = this.map?.getMinZoom?.() ?? tile?.minZoom ?? 0;
+    const max = this.map?.getMaxZoom?.() ?? tile?.maxZoom ?? 20;
+    return Math.min(max, Math.max(min, zoom));
   }
 
   private applyWorldZoomLimits() {
