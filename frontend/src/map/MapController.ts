@@ -515,17 +515,17 @@ export class MapController {
       bounds.extend(gameToLngLat(c[0], c[1], this.world));
       has = true;
     }
-    if (has) {
-      // 用数据自身范围框选缩放；上限用世界 maxZoom，避免被「默认 zoom」压成一个点。
-      // 左侧加上侧边栏遮挡宽度，保证内容落在未被遮挡的可视区。
-      this.map.fitBounds(bounds, {
-        padding: { top: 60, bottom: 60, right: 60, left: 60 + this.leftInset },
-        maxZoom: tile?.maxZoom ?? 18,
-        duration: 0,
-      });
-    } else if (tile?.zoom !== undefined) {
-      // 无数据可框时，才回退到配置的默认缩放级别。
-      this.map.setZoom(tile.zoom);
+    if (!has) {
+      if (tile?.zoom !== undefined) this.map.setZoom(tile.zoom);
+      return;
+    }
+    const padding = { top: 60, bottom: 60, right: 60, left: 60 + this.leftInset };
+    if (tile?.zoom !== undefined) {
+      // 配置了初始缩放：以数据中心为镜头中心，用配置的 zoom 级别（不自动框选整片范围）。
+      this.map.jumpTo({ center: bounds.getCenter(), zoom: tile.zoom, padding });
+    } else {
+      // 未配置 zoom：按数据范围自动框选，maxZoom 兜底避免压成一个点。
+      this.map.fitBounds(bounds, { padding, maxZoom: tile?.maxZoom ?? 18, duration: 0 });
     }
   }
 
