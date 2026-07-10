@@ -45,23 +45,25 @@ export function TrainInfo() {
           ×
         </button>
       </div>
-      <div className="panel-section">
-        <Row label="所在世界" value={train.world} />
-        {train.lineId && <Row label="所属线路" value={train.lineId} />}
-        {train.destination && <Row label="终到站" value={train.destination} />}
-        <Row label="速度" value={`${train.speedKph.toFixed(1)} km/h`} />
-        <Row label="车厢数" value={String(train.cartCount)} />
-      </div>
-      <div className="panel-section">
-        <div className="label">车上玩家（{train.passengers.length}）</div>
-        <div className="passenger-list">
-          {train.passengers.length === 0 && <span className="muted">无</span>}
-          {train.passengers.map((p) => (
-            <span key={p} className="passenger-pill">
-              <img src={avatarUrl(p)} alt="" />
-              <span>{p}</span>
-            </span>
-          ))}
+      <div className="panel-body">
+        <div className="panel-section info-card">
+          <Row label="所在世界" value={train.world} />
+          {train.lineId && <Row label="所属线路" value={train.lineId} />}
+          {train.destination && <Row label="终到站" value={train.destination} />}
+          <Row label="速度" value={`${train.speedKph.toFixed(1)} km/h`} />
+          <Row label="车厢数" value={String(train.cartCount)} />
+        </div>
+        <div className="panel-section">
+          <div className="label">车上玩家（{train.passengers.length}）</div>
+          <div className="passenger-list">
+            {train.passengers.length === 0 && <span className="muted">无</span>}
+            {train.passengers.map((p) => (
+              <span key={p} className="passenger-pill">
+                <img src={avatarUrl(p)} alt="" />
+                <span>{p}</span>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </div>

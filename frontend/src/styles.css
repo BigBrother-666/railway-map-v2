@@ -261,6 +261,13 @@ body,
   flex-shrink: 0;
   margin: 0 16px 16px;
 }
+.sidebar-left .panel > .btn.primary {
+  display: block;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(255, 212, 0, 0.25);
+}
 .panel-fill {
   display: flex;
   flex-direction: column;
@@ -277,15 +284,40 @@ body,
   margin: 0;
   font-size: 17px;
 }
+/* 车站面板：站名 hero 标题区，与属性分离 */
+.station-header {
+  align-items: flex-start;
+}
+.station-title-block h2 {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 2px 0;
+}
+.station-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+.station-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
 
 .panel-section {
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 
 .label {
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 6px;
+  font-weight: 600;
+  margin-bottom: 8px;
 }
 .muted {
   color: var(--muted);
@@ -298,14 +330,32 @@ body,
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  padding: 3px 8px;
-  border-radius: 12px;
+  line-height: 1.4;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+/* 线路标签：中性底 + 线路色圆点，避免多色堆叠拥挤 */
+.line-chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-shadow: none;
+}
+.chip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 .chip-outline {
   background: var(--panel-2);
@@ -314,14 +364,36 @@ body,
   text-shadow: none;
 }
 
+/* 属性分组卡片：把平铺的键值对收进一张卡，拉开视觉层级 */
+.info-card {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px 12px;
+}
 .info-row {
   display: flex;
   justify-content: space-between;
-  padding: 4px 0;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
   font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.info-row:last-child {
+  border-bottom: none;
+}
+.info-row .label {
+  margin-bottom: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  font-size: 13px;
 }
 .info-row .value {
   color: var(--text);
+  font-weight: 500;
+  text-align: right;
 }
 
 /* 站名搜索 */
@@ -630,7 +702,11 @@ body,
 
 /* 右侧线路开关 */
 .line-group {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px 10px;
 }
 .line-group-head {
   display: flex;
@@ -639,8 +715,6 @@ body,
   font-size: 13px;
   font-weight: 600;
   padding: 6px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 6px;
 }
 .group-toggle {
   display: flex;
@@ -678,14 +752,20 @@ body,
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
 }
+.line-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
 .line-dot {
-  width: 12px;
+  width: 14px;
   height: 4px;
   border-radius: 2px;
+  flex-shrink: 0;
 }
 .line-name {
   flex: 1;

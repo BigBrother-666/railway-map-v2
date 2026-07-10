@@ -40,8 +40,14 @@ function StationPanel() {
 
   return (
     <div className="panel">
-      <div className="panel-header">
-        <h2>{name}</h2>
+      <div className="panel-header station-header">
+        <div className="station-title-block">
+          <div className="station-eyebrow">车站</div>
+          <h2>{name}</h2>
+          <div className="station-sub">
+            {lineList.length} 条线路 · {systemIds.size} 个铁路系统
+          </div>
+        </div>
         <button className="icon-btn" onClick={close}>
           ×
         </button>
@@ -52,7 +58,8 @@ function StationPanel() {
           <div className="chips">
             {lineList.length === 0 && <span className="muted">—</span>}
             {lineList.map((l) => (
-              <span key={l.id} className="chip" style={{ background: l.color }}>
+              <span key={l.id} className="chip line-chip">
+                <span className="chip-dot" style={{ background: l.color }} />
                 {l.name}
               </span>
             ))}
