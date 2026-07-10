@@ -668,31 +668,101 @@ body,
   overflow-y: auto;
 }
 .history-card {
+  position: relative;
   width: 100%;
   flex-shrink: 0;
   text-align: left;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: 10px;
+  padding: 12px 14px;
   color: var(--text);
   cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+.history-card:hover {
+  border-color: #3a7afe;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 .history-card.selected {
   border-color: var(--accent);
+  background: #2a2b1f;
 }
-.history-card-head,
-.history-meta {
+.history-card-head {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 10px;
+  margin-bottom: 10px;
+}
+.history-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.history-badge.express {
+  background: rgba(255, 212, 0, 0.16);
+  border-color: transparent;
+  color: var(--accent);
+}
+.history-time {
   font-size: 12px;
   color: var(--muted);
 }
+/* 起终点用连点竖线表达行程方向，呼应路线卡片 */
 .history-route {
-  margin: 7px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 10px;
+  position: relative;
+}
+.history-route::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  background: var(--border);
+}
+.history-endpoint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 14px;
-  line-height: 1.4;
+  font-weight: 500;
+  z-index: 1;
+}
+.history-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid var(--panel-2);
+}
+.history-dot.start {
+  background: #4ade80;
+}
+.history-dot.end {
+  background: #ef4444;
+}
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.history-pill {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
 }
 .pager {
   display: flex;

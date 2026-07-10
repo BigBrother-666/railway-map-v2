@@ -2,6 +2,7 @@ import { useStore } from '../store/useStore';
 import { StationSearch } from './StationSearch';
 import { RouteCard } from './RouteCard';
 import { TrainInfo } from './TrainInfo';
+import { getConfig } from '../config';
 import type { RideHistoryItem } from '../types';
 
 /** 左侧边栏：车站信息 / 路线查询 / 列车信息（仿 Google 地图）。 */
@@ -93,8 +94,12 @@ function HistoryPanel() {
 
   return (
     <div className="panel panel-fill">
-      <div className="panel-header">
-        <h2>乘车历史</h2>
+      <div className="panel-header station-header">
+        <div className="station-title-block">
+          <div className="station-eyebrow">我的行程</div>
+          <h2>乘车历史</h2>
+          {history && <div className="station-sub">共 {history.total} 条记录</div>}
+        </div>
         <button className="icon-btn" onClick={close}>
           ×
         </button>
@@ -143,13 +148,26 @@ function HistoryCard({
   return (
     <button className={`history-card ${selected ? 'selected' : ''}`} onClick={onClick}>
       <div className="history-card-head">
-        <span>{item.express ? '直达车' : '普通车'}</span>
-        <span>{formatTime(item.startedAt)} - {formatTime(item.endedAt)}</span>
+        <span className={`history-badge ${item.express ? 'express' : ''}`}>
+          {item.express ? '直达车' : '普通车'}
+        </span>
+        <span className="history-time">{formatTime(item.startedAt)}</span>
       </div>
-      <div className="history-route">{item.startStation} → {item.endStation}</div>
+      <div className="history-route">
+        <span className="history-endpoint">
+          <span className="history-dot start" />
+          {item.startStation}
+        </span>
+        <span className="history-endpoint">
+          <span className="history-dot end" />
+          {item.endStation}
+        </span>
+      </div>
       <div className="history-meta">
-        <span>{distance.toFixed(2)} km</span>
-        {item.express && <span>实付 {Number(item.paidFare ?? 0).toFixed(2)}</span>}
+        <span className="history-pill">{distance.toFixed(2)} km</span>
+        {item.express && (
+          <span className="history-pill">实付 {Number(item.paidFare ?? 0).toFixed(2)} {getConfig().currencyName}</span>
+        )}
       </div>
     </button>
   );
