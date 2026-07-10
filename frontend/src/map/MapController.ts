@@ -31,7 +31,11 @@ export class MapController {
       container,
       fadeDuration: 80,
       refreshExpiredTiles: false,
+      // 关闭世界副本：不显示重复地图
       renderWorldCopies: false,
+      // 直通式约束：原样返回镜头中心与缩放，禁用 MaplibreGL 默认的「把世界锁进视口」约束，
+      // 从而在不显示重复地图的前提下也能任意拖出瓦片/世界范围。
+      transformConstrain: (lngLat, zoom) => ({ center: lngLat, zoom: zoom ?? 0 }),
       style: {
         version: 8,
         // 纯色底图（无外部瓦片依赖；如配置了世界瓦片，可在此扩展 raster source）
