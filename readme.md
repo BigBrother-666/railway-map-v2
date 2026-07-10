@@ -110,7 +110,7 @@ web-link:
 | `frontend.transferMinImprovement`             | number  | `0.2`                               | 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。`0` 表示只要严格更短即显示。        |
 | `frontend.avatarUrlTemplate`                  | string  | `https://mineskin.eu/helm/{player}` | 玩家头像 URL 模板，`{player}` 会替换为玩家名或 UUID。                          |
 | `frontend.worldTiles.<world>.tileUrl`         | string  | 空                                   | 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。                 |
-| `frontend.worldTiles.<world>.zoom`            | number  | `14`                                | 进入该世界后的默认地图缩放级别。                                               |
+| `frontend.worldTiles.<world>.zoom`            | number  | 空                                   | 进入该世界时的初始地图缩放级别。配置后以 `center`（或数据范围中心）为镜头中心定位；不配则按数据范围自动框选缩放。 |
 | `frontend.worldTiles.<world>.tileSize`        | number  | `256`                               | 单张瓦片图片像素尺寸。                                                    |
 | `frontend.worldTiles.<world>.opacity`         | number  | `1`                                 | 瓦片图层透明度，范围 `0` 到 `1`；值越低线路越突出。                                 |
 | `frontend.worldTiles.<world>.minNativeZoom`   | number  | `0`                                 | 瓦片源最低实际请求层级。                                                   |
@@ -120,6 +120,7 @@ web-link:
 | `frontend.worldTiles.<world>.scheme`          | string  | `xyz`                               | 瓦片 Y 轴编号方案，可选 `xyz` 或 `tms`。                                   |
 | `frontend.worldTiles.<world>.mapScale`        | number  | `1`                                 | 1 个游戏方块对应多少「原生瓦片像素」。geojson 按游戏比例等比铺图，用它整体缩放对准瓦片。              |
 | `frontend.worldTiles.<world>.mapOffset`       | `[x,z]` | `[0,0]`                             | 游戏坐标整体平移（游戏单位），用它把线路挪到与瓦片底图对齐。                                 |
+| `frontend.worldTiles.<world>.center`          | `[x,z]` | 空                                   | 进入该世界时的初始镜头中心（游戏坐标 `[x,z]`）。不配则回退到数据范围中心。                        |
 | `frontend.mapStyle.lineWidth`                 | number  | `3`                                 | 普通线路宽度，单位为屏幕像素。                                                |
 | `frontend.mapStyle.highlightWidth`            | number  | `7`                                 | 高亮路线宽度，单位为屏幕像素。                                                |
 | `frontend.mapStyle.dimOpacity`                | number  | `0.2`                               | 有高亮路线时非高亮线路透明度。                                                |
