@@ -11,6 +11,7 @@ export function App() {
   const loading = useStore((s) => s.loading);
   const loadError = useStore((s) => s.loadError);
   const online = useStore((s) => s.meta?.online ?? false);
+  const leftOpen = useStore((s) => s.sidebar !== 'idle');
 
   useEffect(() => {
     init();
@@ -22,7 +23,7 @@ export function App() {
   return (
     <div className="app">
       <TopBar />
-      <div className="app-body">
+      <div className={`app-body${leftOpen ? ' left-open' : ''}`}>
         <MapView />
         <LeftSidebar />
         <RightSidebar />

@@ -32,11 +32,16 @@ body,
   position: relative;
   flex: 1;
   overflow: hidden;
+  --left-sidebar-width: 320px;
 }
 
 .map-container {
   position: absolute;
   inset: 0;
+  transition: left 0.2s ease;
+}
+.app-body.left-open .map-container {
+  left: var(--left-sidebar-width);
 }
 
 /* 顶栏 */

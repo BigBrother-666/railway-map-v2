@@ -61,6 +61,11 @@ export class MapController {
     this.map.remove();
   }
 
+  /** 容器尺寸变化后重算画布（侧栏开合导致地图区收缩/扩张时调用）。 */
+  resize() {
+    this.map.resize();
+  }
+
   /** 加载（或切换世界后重载）数据并建图层。 */
   setData(fc: FeatureCollection, world: string) {
     this.fc = fc;

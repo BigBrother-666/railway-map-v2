@@ -15,6 +15,7 @@ export function MapView() {
   const candidates = useStore((s) => s.candidates);
   const selectedRouteIndex = useStore((s) => s.selectedRouteIndex);
   const trains = useStore((s) => s.trains);
+  const sidebar = useStore((s) => s.sidebar);
   const clickStation = useStore((s) => s.clickStation);
   const selectTrain = useStore((s) => s.selectTrain);
 
@@ -86,6 +87,17 @@ export function MapView() {
   useEffect(() => {
     if (readyRef.current && ctrlRef.current) ctrlRef.current.setTrains([...trains.values()]);
   }, [trains]);
+
+  // 侧栏开合导致地图区收缩/扩张：等 CSS 过渡（.2s）结束后重算画布，保证可完整拖动
+  useEffect(() => {
+    if (!readyRef.current || !ctrlRef.current) return;
+    const raf = requestAnimationFrame(() => ctrlRef.current?.resize());
+    const timer = setTimeout(() => ctrlRef.current?.resize(), 220);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+    };
+  }, [sidebar]);
 
   // 防 ESLint 未用告警（handlers 已在 onReady 内绑定到 getState）
   void clickStation;
