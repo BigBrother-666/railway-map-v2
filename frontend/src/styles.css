@@ -915,3 +915,40 @@ body,
   border-color: #c0392b;
   color: #ff8a80;
 }
+
+/* 路线查询中 / 失败提示 */
+.route-searching {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 4px;
+  color: var(--muted);
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.route-error {
+  padding: 12px;
+  border: 1px solid #c0392b;
+  border-radius: 8px;
+  background: rgba(192, 57, 43, 0.12);
+  color: #ff8a80;
+  font-size: 13px;
+  line-height: 1.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.6s;
+  }
+}

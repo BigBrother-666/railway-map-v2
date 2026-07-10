@@ -4,9 +4,10 @@
 import { create } from 'zustand';
 import { api, ApiError } from '../api/client';
 import { RouteGraph } from '../routing/graph';
-import { findByStation, findTransferJourneys } from '../routing/pathfind';
-import { estimateFare, fareDetails, mergeFareDetails } from '../routing/fare';
-import { rankWithMinDirect, type Candidate } from '../routing/ranker';
+import { routeClient, RouteSearchTimeoutError } from '../routing/routeClient';
+
+// 路线查询请求序号：仅应用最新一次查询结果，避免快速改动起终点时旧结果覆盖新结果。
+let searchSeq = 0;
 import { getConfig, setRuntimeConfig } from '../config';
 import type {
   FeatureCollection,
@@ -55,6 +56,8 @@ interface AppState {
   nextPick: Endpoint; // 下次点击地图车站设为起点还是终点
   candidates: RoutePath[];
   selectedRouteIndex: number | null;
+  searching: boolean; // 路线查询进行中（显示查询中动画）
+  searchError: string | null; // 查询失败/超时提示（null 表示无错误）
 
   // --- 列车 ---
   trains: Map<string, Train>;
@@ -75,7 +78,7 @@ interface AppState {
   clickStation: (name: string) => void;
   openRoutePanel: (presetEnd?: string) => void;
   setEndpoint: (role: Endpoint, name: string | null) => void;
-  computeRoutes: () => void;
+  computeRoutes: () => Promise<void>;
   selectRoute: (index: number | null) => void;
   closeSidebar: () => void;
 
@@ -113,6 +116,8 @@ export const useStore = create<AppState>((set, get) => ({
   nextPick: 'start',
   candidates: [],
   selectedRouteIndex: null,
+  searching: false,
+  searchError: null,
 
   trains: new Map(),
   selectedTrainId: null,
@@ -134,6 +139,7 @@ export const useStore = create<AppState>((set, get) => ({
         api.systems(),
       ]);
       const graph = RouteGraph.fromFeatureCollection(geojson);
+      routeClient.init(geojson); // 后台线程用同一份数据建图，供寻路使用
       const systemMap = new Map(systems.map((s) => [s.id, s]));
       const reverseSet = new Set<string>();
       for (const line of lines) {
@@ -202,6 +208,8 @@ export const useStore = create<AppState>((set, get) => ({
       nextPick: 'start',
       candidates: [],
       selectedRouteIndex: null,
+      searching: false,
+      searchError: null,
     });
   },
 
@@ -217,67 +225,31 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  computeRoutes() {
-    const { graph, startStation, endStation, systemMap, reverseSet } = get();
+  async computeRoutes() {
+    const { graph, startStation, endStation, systems, reverseSet } = get();
     if (!graph || !startStation || !endStation) {
-      set({ candidates: [], selectedRouteIndex: null });
+      set({ candidates: [], selectedRouteIndex: null, searching: false, searchError: null });
       return;
     }
     const cfg = getConfig();
-    const globalRate = cfg.defaultPricePerKm;
-    const isReverse = (lineId: string, station: string) => reverseSet.has(`${lineId}|${station}`);
-    const withFare = (p: RoutePath): RoutePath => {
-      const details = fareDetails(p, systemMap, globalRate);
-      return { ...p, fareDetails: details, estimatedFare: estimateFare({ ...p, fareDetails: details }, systemMap, globalRate) };
-    };
-
-    // 直达候选池：覆盖「距离前 N ∪ 票价前 M」，两者之和作上限；任一不限(<=0)时退回不限条数(0)。
-    const directPool =
-      cfg.maxDistanceResults <= 0 || cfg.maxPriceResults <= 0 ? 0 : cfg.maxDistanceResults + cfg.maxPriceResults;
-    const directCandidates: RoutePath[] = findByStation(graph, startStation, endStation, directPool, isReverse).map(
-      (p) => ({ ...withFare(p), kind: 'direct' as const }),
-    );
-
-    // 联程票候选：限方案数 + 限候选换乘站数
-    const throughCandidates: RoutePath[] = findTransferJourneys(
-      graph,
-      startStation,
-      endStation,
-      cfg.maxTransferResults,
-      cfg.maxTransferCandidates,
-      cfg.transferMinImprovement,
-      isReverse,
-    ).map((j) => {
-      const legs = j.legs.map(withFare);
-      const legFareDetails = legs.map((l) => l.fareDetails ?? []);
-      const merged = mergeFareDetails(legFareDetails);
-      const totalFare = Math.round(legs.reduce((sum, l) => sum + l.estimatedFare, 0) * 100) / 100;
-      // 联程票用首段作为「代表路径」承载卡片头部/地图高亮基础字段，journey 携带完整两段
-      const rep = legs[0];
-      return {
-        ...rep,
-        kind: 'through' as const,
-        distance: j.totalDistance,
-        estimatedFare: totalFare,
-        fareDetails: merged,
-        journey: { legs, transferStations: j.transferStations, totalDistance: j.totalDistance, totalFare, fareDetails: merged },
-      };
-    });
-
-    // 汇总排序候选：直达在前、联程票在后（下标空间连续）
-    const all = [...directCandidates, ...throughCandidates];
-    const rankInput: Candidate[] = all.map((p, i) => ({ index: i, distance: p.distance, price: p.estimatedFare }));
-    const order = rankWithMinDirect(
-      rankInput,
-      directCandidates.length,
-      cfg.maxDistanceResults,
-      cfg.maxPriceResults,
-      cfg.searchWeightDistance,
-      cfg.searchWeightPrice,
-      cfg.minDirectResults,
-    );
-    const candidates = order.map((idx) => all[idx]);
-    set({ candidates, selectedRouteIndex: candidates.length > 0 ? 0 : null });
+    const seq = ++searchSeq; // 本次查询序号，用于丢弃过期结果
+    set({ searching: true, searchError: null, candidates: [], selectedRouteIndex: null });
+    try {
+      // 后台 Worker 寻路，主线程界面不卡死；超时由 routeClient 终止并 reject。
+      const candidates = await routeClient.query(
+        { startStation, endStation, systems, reverseKeys: [...reverseSet], cfg },
+        cfg.routeSearchTimeoutMs,
+      );
+      if (seq !== searchSeq) return; // 已有更新的查询，丢弃本次结果
+      set({ candidates, selectedRouteIndex: candidates.length > 0 ? 0 : null, searching: false, searchError: null });
+    } catch (e) {
+      if (seq !== searchSeq) return; // 过期查询的错误也一并忽略
+      const searchError =
+        e instanceof RouteSearchTimeoutError
+          ? `路线查询超时（超过 ${(cfg.routeSearchTimeoutMs / 1000).toFixed(0)} 秒），请稍后重试或更换起终点`
+          : '路线查询失败，请重试';
+      set({ candidates: [], selectedRouteIndex: null, searching: false, searchError });
+    }
   },
 
   selectRoute(index) {
@@ -345,7 +317,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async openRideHistory() {
-    set({ sidebar: 'history', selectedTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null });
+    set({ sidebar: 'history', selectedTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null });
     await get().loadRideHistory(1);
   },
 

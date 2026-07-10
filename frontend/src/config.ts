@@ -49,6 +49,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   maxTransferResults: 3,
   maxTransferCandidates: 30,
   transferMinImprovement: 0.2,
+  routeSearchTimeoutMs: 10000,
 };
 
 let runtimeConfig: FrontendConfig = DEFAULT_CONFIG;

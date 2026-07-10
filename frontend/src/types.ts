@@ -204,6 +204,8 @@ export interface FrontendConfig {
   maxTransferResults: number;
   maxTransferCandidates: number;
   transferMinImprovement: number;
+  /** 路线查询（Web Worker 寻路）超时毫秒数；超时终止并提示失败。 */
+  routeSearchTimeoutMs: number;
 }
 
 export interface RideHistoryItem {

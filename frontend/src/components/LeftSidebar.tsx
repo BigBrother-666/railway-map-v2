@@ -194,6 +194,8 @@ function RoutePanel() {
   const endStation = useStore((s) => s.endStation);
   const nextPick = useStore((s) => s.nextPick);
   const candidates = useStore((s) => s.candidates);
+  const searching = useStore((s) => s.searching);
+  const searchError = useStore((s) => s.searchError);
   const setEndpoint = useStore((s) => s.setEndpoint);
   const close = useStore((s) => s.closeSidebar);
 
@@ -225,12 +227,18 @@ function RoutePanel() {
         <div className="hint muted">下一次点击地图车站将设为：{nextPick === 'start' ? '起点' : '终点'}</div>
       </div>
       <div className="panel-body route-list">
-        {startStation && endStation && candidates.length === 0 && (
+        {searching && (
+          <div className="route-searching">
+            <span className="spinner" aria-hidden="true" />
+            <span>查询中…</span>
+          </div>
+        )}
+        {!searching && searchError && <div className="route-error">{searchError}</div>}
+        {!searching && !searchError && startStation && endStation && candidates.length === 0 && (
           <div className="muted">所选两站间暂无可用路线（直达 / 联程票）</div>
         )}
-        {candidates.map((p, i) => (
-          <RouteCard key={i} path={p} index={i} />
-        ))}
+        {!searching &&
+          candidates.map((p, i) => <RouteCard key={i} path={p} index={i} />)}
       </div>
     </div>
   );
