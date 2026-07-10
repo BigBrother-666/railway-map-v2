@@ -3,6 +3,9 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapController } from '../map/MapController';
 import { useStore } from '../store/useStore';
 
+/** 左侧侧边栏宽度（与 styles.css 的 .sidebar 保持一致），用于框选时留出遮挡内边距。 */
+const LEFT_SIDEBAR_WIDTH = 320;
+
 /** 地图视图：把 MapController 与全局状态连起来。 */
 export function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -15,6 +18,7 @@ export function MapView() {
   const candidates = useStore((s) => s.candidates);
   const selectedRouteIndex = useStore((s) => s.selectedRouteIndex);
   const trains = useStore((s) => s.trains);
+  const sidebar = useStore((s) => s.sidebar);
   const clickStation = useStore((s) => s.clickStation);
   const selectTrain = useStore((s) => s.selectTrain);
 
@@ -75,9 +79,11 @@ export function MapView() {
     const legs =
       route.kind === 'through' && route.journey ? route.journey.legs.map((l) => l.nodeIds) : [route.nodeIds];
     ctrlRef.current.highlightRoute(legs);
-    // 镜头联动：缩放并移动到选中线路（路线卡片 / 乘车历史通用）
+    // 镜头联动：缩放并移动到选中线路（路线卡片 / 乘车历史通用）；
+    // 左侧留出侧边栏宽度，避免线路落在侧边栏下方被遮挡。
+    ctrlRef.current.setLeftInset(sidebar !== 'idle' ? LEFT_SIDEBAR_WIDTH : 0);
     ctrlRef.current.fitToNodes(legs);
-  }, [candidates, selectedRouteIndex]);
+  }, [candidates, selectedRouteIndex, sidebar]);
 
   // 列车
   useEffect(() => {

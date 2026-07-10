@@ -23,6 +23,8 @@ export class MapController {
   private highlightEdges: Set<string> = new Set();
   private onStationClick?: (name: string) => void;
   private onTrainClick?: (id: string) => void;
+  /** 左侧被侧边栏遮挡的像素宽度，框选时作为左侧内边距，避免内容落在侧边栏下方。 */
+  private leftInset = 0;
 
   constructor(container: HTMLElement) {
     this.map = new maplibregl.Map({
@@ -55,6 +57,11 @@ export class MapController {
   setHandlers(onStationClick: (name: string) => void, onTrainClick: (id: string) => void) {
     this.onStationClick = onStationClick;
     this.onTrainClick = onTrainClick;
+  }
+
+  /** 设置左侧侧边栏遮挡宽度（0 表示未打开），供框选时留出左侧内边距。 */
+  setLeftInset(px: number) {
+    this.leftInset = Math.max(0, px);
   }
 
   destroy() {
@@ -510,7 +517,12 @@ export class MapController {
     }
     if (has) {
       // 用数据自身范围框选缩放；上限用世界 maxZoom，避免被「默认 zoom」压成一个点。
-      this.map.fitBounds(bounds, { padding: 60, maxZoom: tile?.maxZoom ?? 18, duration: 0 });
+      // 左侧加上侧边栏遮挡宽度，保证内容落在未被遮挡的可视区。
+      this.map.fitBounds(bounds, {
+        padding: { top: 60, bottom: 60, right: 60, left: 60 + this.leftInset },
+        maxZoom: tile?.maxZoom ?? 18,
+        duration: 0,
+      });
     } else if (tile?.zoom !== undefined) {
       // 无数据可框时，才回退到配置的默认缩放级别。
       this.map.setZoom(tile.zoom);
@@ -540,7 +552,11 @@ export class MapController {
     }
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
-    this.map.fitBounds(bounds, { padding: 80, maxZoom: tile?.maxZoom ?? 18, duration: 600 });
+    this.map.fitBounds(bounds, {
+      padding: { top: 80, bottom: 80, right: 80, left: 80 + this.leftInset },
+      maxZoom: tile?.maxZoom ?? 18,
+      duration: 600,
+    });
   }
 
   private applyWorldZoomLimits() {
