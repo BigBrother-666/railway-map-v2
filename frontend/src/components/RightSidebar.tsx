@@ -6,7 +6,7 @@ import { getConfig } from '../config';
 export function RightSidebar() {
   const systems = useStore((s) => s.systems);
   const lines = useStore((s) => s.lines);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true); // 默认收起线路显示面板
 
   if (collapsed) {
     return (
