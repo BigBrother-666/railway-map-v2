@@ -447,6 +447,7 @@ body,
 }
 .route-card {
   position: relative;
+  flex-shrink: 0;
   overflow: hidden;
   background: #242833;
   border: 1px solid #3a4050;
@@ -668,6 +669,7 @@ body,
 }
 .history-card {
   width: 100%;
+  flex-shrink: 0;
   text-align: left;
   background: var(--panel-2);
   border: 1px solid var(--border);
