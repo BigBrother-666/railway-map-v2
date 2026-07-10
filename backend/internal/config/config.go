@@ -84,6 +84,8 @@ type FrontendConfig struct {
 	MaxTransferResults     int     `yaml:"maxTransferResults" json:"maxTransferResults"`
 	MaxTransferCandidates  int     `yaml:"maxTransferCandidates" json:"maxTransferCandidates"`
 	TransferMinImprovement float64 `yaml:"transferMinImprovement" json:"transferMinImprovement"`
+	// 路线查询（前端 Web Worker 寻路）超时毫秒数，超时则终止计算并提示失败。<=0 用默认 10000。
+	RouteSearchTimeoutMs int `yaml:"routeSearchTimeoutMs" json:"routeSearchTimeoutMs"`
 }
 
 type WorldTileConfig struct {
@@ -185,6 +187,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Frontend.MaxRouteCandidates <= 0 {
 		c.Frontend.MaxRouteCandidates = 20
+	}
+	if c.Frontend.RouteSearchTimeoutMs <= 0 {
+		c.Frontend.RouteSearchTimeoutMs = 10000
 	}
 	if c.Frontend.DefaultWorld == "" {
 		c.Frontend.DefaultWorld = "world1"

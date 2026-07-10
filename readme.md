@@ -108,6 +108,7 @@ web-link:
 | `frontend.maxTransferResults`                 | int     | `3`                                 | 最多展示的联程票（一次换乘）方案条数（`<=0` 不限制，仍受候选上限约束）。                         |
 | `frontend.maxTransferCandidates`              | int     | `30`                                | 联程票寻路最多考察的候选换乘站数量，防止大线组合爆炸；优先直达路径上的经停站。                         |
 | `frontend.transferMinImprovement`             | number  | `0.2`                               | 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。`0` 表示只要严格更短即显示。        |
+| `frontend.routeSearchTimeoutMs`               | int     | `10000`                             | 路线查询超时毫秒数（前端 Web Worker 寻路）。查询期间界面显示查询中动画不卡死；超时则终止计算并提示失败。       |
 | `frontend.avatarUrlTemplate`                  | string  | `https://mineskin.eu/helm/{player}` | 玩家头像 URL 模板，`{player}` 会替换为玩家名或 UUID。                          |
 | `frontend.worldTiles.<world>.tileUrl`         | string  | 空                                   | 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。                 |
 | `frontend.worldTiles.<world>.zoom`            | number  | 空                                   | 进入该世界时的初始地图缩放级别。配置后以 `center`（或数据范围中心）为镜头中心定位；不配则按数据范围自动框选缩放。 |
