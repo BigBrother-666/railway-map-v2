@@ -64,11 +64,22 @@ export function MapView() {
     if (readyRef.current && ctrlRef.current) ctrlRef.current.setHiddenLines(hiddenLines);
   }, [hiddenLines]);
 
-  // 高亮选中路线
+  // 高亮选中路线（联程票高亮各段并集，并标记换乘站）
   useEffect(() => {
     if (!readyRef.current || !ctrlRef.current) return;
     const route = selectedRouteIndex != null ? candidates[selectedRouteIndex] : null;
-    ctrlRef.current.highlightRoute(route ? route.nodeIds : null);
+    if (!route) {
+      ctrlRef.current.highlightRoute(null);
+      return;
+    }
+    if (route.kind === 'through' && route.journey) {
+      ctrlRef.current.highlightRoute(
+        route.journey.legs.map((l) => l.nodeIds),
+        route.journey.transferStations,
+      );
+    } else {
+      ctrlRef.current.highlightRoute([route.nodeIds]);
+    }
   }, [candidates, selectedRouteIndex]);
 
   // 列车

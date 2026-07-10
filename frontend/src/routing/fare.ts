@@ -36,3 +36,26 @@ export function fareDetails(path: RoutePath, systems: Map<string, RailwaySystem>
     price: Math.round(d.price * 100) / 100,
   }));
 }
+
+/**
+ * 合并多段（联程票各段）的收费详情：按铁路系统累加距离与价格（复刻插件 ThroughTicket 底部合并各段各系统距离）。
+ */
+export function mergeFareDetails(details: FareDetail[][]): FareDetail[] {
+  const bySystem = new Map<string, FareDetail>();
+  for (const legDetails of details) {
+    for (const d of legDetails) {
+      const existing = bySystem.get(d.systemId);
+      if (existing) {
+        existing.distance += d.distance;
+        existing.price += d.price;
+      } else {
+        bySystem.set(d.systemId, { ...d });
+      }
+    }
+  }
+  return [...bySystem.values()].map((d) => ({
+    ...d,
+    distance: Math.round(d.distance * 100) / 100,
+    price: Math.round(d.price * 100) / 100,
+  }));
+}

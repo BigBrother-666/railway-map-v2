@@ -65,12 +65,25 @@ type FrontendConfig struct {
 	DefaultRouteResults int                        `yaml:"defaultRouteResults" json:"defaultRouteResults"`
 	MaxRouteCandidates  int                        `yaml:"maxRouteCandidates" json:"maxRouteCandidates"`
 	DefaultWorld        string                     `yaml:"defaultWorld" json:"defaultWorld"`
+	CurrencyName        string                     `yaml:"currencyName" json:"currencyName"`
 	WorldTiles          map[string]WorldTileConfig `yaml:"worldTiles" json:"worldTiles"`
 	MapStyle            MapStyleConfig             `yaml:"mapStyle" json:"mapStyle"`
 	TrainIcons          TrainIconsConfig           `yaml:"trainIcons" json:"trainIcons"`
 	DefaultSystemLogo   string                     `yaml:"defaultSystemLogo" json:"defaultSystemLogo"`
 	AvatarURLTemplate   string                     `yaml:"avatarUrlTemplate" json:"avatarUrlTemplate"`
 	DefaultPricePerKm   float64                    `yaml:"defaultPricePerKm" json:"defaultPricePerKm"`
+
+	// 搜索结果排序（复刻插件 search.*，与菜单购票一致）
+	MaxDistanceResults   int     `yaml:"maxDistanceResults" json:"maxDistanceResults"`
+	MaxPriceResults      int     `yaml:"maxPriceResults" json:"maxPriceResults"`
+	SearchWeightDistance float64 `yaml:"searchWeightDistance" json:"searchWeightDistance"`
+	SearchWeightPrice    float64 `yaml:"searchWeightPrice" json:"searchWeightPrice"`
+	MinDirectResults     int     `yaml:"minDirectResults" json:"minDirectResults"`
+
+	// 联程票（一次换乘 / 两段直达）寻路参数（复刻插件 search.max-transfer-* / transfer-min-improvement）
+	MaxTransferResults     int     `yaml:"maxTransferResults" json:"maxTransferResults"`
+	MaxTransferCandidates  int     `yaml:"maxTransferCandidates" json:"maxTransferCandidates"`
+	TransferMinImprovement float64 `yaml:"transferMinImprovement" json:"transferMinImprovement"`
 }
 
 type WorldTileConfig struct {
@@ -218,5 +231,34 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Frontend.DefaultPricePerKm <= 0 {
 		c.Frontend.DefaultPricePerKm = 0.2
+	}
+	if c.Frontend.CurrencyName == "" {
+		c.Frontend.CurrencyName = "帕元"
+	}
+	// 搜索排序默认值（与插件 config.yml search.* 对齐）。
+	// max-*-results 允许配 <=0 表示不限制，故用「负数才纠正」而非 <=0；未配置时 yaml 零值 0 恰是「不限制」，
+	// 但插件默认给 5，这里对「未出现即 0」统一给 5：区分不了「显式 0」与「缺省」，与插件一致按缺省处理。
+	if c.Frontend.MaxDistanceResults == 0 {
+		c.Frontend.MaxDistanceResults = 5
+	}
+	if c.Frontend.MaxPriceResults == 0 {
+		c.Frontend.MaxPriceResults = 5
+	}
+	// 权重：两者都为 0（未配置）时给 0.5/0.5；显式配置其一即保留。
+	if c.Frontend.SearchWeightDistance == 0 && c.Frontend.SearchWeightPrice == 0 {
+		c.Frontend.SearchWeightDistance = 0.5
+		c.Frontend.SearchWeightPrice = 0.5
+	}
+	if c.Frontend.MinDirectResults == 0 {
+		c.Frontend.MinDirectResults = 1
+	}
+	if c.Frontend.MaxTransferResults == 0 {
+		c.Frontend.MaxTransferResults = 3
+	}
+	if c.Frontend.MaxTransferCandidates == 0 {
+		c.Frontend.MaxTransferCandidates = 30
+	}
+	if c.Frontend.TransferMinImprovement == 0 {
+		c.Frontend.TransferMinImprovement = 0.2
 	}
 }

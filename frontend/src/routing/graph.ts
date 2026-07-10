@@ -13,6 +13,10 @@ export interface GraphLink {
   distance: number; // 米
   systemId?: string;
   departDir?: string;
+  /** 入向面门控：到达起点道岔的允许到达面集合（与插件 GeoLink.enterFacesFrom 同源）。空表示不门控。 */
+  enterFrom?: string[];
+  /** 沿本段到达终点节点的到达面 key（与插件 GeoLink.enterFaceTo 同源）。 */
+  enterTo?: string;
 }
 
 /** 图中的一个节点。 */
@@ -65,6 +69,8 @@ export class RouteGraph {
         distance: l.length,
         systemId: l.railwaySystemId,
         departDir: l.departDir,
+        enterFrom: l.enterFrom,
+        enterTo: l.enterTo,
       });
     }
     return g;

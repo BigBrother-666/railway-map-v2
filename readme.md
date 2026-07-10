@@ -5,7 +5,7 @@ BiliCraftTicketSystem 的网页线路图项目。仓库包含 Go 后端、React 
 ## 项目结构
 
 - `backend/`：Go HTTP/WebSocket 服务，缓存插件同步的地图数据，广播实时列车，处理登录、购票和乘车历史。
-- `frontend/`：React 18 + TypeScript + Vite 前端，负责 MapLibre 地图渲染、本地寻路、在线购票、实时列车和历史记录展示。
+- `frontend/`：React 18 + TypeScript + Vite 前端，负责 MapLibre 地图渲染、本地寻路（直达 + 联程票，语义与插件 `GeoRouteEngine` 对齐）、在线购票、实时列车和历史记录展示。
 - `docs/`：设计与任务说明。
 - `docker-compose.yml`：前后端容器化部署入口。
 
@@ -92,37 +92,46 @@ web-link:
 
 `frontend:` 下的配置由后端通过 `GET /api/v1/config` 下发，前端无需重新构建即可调整样式、瓦片、世界和部分业务参数。
 
-| 配置项                                           | 类型      | 默认值                                 | 说明                                                |
-|-----------------------------------------------|---------|-------------------------------------|---------------------------------------------------|
-| `frontend.realtimeWsPath`                     | string  | `/api/v1/realtime`                  | 前端实时列车 WebSocket 路径。                              |
-| `frontend.defaultRouteResults`                | int     | `10`                                | 默认展示的候选路线数量。                                      |
-| `frontend.maxRouteCandidates`                 | int     | `20`                                | 本地寻路最多计算的候选路线数量。                                  |
-| `frontend.defaultWorld`                       | string  | `world1`                            | 默认显示的世界名。                                         |
-| `frontend.defaultPricePerKm`                  | number  | `0.2`                               | 前端估算票价时使用的默认每公里价格（用于联络线价格计算）。                     |
-| `frontend.avatarUrlTemplate`                  | string  | `https://mineskin.eu/helm/{player}` | 玩家头像 URL 模板，`{player}` 会替换为玩家名或 UUID。             |
-| `frontend.worldTiles.<world>.tileUrl`         | string  | 空                                   | 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。    |
-| `frontend.worldTiles.<world>.zoom`            | number  | `14`                                | 进入该世界后的默认地图缩放级别。                                  |
-| `frontend.worldTiles.<world>.tileSize`        | number  | `256`                               | 单张瓦片图片像素尺寸。                                       |
-| `frontend.worldTiles.<world>.opacity`         | number  | `1`                                 | 瓦片图层透明度，范围 `0` 到 `1`；值越低线路越突出。                    |
-| `frontend.worldTiles.<world>.minNativeZoom`   | number  | `0`                                 | 瓦片源最低实际请求层级。                                      |
-| `frontend.worldTiles.<world>.maxNativeZoom`   | number  | 空                                   | 瓦片源最高实际请求层级；地图继续放大时会放大该层级瓦片，不会请求更高层级。             |
-| `frontend.worldTiles.<world>.minZoom`         | number  | `0`                                 | 该世界地图最低显示/交互缩放级别，同时也是瓦片图层最低显示级别。                  |
-| `frontend.worldTiles.<world>.maxZoom`         | number  | `20`                                | 该世界地图最高显示/交互缩放级别，同时也是瓦片图层最高显示级别。                  |
-| `frontend.worldTiles.<world>.scheme`          | string  | `xyz`                               | 瓦片 Y 轴编号方案，可选 `xyz` 或 `tms`。                      |
-| `frontend.worldTiles.<world>.mapScale`        | number  | `1`                                 | 1 个游戏方块对应多少「原生瓦片像素」。geojson 按游戏比例等比铺图，用它整体缩放对准瓦片。 |
-| `frontend.worldTiles.<world>.mapOffset`       | `[x,z]` | `[0,0]`                             | 游戏坐标整体平移（游戏单位），用它把线路挪到与瓦片底图对齐。                    |
-| `frontend.mapStyle.lineWidth`                 | number  | `3`                                 | 普通线路宽度，单位为屏幕像素。                                   |
-| `frontend.mapStyle.highlightWidth`            | number  | `7`                                 | 高亮路线宽度，单位为屏幕像素。                                   |
-| `frontend.mapStyle.dimOpacity`                | number  | `0.2`                               | 有高亮路线时非高亮线路透明度。                                   |
-| `frontend.mapStyle.lineOpacity`               | number  | `0.9`                               | 普通线路透明度。                                          |
-| `frontend.mapStyle.stationRadius`             | number  | `6`                                 | 车站圆点半径。                                           |
-| `frontend.mapStyle.stationStrokeWidth`        | number  | `2`                                 | 车站圆点描边宽度。                                         |
-| `frontend.mapStyle.stationTextSize`           | number  | `12`                                | 车站名称字号。                                           |
-| `frontend.mapStyle.stationMergePixelDistance` | number  | `28`                                | 同名站点在屏幕距离小于该值时合并显示；寻路仍使用原始节点。                     |
-| `frontend.mapStyle.trainIconSize`             | number  | `0.6`                               | MapLibre symbol 图标缩放。                             |
-| `frontend.trainIcons.express`                 | string  | 内置 SVG data URL                     | 直达车图标，可配置为 `data:`、`http(s):` 或前端可访问的静态资源 URL。    |
-| `frontend.trainIcons.normal`                  | string  | 内置 SVG data URL                     | 普通车图标。                                            |
-| `frontend.defaultSystemLogo`                  | string  | 内置 SVG data URL                     | 铁路系统没有 logo 时使用的默认图标。                             |
+| 配置项                                           | 类型      | 默认值                                 | 说明                                                             |
+|-----------------------------------------------|---------|-------------------------------------|----------------------------------------------------------------|
+| `frontend.realtimeWsPath`                     | string  | `/api/v1/realtime`                  | 前端实时列车 WebSocket 路径。                                           |
+| `frontend.defaultRouteResults`                | int     | `10`                                | 默认展示的候选路线数量。                                                   |
+| `frontend.maxRouteCandidates`                 | int     | `20`                                | 本地寻路最多计算的候选路线数量。                                               |
+| `frontend.defaultWorld`                       | string  | `world1`                            | 默认显示的世界名。                                                      |
+| `frontend.defaultPricePerKm`                  | number  | `0.2`                               | 前端估算票价时使用的默认每公里价格。                                             |
+| `frontend.currencyName`                       | string  | `帕元`                                | 票价展示使用的货币名称。                                                   |
+| `frontend.maxDistanceResults`                 | int     | `5`                                 | 展示「距离最近」的路线条数（`<=0` 不限制）。与插件 `search.max-distance-results` 对齐。 |
+| `frontend.maxPriceResults`                    | int     | `5`                                 | 展示「票价最低」的路线条数（`<=0` 不限制）。                                      |
+| `frontend.searchWeightDistance`               | number  | `0.5`                               | 混合排序距离权重：候选集内距离归一化后 ×此值，权重越小越靠前。                               |
+| `frontend.searchWeightPrice`                  | number  | `0.5`                               | 混合排序票价权重：候选集内票价归一化后 ×此值。                                       |
+| `frontend.minDirectResults`                   | int     | `1`                                 | 兜底：混排结果全是联程票时至少补最优的这么多条直达（`<=0` 不兜底）。                           |
+| `frontend.maxTransferResults`                 | int     | `3`                                 | 最多展示的联程票（一次换乘）方案条数（`<=0` 不限制，仍受候选上限约束）。                         |
+| `frontend.maxTransferCandidates`              | int     | `30`                                | 联程票寻路最多考察的候选换乘站数量，防止大线组合爆炸；优先直达路径上的经停站。                         |
+| `frontend.transferMinImprovement`             | number  | `0.2`                               | 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。`0` 表示只要严格更短即显示。        |
+| `frontend.avatarUrlTemplate`                  | string  | `https://mineskin.eu/helm/{player}` | 玩家头像 URL 模板，`{player}` 会替换为玩家名或 UUID。                          |
+| `frontend.worldTiles.<world>.tileUrl`         | string  | 空                                   | 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。                 |
+| `frontend.worldTiles.<world>.zoom`            | number  | `14`                                | 进入该世界后的默认地图缩放级别。                                               |
+| `frontend.worldTiles.<world>.tileSize`        | number  | `256`                               | 单张瓦片图片像素尺寸。                                                    |
+| `frontend.worldTiles.<world>.opacity`         | number  | `1`                                 | 瓦片图层透明度，范围 `0` 到 `1`；值越低线路越突出。                                 |
+| `frontend.worldTiles.<world>.minNativeZoom`   | number  | `0`                                 | 瓦片源最低实际请求层级。                                                   |
+| `frontend.worldTiles.<world>.maxNativeZoom`   | number  | 空                                   | 瓦片源最高实际请求层级；地图继续放大时会放大该层级瓦片，不会请求更高层级。                          |
+| `frontend.worldTiles.<world>.minZoom`         | number  | `0`                                 | 该世界地图最低显示/交互缩放级别，同时也是瓦片图层最低显示级别。                               |
+| `frontend.worldTiles.<world>.maxZoom`         | number  | `20`                                | 该世界地图最高显示/交互缩放级别，同时也是瓦片图层最高显示级别。                               |
+| `frontend.worldTiles.<world>.scheme`          | string  | `xyz`                               | 瓦片 Y 轴编号方案，可选 `xyz` 或 `tms`。                                   |
+| `frontend.worldTiles.<world>.mapScale`        | number  | `1`                                 | 1 个游戏方块对应多少「原生瓦片像素」。geojson 按游戏比例等比铺图，用它整体缩放对准瓦片。              |
+| `frontend.worldTiles.<world>.mapOffset`       | `[x,z]` | `[0,0]`                             | 游戏坐标整体平移（游戏单位），用它把线路挪到与瓦片底图对齐。                                 |
+| `frontend.mapStyle.lineWidth`                 | number  | `3`                                 | 普通线路宽度，单位为屏幕像素。                                                |
+| `frontend.mapStyle.highlightWidth`            | number  | `7`                                 | 高亮路线宽度，单位为屏幕像素。                                                |
+| `frontend.mapStyle.dimOpacity`                | number  | `0.2`                               | 有高亮路线时非高亮线路透明度。                                                |
+| `frontend.mapStyle.lineOpacity`               | number  | `0.9`                               | 普通线路透明度。                                                       |
+| `frontend.mapStyle.stationRadius`             | number  | `6`                                 | 车站圆点半径。                                                        |
+| `frontend.mapStyle.stationStrokeWidth`        | number  | `2`                                 | 车站圆点描边宽度。                                                      |
+| `frontend.mapStyle.stationTextSize`           | number  | `12`                                | 车站名称字号。                                                        |
+| `frontend.mapStyle.stationMergePixelDistance` | number  | `28`                                | 同名站点在屏幕距离小于该值时合并显示；寻路仍使用原始节点。                                  |
+| `frontend.mapStyle.trainIconSize`             | number  | `0.6`                               | MapLibre symbol 图标缩放。                                          |
+| `frontend.trainIcons.express`                 | string  | 内置 SVG data URL                     | 直达车图标，可配置为 `data:`、`http(s):` 或前端可访问的静态资源 URL。                 |
+| `frontend.trainIcons.normal`                  | string  | 内置 SVG data URL                     | 普通车图标。                                                         |
+| `frontend.defaultSystemLogo`                  | string  | 内置 SVG data URL                     | 铁路系统没有 logo 时使用的默认图标。                                          |
 
 ## 主要接口
 
@@ -133,7 +142,7 @@ web-link:
 - `GET /api/v1/trains`：当前列车快照。
 - `GET /api/v1/auth/login`、`/auth/callback`、`/auth/me`、`POST /auth/logout`：网页登录。
 - `POST /api/v1/auth/test-login`：测试登录，仅在 `auth.testAuthEnabled` 开启时可用。
-- `POST /api/v1/purchase`：在线购票。
+- `POST /api/v1/purchase`：在线购票（单段直达一次调用；联程票由前端对每段各调用一次）。
 - `GET /api/v1/me/history?page=1&pageSize=10`：当前登录玩家的乘车历史。
 - `GET /api/v1/realtime`：前端实时列车 WebSocket。
 - `GET /internal/plugin`：插件内部 WebSocket，需要 `Authorization: Bearer <plugin.sharedToken>`。

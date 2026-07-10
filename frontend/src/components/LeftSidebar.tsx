@@ -175,7 +175,7 @@ function RoutePanel() {
   return (
     <div className="panel">
       <div className="panel-header">
-        <h2>直达车查询</h2>
+        <h2>路线查询</h2>
         <button className="icon-btn" onClick={close}>
           ×
         </button>
@@ -199,7 +199,7 @@ function RoutePanel() {
       </div>
       <div className="panel-section route-list">
         {startStation && endStation && candidates.length === 0 && (
-          <div className="muted">所选两站间暂无直达路线</div>
+          <div className="muted">所选两站间暂无可用路线（直达 / 联程票）</div>
         )}
         {candidates.map((p, i) => (
           <RouteCard key={i} path={p} index={i} />

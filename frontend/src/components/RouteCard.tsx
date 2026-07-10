@@ -32,14 +32,33 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
       ? '游戏服务器离线，暂不可购票'
       : '';
 
+  const purchaseLeg = async (leg: RoutePath) => {
+    return api.purchase({ nodeIds: leg.nodeIds, lineIdSequence: leg.lineIdSequence });
+  };
+
   const purchase = async () => {
     setBusy(true);
     setMsg(null);
     try {
-      const result = await api.purchase({
-        nodeIds: path.nodeIds,
-        lineIdSequence: path.lineIdSequence,
-      });
+      if (path.kind === 'through' && path.journey) {
+        // 联程票：顺序下发各段购票（复刻插件 ThroughTicket 一次买整程、逐段交付）
+        const legs = path.journey.legs;
+        const names: string[] = [];
+        let totalPaid = 0;
+        for (let i = 0; i < legs.length; i++) {
+          const result = await purchaseLeg(legs[i]);
+          if (!result.success) {
+            setMsg(`第 ${i + 1} 段购票失败：${result.reason ? REASON_TEXT[result.reason] : '未知原因'}`);
+            setBusy(false);
+            return;
+          }
+          names.push(result.ticketName ?? `第${i + 1}段`);
+          totalPaid += result.price ?? 0;
+        }
+        setMsg(`联程票购票成功：${names.join(' + ')}（共花费 ${totalPaid.toFixed(2)} ${getConfig().currencyName}）`);
+        return;
+      }
+      const result = await purchaseLeg(path);
       if (result.success) {
         setMsg(
           `购票成功：${result.ticketName ?? ''}（花费 ${result.price?.toFixed(2)}，余额 ${result.balanceAfter?.toFixed(2)}）`,
@@ -57,25 +76,44 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
   return (
     <article className={`route-card ${selected ? 'selected' : ''}`} onClick={() => selectRoute(index)}>
       <div className="route-card-head">
-        <span className="route-rank">路线 {index + 1}</span>
+        <span className="route-rank">
+          路线 {index + 1}
+          {path.kind === 'through' && <span className="route-badge">联程票</span>}
+        </span>
         <div className="route-metrics">
           <span className="route-distance">{path.distance.toFixed(2)} km</span>
           <span className="route-price">{path.estimatedFare.toFixed(2)} {getConfig().currencyName}</span>
         </div>
       </div>
 
-      <StationSteps
-        path={path}
-        expanded={expanded}
-        onToggle={(e) => {
-          e.stopPropagation();
-          setExpanded((v) => !v);
-        }}
-        lineColor={lineColor}
-      />
+      {path.kind === 'through' && path.journey ? (
+        <ThroughSteps
+          journey={path.journey}
+          expanded={expanded}
+          onToggle={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          lineColor={lineColor}
+        />
+      ) : (
+        <StationSteps
+          path={path}
+          expanded={expanded}
+          onToggle={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          lineColor={lineColor}
+        />
+      )}
 
       <div className="route-info">
-        <span>共 {path.stations.length} 站</span>
+        {path.kind === 'through' && path.journey ? (
+          <span>需换乘 {path.journey.transferStations.length} 次 · 共 {path.journey.legs.length} 张票</span>
+        ) : (
+          <span>共 {path.stations.length} 站</span>
+        )}
       </div>
 
       {path.fareDetails && path.fareDetails.length > 0 && (
@@ -144,6 +182,35 @@ function StationSteps({
         </div>
       )}
       {end && end !== start && <StationRow step={end} role="end" lineColor={lineColor} />}
+    </div>
+  );
+}
+
+/** 联程票：分段展示各段站序，段间插入「在 X 换乘」分隔行。 */
+function ThroughSteps({
+  journey,
+  expanded,
+  onToggle,
+  lineColor,
+}: {
+  journey: NonNullable<RoutePath['journey']>;
+  expanded: boolean;
+  onToggle: MouseEventHandler<HTMLButtonElement>;
+  lineColor: (lineId?: string) => string;
+}) {
+  return (
+    <div className="route-through">
+      {journey.legs.map((leg, i) => (
+        <div key={i} className="through-leg">
+          <div className="through-leg-head">
+            第 {i + 1} 段 · {leg.distance.toFixed(2)} km · {leg.estimatedFare.toFixed(2)} {getConfig().currencyName}
+          </div>
+          <StationSteps path={leg} expanded={expanded} onToggle={onToggle} lineColor={lineColor} />
+          {i < journey.transferStations.length && (
+            <div className="through-transfer">↧ 在 {journey.transferStations[i]} 换乘</div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

@@ -28,6 +28,10 @@ export interface LineStringProps {
   length: number;
   layer?: number;
   departDir?: string;
+  /** 入向面门控：到达起点道岔的允许到达面集合（与插件 GeoLink.enterFacesFrom 同源）。空/缺失不门控。 */
+  enterFrom?: string[];
+  /** 沿本段到达终点节点的到达面 key（与插件 GeoLink.enterFaceTo 同源）。 */
+  enterTo?: string;
 }
 
 export type Feature = GeoJSON.Feature<GeoJSON.Geometry, PointProps | LineStringProps>;
@@ -90,6 +94,27 @@ export interface RoutePath {
   segments: RouteSegment[];
   fareDetails?: FareDetail[];
   estimatedFare: number;
+  /** 候选类型：直达（默认）或联程票。联程票时 journey 字段携带各段与换乘站。 */
+  kind?: 'direct' | 'through';
+  /** kind==='through' 时的联程票方案（两段直达 + 换乘站）。 */
+  journey?: JourneyPlan;
+}
+
+/**
+ * 联程票（一次换乘 / 两段直达）方案，复刻插件 JourneyPlan + ThroughTicket 的展示语义：
+ * 各段是独立直达路径（到换乘站下车、换乘、再上车），一次购买下发多张实体票。
+ */
+export interface JourneyPlan {
+  /** 各段直达路径，按乘车顺序排列（首段起点=行程起点，末段终点=行程终点）。 */
+  legs: RoutePath[];
+  /** 各换乘站名（size = legs.length-1）。第 i 个 == legs[i] 终点 == legs[i+1] 起点。 */
+  transferStations: string[];
+  /** 全程总距离（各段之和，km）。 */
+  totalDistance: number;
+  /** 全程估算总价（各段之和）。 */
+  totalFare: number;
+  /** 合并各段各系统的收费详情（用于底部票价明细展示）。 */
+  fareDetails?: FareDetail[];
 }
 
 /** 在线购票（§4.7）。 */
@@ -165,6 +190,18 @@ export interface FrontendConfig {
   defaultPricePerKm: number;
   testAuthEnabled: boolean;
   testAuthUUIDs?: string[];
+
+  // 搜索结果排序（复刻插件 search.*）
+  maxDistanceResults: number;
+  maxPriceResults: number;
+  searchWeightDistance: number;
+  searchWeightPrice: number;
+  minDirectResults: number;
+
+  // 联程票寻路参数
+  maxTransferResults: number;
+  maxTransferCandidates: number;
+  transferMinImprovement: number;
 }
 
 export interface RideHistoryItem {

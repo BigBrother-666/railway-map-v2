@@ -4,8 +4,9 @@
 import { create } from 'zustand';
 import { api, ApiError } from '../api/client';
 import { RouteGraph } from '../routing/graph';
-import { findByStation } from '../routing/pathfind';
-import { estimateFare, fareDetails } from '../routing/fare';
+import { findByStation, findTransferJourneys } from '../routing/pathfind';
+import { estimateFare, fareDetails, mergeFareDetails } from '../routing/fare';
+import { rankWithMinDirect, type Candidate } from '../routing/ranker';
 import { getConfig, setRuntimeConfig } from '../config';
 import type {
   FeatureCollection,
@@ -222,17 +223,61 @@ export const useStore = create<AppState>((set, get) => ({
       set({ candidates: [], selectedRouteIndex: null });
       return;
     }
-    const globalRate = getConfig().defaultPricePerKm;
+    const cfg = getConfig();
+    const globalRate = cfg.defaultPricePerKm;
     const isReverse = (lineId: string, station: string) => reverseSet.has(`${lineId}|${station}`);
-    const paths = findByStation(graph, startStation, endStation, getConfig().defaultRouteResults, isReverse).map((p) => {
+    const withFare = (p: RoutePath): RoutePath => {
       const details = fareDetails(p, systemMap, globalRate);
+      return { ...p, fareDetails: details, estimatedFare: estimateFare({ ...p, fareDetails: details }, systemMap, globalRate) };
+    };
+
+    // 直达候选池：覆盖「距离前 N ∪ 票价前 M」，两者之和作上限；任一不限(<=0)时退回不限条数(0)。
+    const directPool =
+      cfg.maxDistanceResults <= 0 || cfg.maxPriceResults <= 0 ? 0 : cfg.maxDistanceResults + cfg.maxPriceResults;
+    const directCandidates: RoutePath[] = findByStation(graph, startStation, endStation, directPool, isReverse).map(
+      (p) => ({ ...withFare(p), kind: 'direct' as const }),
+    );
+
+    // 联程票候选：限方案数 + 限候选换乘站数
+    const throughCandidates: RoutePath[] = findTransferJourneys(
+      graph,
+      startStation,
+      endStation,
+      cfg.maxTransferResults,
+      cfg.maxTransferCandidates,
+      cfg.transferMinImprovement,
+      isReverse,
+    ).map((j) => {
+      const legs = j.legs.map(withFare);
+      const legFareDetails = legs.map((l) => l.fareDetails ?? []);
+      const merged = mergeFareDetails(legFareDetails);
+      const totalFare = Math.round(legs.reduce((sum, l) => sum + l.estimatedFare, 0) * 100) / 100;
+      // 联程票用首段作为「代表路径」承载卡片头部/地图高亮基础字段，journey 携带完整两段
+      const rep = legs[0];
       return {
-        ...p,
-        fareDetails: details,
-        estimatedFare: estimateFare({ ...p, fareDetails: details }, systemMap, globalRate),
+        ...rep,
+        kind: 'through' as const,
+        distance: j.totalDistance,
+        estimatedFare: totalFare,
+        fareDetails: merged,
+        journey: { legs, transferStations: j.transferStations, totalDistance: j.totalDistance, totalFare, fareDetails: merged },
       };
     });
-    set({ candidates: paths, selectedRouteIndex: paths.length > 0 ? 0 : null });
+
+    // 汇总排序候选：直达在前、联程票在后（下标空间连续）
+    const all = [...directCandidates, ...throughCandidates];
+    const rankInput: Candidate[] = all.map((p, i) => ({ index: i, distance: p.distance, price: p.estimatedFare }));
+    const order = rankWithMinDirect(
+      rankInput,
+      directCandidates.length,
+      cfg.maxDistanceResults,
+      cfg.maxPriceResults,
+      cfg.searchWeightDistance,
+      cfg.searchWeightPrice,
+      cfg.minDirectResults,
+    );
+    const candidates = order.map((idx) => all[idx]);
+    set({ candidates, selectedRouteIndex: candidates.length > 0 ? 0 : null });
   },
 
   selectRoute(index) {

@@ -142,9 +142,10 @@ export class MapController {
    * 高亮一条路线（节点 id 序列）：在同一 lines source 上用 lines-highlight 图层按边 id 过滤，
    * 加粗并用<b>线路本身颜色</b>（问题 2）；其余线路淡化。null 时清除高亮、恢复正常（问题 1）。
    */
-  highlightRoute(nodeIds: string[] | null) {
+  highlightRoute(legs: string[][] | null, transferStations: string[] = []) {
     if (!this.fc || !this.map.getLayer('lines-highlight')) return;
-    if (!nodeIds || nodeIds.length < 2) {
+    const validLegs = (legs ?? []).filter((leg) => leg.length >= 2);
+    if (validLegs.length === 0) {
       // 清除高亮：highlight 边集合清空（filter 变空集，不渲染），base 恢复正常透明度
       this.highlightEdges = new Set();
       this.applyLineFilters();
@@ -152,43 +153,63 @@ export class MapController {
       this.setRouteEndpoints(null);
       return;
     }
-    // 收集路线各段的 edge id（geojson LineString 的 id 属性）
+    // 收集各段各区间的 edge id（geojson LineString 的 id 属性）
     const edgeIds = new Set<string>();
     const edgeByEndpoints = this.edgeIdIndex();
-    for (let i = 0; i < nodeIds.length - 1; i++) {
-      const id = edgeByEndpoints.get(`${nodeIds[i]}__${nodeIds[i + 1]}`);
-      if (id) edgeIds.add(id);
+    for (const leg of validLegs) {
+      for (let i = 0; i < leg.length - 1; i++) {
+        const id = edgeByEndpoints.get(`${leg[i]}__${leg[i + 1]}`);
+        if (id) edgeIds.add(id);
+      }
     }
     this.highlightEdges = edgeIds;
     this.applyLineFilters();
     // 其它线路淡化，突出高亮
     this.map.setPaintProperty('lines-layer', 'line-opacity', getConfig().mapStyle.dimOpacity);
-    this.setRouteEndpoints([nodeIds[0], nodeIds[nodeIds.length - 1]]);
+    // 端点：整程起点（首段首节点）、终点（末段末节点），换乘站单独打点
+    const first = validLegs[0];
+    const last = validLegs[validLegs.length - 1];
+    this.setRouteEndpoints(first[0], last[last.length - 1], transferStations);
   }
 
-  private setRouteEndpoints(nodeIds: [string, string] | null) {
+  private setRouteEndpoints(startId: string | null, endId?: string, transferStations: string[] = []) {
     if (!this.fc || !this.map.getSource(SRC_ENDPOINTS)) return;
-    if (!nodeIds) {
-      (this.map.getSource(SRC_ENDPOINTS) as maplibregl.GeoJSONSource).setData({ type: 'FeatureCollection', features: [] });
+    const src = this.map.getSource(SRC_ENDPOINTS) as maplibregl.GeoJSONSource;
+    if (!startId || !endId) {
+      src.setData({ type: 'FeatureCollection', features: [] });
       return;
     }
     const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
-    const roles = ['start', 'end'] as const;
-    for (let i = 0; i < nodeIds.length; i++) {
-      const id = nodeIds[i];
-      const f = this.fc.features.find((feat) => {
+    const pushByNodeId = (id: string, role: string) => {
+      const f = this.fc!.features.find((feat) => {
         const p = feat.properties as PointProps;
         return feat.geometry?.type === 'Point' && p.id === id;
+      });
+      if (!f || f.geometry?.type !== 'Point') return;
+      const c = (f.geometry as GeoJSON.Point).coordinates;
+      features.push({
+        type: 'Feature',
+        properties: { role },
+        geometry: { type: 'Point', coordinates: gameToLngLat(c[0], c[1], this.world) },
+      });
+    };
+    pushByNodeId(startId, 'start');
+    pushByNodeId(endId, 'end');
+    // 换乘站：按站名取任一站台节点坐标打点（联程票专用）
+    for (const name of transferStations) {
+      const f = this.fc.features.find((feat) => {
+        const p = feat.properties as PointProps;
+        return feat.geometry?.type === 'Point' && p.type === 'station' && p.name === name;
       });
       if (!f || f.geometry?.type !== 'Point') continue;
       const c = (f.geometry as GeoJSON.Point).coordinates;
       features.push({
         type: 'Feature',
-        properties: { role: roles[i] },
+        properties: { role: 'transfer' },
         geometry: { type: 'Point', coordinates: gameToLngLat(c[0], c[1], this.world) },
       });
     }
-    (this.map.getSource(SRC_ENDPOINTS) as maplibregl.GeoJSONSource).setData({ type: 'FeatureCollection', features });
+    src.setData({ type: 'FeatureCollection', features });
   }
 
   /** from__to → edge id 索引（按当前世界，懒构建一次性使用）。 */
@@ -284,7 +305,14 @@ export class MapController {
       source: SRC_ENDPOINTS,
       paint: {
         'circle-radius': getConfig().mapStyle.stationRadius + 2,
-        'circle-color': ['case', ['==', ['get', 'role'], 'start'], '#2fbf71', '#ef4444'],
+        'circle-color': [
+          'case',
+          ['==', ['get', 'role'], 'start'],
+          '#2fbf71',
+          ['==', ['get', 'role'], 'transfer'],
+          '#f5a623',
+          '#ef4444',
+        ],
         'circle-stroke-color': '#ffffff',
         'circle-stroke-width': 2,
       },

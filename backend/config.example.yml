@@ -32,6 +32,22 @@ frontend:
   defaultPricePerKm: 0.2
   avatarUrlTemplate: "https://mineskin.eu/helm/{player}"
   currencyName: "帕元"
+  # 搜索结果排序（复刻插件 search.*，与游戏内购票菜单一致）
+  # 显示「距离最近」的路线条数（<=0 不限制）
+  maxDistanceResults: 10
+  # 显示「票价最低」的路线条数（<=0 不限制）
+  maxPriceResults: 10
+  # 混合排序权重：候选集内距离、票价各归一化到 [0,1] 后加权，权重越小越靠前
+  searchWeightDistance: 0.5
+  searchWeightPrice: 0.5
+  # 兜底：混排结果里一条直达都没有（全是联程票）时，至少补最优的这么多条直达（<=0 不兜底）
+  minDirectResults: 1
+  # 联程票（一次换乘 / 两段直达）方案条数（<=0 不限制，仍受候选上限约束）
+  maxTransferResults: 2
+  # 联程票寻路最多考察的候选换乘站数量，防止大线组合爆炸；优先直达路径上的经停站
+  maxTransferCandidates: 10
+  # 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1 - 此值) 时才显示联程票。0 表示只要严格更短即显示
+  transferMinImprovement: 0.2
   worldTiles:
     world1:
       tileUrl: ""
