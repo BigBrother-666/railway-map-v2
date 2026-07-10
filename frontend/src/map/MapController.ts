@@ -517,6 +517,32 @@ export class MapController {
     }
   }
 
+  /**
+   * 平滑缩放并移动到给定路线（各段节点 id）的范围，使整条线路完整入镜。
+   * 用于点击路线卡片 / 乘车历史时的镜头联动。
+   */
+  fitToNodes(legs: string[][]) {
+    if (!this.fc) return;
+    const byId = new Map<string, GeoJSON.Point>();
+    for (const feat of this.fc.features) {
+      const p = feat.properties as PointProps;
+      if (feat.geometry?.type === 'Point' && p.id) byId.set(p.id, feat.geometry as GeoJSON.Point);
+    }
+    const bounds = new maplibregl.LngLatBounds();
+    let has = false;
+    for (const leg of legs) {
+      for (const id of leg) {
+        const geom = byId.get(id);
+        if (!geom) continue;
+        bounds.extend(gameToLngLat(geom.coordinates[0], geom.coordinates[1], this.world));
+        has = true;
+      }
+    }
+    if (!has) return;
+    const tile = getConfig().worldTiles[this.world];
+    this.map.fitBounds(bounds, { padding: 80, maxZoom: tile?.maxZoom ?? 18, duration: 600 });
+  }
+
   private applyWorldZoomLimits() {
     const tile = getConfig().worldTiles[this.world];
     this.map.setMinZoom(tile?.minZoom ?? 0);

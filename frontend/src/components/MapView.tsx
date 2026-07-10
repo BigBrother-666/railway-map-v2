@@ -73,11 +73,11 @@ export function MapView() {
       ctrlRef.current.highlightRoute(null);
       return;
     }
-    if (route.kind === 'through' && route.journey) {
-      ctrlRef.current.highlightRoute(route.journey.legs.map((l) => l.nodeIds));
-    } else {
-      ctrlRef.current.highlightRoute([route.nodeIds]);
-    }
+    const legs =
+      route.kind === 'through' && route.journey ? route.journey.legs.map((l) => l.nodeIds) : [route.nodeIds];
+    ctrlRef.current.highlightRoute(legs);
+    // 镜头联动：缩放并移动到选中线路（路线卡片 / 乘车历史通用）
+    ctrlRef.current.fitToNodes(legs);
   }, [candidates, selectedRouteIndex]);
 
   // 列车
