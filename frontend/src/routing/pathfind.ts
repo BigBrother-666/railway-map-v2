@@ -19,6 +19,49 @@ export type ReversePredicate = (lineId: string, stationName: string) => boolean;
 const KSP_SAFETY_CAP = 16;
 
 /**
+ * 二叉最小堆（按 Entry.dist 排序），复刻后端 java.util.PriorityQueue：push/pop 均 O(log n)。
+ * 原线性扫描每次 pop 是 O(n)，无全局 visited 去重时队列随出队数膨胀，大图上退化为 O(n²) 导致超时。
+ */
+class MinHeap {
+  private heap: Entry[] = [];
+  get size(): number {
+    return this.heap.length;
+  }
+  push(e: Entry): void {
+    const h = this.heap;
+    h.push(e);
+    let i = h.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (h[parent].dist <= h[i].dist) break;
+      [h[parent], h[i]] = [h[i], h[parent]];
+      i = parent;
+    }
+  }
+  pop(): Entry {
+    const h = this.heap;
+    const top = h[0];
+    const last = h.pop()!;
+    if (h.length > 0) {
+      h[0] = last;
+      let i = 0;
+      const n = h.length;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = 2 * i + 2;
+        let s = i;
+        if (l < n && h[l].dist < h[s].dist) s = l;
+        if (r < n && h[r].dist < h[s].dist) s = r;
+        if (s === i) break;
+        [h[s], h[i]] = [h[i], h[s]];
+        i = s;
+      }
+    }
+    return top;
+  }
+}
+
+/**
  * 按起点站名 + 终点站名求候选路线（距离升序、两级去重）。复刻插件 GeoRouteEngine.findByStation：
  * 枚举起点各站台各求 K 条 → 一级按 departDirectionSequence 去重 → 二级按 stationSequence 去重，
  * 择优规则 isBetterRoute（转线次数少者优先，相同则距离短者）。
@@ -90,15 +133,13 @@ function kShortest(
   const results: RoutePath[] = [];
   if (!graph.nodes.has(startId) || k < 1) return results;
 
-  const pq: Entry[] = [{ nodeId: startId, dist: 0, link: null, prev: null }];
+  const pq = new MinHeap();
+  pq.push({ nodeId: startId, dist: 0, link: null, prev: null });
   const MAX_POPS = 200_000;
   let pops = 0;
 
-  while (pq.length > 0 && results.length < k && pops < MAX_POPS) {
-    // 取最小 dist（线性扫描；候选规模小，足够）
-    let mi = 0;
-    for (let i = 1; i < pq.length; i++) if (pq[i].dist < pq[mi].dist) mi = i;
-    const cur = pq.splice(mi, 1)[0];
+  while (pq.size > 0 && results.length < k && pops < MAX_POPS) {
+    const cur = pq.pop(); // 取最小 dist，O(log n)（复刻后端 PriorityQueue）
     pops++;
 
     const curNode = graph.nodes.get(cur.nodeId);
