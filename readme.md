@@ -95,8 +95,6 @@ web-link:
 | 配置项                                           | 类型      | 默认值                                 | 说明                                                             |
 |-----------------------------------------------|---------|-------------------------------------|----------------------------------------------------------------|
 | `frontend.realtimeWsPath`                     | string  | `/api/v1/realtime`                  | 前端实时列车 WebSocket 路径。                                           |
-| `frontend.defaultRouteResults`                | int     | `10`                                | 默认展示的候选路线数量。                                                   |
-| `frontend.maxRouteCandidates`                 | int     | `20`                                | 本地寻路最多计算的候选路线数量。                                               |
 | `frontend.defaultWorld`                       | string  | `world1`                            | 默认显示的世界名。                                                      |
 | `frontend.defaultPricePerKm`                  | number  | `0.2`                               | 前端估算票价时使用的默认每公里价格。                                             |
 | `frontend.currencyName`                       | string  | `帕元`                                | 票价展示使用的货币名称。                                                   |

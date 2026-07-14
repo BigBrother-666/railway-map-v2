@@ -61,19 +61,17 @@ type DBConfig struct {
 }
 
 type FrontendConfig struct {
-	RealtimeWSPath      string                     `yaml:"realtimeWsPath" json:"realtimeWsPath"`
-	DefaultRouteResults int                        `yaml:"defaultRouteResults" json:"defaultRouteResults"`
-	MaxRouteCandidates  int                        `yaml:"maxRouteCandidates" json:"maxRouteCandidates"`
-	DefaultWorld        string                     `yaml:"defaultWorld" json:"defaultWorld"`
-	CurrencyName        string                     `yaml:"currencyName" json:"currencyName"`
+	RealtimeWSPath string `yaml:"realtimeWsPath" json:"realtimeWsPath"`
+	DefaultWorld   string `yaml:"defaultWorld" json:"defaultWorld"`
+	CurrencyName   string `yaml:"currencyName" json:"currencyName"`
 	// 主题色（强调色），16 进制 #RRGGBB。留空用默认黄色 #ffd400。
-	ThemeColor string `yaml:"themeColor" json:"themeColor"`
-	WorldTiles          map[string]WorldTileConfig `yaml:"worldTiles" json:"worldTiles"`
-	MapStyle            MapStyleConfig             `yaml:"mapStyle" json:"mapStyle"`
-	TrainIcons          TrainIconsConfig           `yaml:"trainIcons" json:"trainIcons"`
-	DefaultSystemLogo   string                     `yaml:"defaultSystemLogo" json:"defaultSystemLogo"`
-	AvatarURLTemplate   string                     `yaml:"avatarUrlTemplate" json:"avatarUrlTemplate"`
-	DefaultPricePerKm   float64                    `yaml:"defaultPricePerKm" json:"defaultPricePerKm"`
+	ThemeColor        string                     `yaml:"themeColor" json:"themeColor"`
+	WorldTiles        map[string]WorldTileConfig `yaml:"worldTiles" json:"worldTiles"`
+	MapStyle          MapStyleConfig             `yaml:"mapStyle" json:"mapStyle"`
+	TrainIcons        TrainIconsConfig           `yaml:"trainIcons" json:"trainIcons"`
+	DefaultSystemLogo string                     `yaml:"defaultSystemLogo" json:"defaultSystemLogo"`
+	AvatarURLTemplate string                     `yaml:"avatarUrlTemplate" json:"avatarUrlTemplate"`
+	DefaultPricePerKm float64                    `yaml:"defaultPricePerKm" json:"defaultPricePerKm"`
 
 	// 搜索结果排序（复刻插件 search.*，与菜单购票一致）
 	MaxDistanceResults   int     `yaml:"maxDistanceResults" json:"maxDistanceResults"`
@@ -183,12 +181,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Frontend.RealtimeWSPath == "" {
 		c.Frontend.RealtimeWSPath = "/api/v1/realtime"
-	}
-	if c.Frontend.DefaultRouteResults <= 0 {
-		c.Frontend.DefaultRouteResults = 10
-	}
-	if c.Frontend.MaxRouteCandidates <= 0 {
-		c.Frontend.MaxRouteCandidates = 20
 	}
 	if c.Frontend.RouteSearchTimeoutMs <= 0 {
 		c.Frontend.RouteSearchTimeoutMs = 10000

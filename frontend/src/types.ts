@@ -167,8 +167,6 @@ export interface WorldTileConfig {
 
 export interface FrontendConfig {
   realtimeWsPath: string;
-  defaultRouteResults: number;
-  maxRouteCandidates: number;
   defaultWorld: string;
   currencyName: string;
   /** 主题色（强调色），16 进制 #RRGGBB。 */

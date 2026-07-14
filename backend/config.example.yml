@@ -26,8 +26,6 @@ db:
 
 frontend:
   realtimeWsPath: "/api/v1/realtime"
-  defaultRouteResults: 10
-  maxRouteCandidates: 20
   defaultWorld: "world1"
   defaultPricePerKm: 0.2
   avatarUrlTemplate: "https://mineskin.eu/helm/{player}"

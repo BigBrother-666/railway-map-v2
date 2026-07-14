@@ -4,8 +4,6 @@ export const API_BASE = '/api/v1';
 
 const DEFAULT_CONFIG: FrontendConfig = {
   realtimeWsPath: '/api/v1/realtime',
-  defaultRouteResults: 10,
-  maxRouteCandidates: 20,
   defaultWorld: 'world1',
   currencyName: '帕元',
   themeColor: '#ffd400',
