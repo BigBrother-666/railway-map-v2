@@ -1,0 +1,58 @@
+# 生产部署用 compose：应用镜像从 GHCR 拉取（由 CI 构建推送），不在服务器上编译。
+# 服务器上需同目录存在 .env 与 backend/config.yml（含密钥，不进 git）。
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bcts_web}
+      MYSQL_USER: ${MYSQL_USER:-bcts}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me-db-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root-password}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+  backend:
+    image: ghcr.io/bigbrother-666/railway-map-v2-backend:${IMAGE_TAG:-latest}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      BCTS_PLUGIN_TOKEN: ${BCTS_PLUGIN_TOKEN:-change-me}
+      BCTS_JWT_SECRET: ${BCTS_JWT_SECRET:-change-me-dev-secret}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
+      BCTS_DB_DRIVER: ${BCTS_DB_DRIVER:-mysql}
+      BCTS_DB_PATH: ${BCTS_DB_PATH:-data/bcts-web.db}
+      BCTS_DB_DSN: "${MYSQL_USER:-bcts}:${MYSQL_PASSWORD:-change-me-db-password}@tcp(mysql:3306)/${MYSQL_DATABASE:-bcts_web}?charset=utf8mb4&parseTime=true&loc=Local"
+    volumes:
+      - ./backend/config.yml:/app/config.yml:ro
+      - backend-data:/app/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/bigbrother-666/railway-map-v2-frontend:${IMAGE_TAG:-latest}
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # prod nginx 配置覆盖镜像内的 dev 版（内含 443 + 证书路径，需先替换 your.domain）
+      - ./frontend/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      # 宿主机 certbot 签发的证书（只读）
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # ACME 续期验证的 webroot（宿主机目录绑定挂载，certbot renew 的 --webroot-path 用同一路径）
+      - /var/www/certbot:/var/www/certbot
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  backend-data:
