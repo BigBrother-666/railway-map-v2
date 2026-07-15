@@ -155,6 +155,44 @@ func TestExpressRideHistoryRequiresPaymentRouteAndFullPresence(t *testing.T) {
 	}
 }
 
+func TestCommonRideHistoryRecordsLoopRoute(t *testing.T) {
+	s := openTestStore(t)
+	player := model.Player{UUID: "uuid-1", Name: "Steve"}
+	// B -> C -> A -> B 折返：首尾同名站，仍应记录一条历史。
+	events := []model.RideEventData{
+		commonEvent("train-loop", "node-b", "B", 1000, player),
+		commonEvent("train-loop", "switch-1", "", 2000, player),
+		commonEvent("train-loop", "node-c", "C", 3000, player),
+		commonEvent("train-loop", "switch-2", "", 4000, player),
+		commonEvent("train-loop", "node-a", "A", 5000, player),
+		commonEvent("train-loop", "switch-3", "", 6000, player),
+		commonEvent("train-loop", "node-b", "B", 7000, player),
+	}
+	for _, ev := range events {
+		if err := s.RecordRideEvent(ev); err != nil {
+			t.Fatalf("record ride event %s: %v", ev.NodeID, err)
+		}
+	}
+	if err := s.FinalizeRide("train-loop"); err != nil {
+		t.Fatalf("finalize loop ride: %v", err)
+	}
+	history, err := s.ListRideHistory(player.UUID, 1, 10)
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if history.Total != 1 || len(history.Items) != 1 {
+		t.Fatalf("expected one loop history item, total=%d len=%d", history.Total, len(history.Items))
+	}
+	item := history.Items[0]
+	if item.StartStation != "B" || item.EndStation != "B" {
+		t.Fatalf("expected loop B -> B, got %s -> %s", item.StartStation, item.EndStation)
+	}
+	wantNodes := []string{"node-b", "switch-1", "node-c", "switch-2", "node-a", "switch-3", "node-b"}
+	if !reflect.DeepEqual(item.NodeIDs, wantNodes) {
+		t.Fatalf("unexpected loop nodes: got %v want %v", item.NodeIDs, wantNodes)
+	}
+}
+
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 	s, err := openSQLite(filepath.Join(t.TempDir(), "test.db"))

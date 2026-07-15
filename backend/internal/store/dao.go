@@ -375,7 +375,14 @@ func (s *Store) finalizeCommon(playerUUID, playerName, trainID, trainType string
 	trimmed := stops[start : end+1]
 	startStation := trimmed[0].stationName
 	endStation := trimmed[len(trimmed)-1].stationName
-	if startStation == "" || endStation == "" || startStation == endStation {
+	// 需至少经过 2 个不同车站节点才算一段乘车；折返/环线（首尾同名站）合法。
+	stationNodes := map[string]struct{}{}
+	for _, st := range trimmed {
+		if st.stationName != "" {
+			stationNodes[st.nodeID] = struct{}{}
+		}
+	}
+	if startStation == "" || endStation == "" || len(stationNodes) < 2 {
 		return nil
 	}
 	nodeIDs := make([]string, len(trimmed))
@@ -406,7 +413,7 @@ type rideHistoryRow struct {
 }
 
 func (s *Store) insertRideHistory(h rideHistoryRow) error {
-	if len(h.nodeIDs) < 2 || h.startStation == "" || h.endStation == "" || h.startStation == h.endStation {
+	if len(h.nodeIDs) < 2 || h.startStation == "" || h.endStation == "" {
 		return nil
 	}
 	nodeJSON, _ := json.Marshal(h.nodeIDs)
