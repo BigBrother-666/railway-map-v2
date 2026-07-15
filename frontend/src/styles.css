@@ -748,7 +748,7 @@ body,
 /* 起点/终点之间的交换按钮 */
 .route-swap-row {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   margin: 4px 0;
 }
 .route-swap-btn {
