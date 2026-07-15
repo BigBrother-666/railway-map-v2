@@ -98,19 +98,19 @@ web-link:
 | `frontend.defaultWorld`                       | string  | `world1`                            | 默认显示的世界名。                                                      |
 | `frontend.defaultPricePerKm`                  | number  | `0.2`                               | 前端估算票价时使用的默认每公里价格。                                             |
 | `frontend.currencyName`                       | string  | `帕元`                                | 票价展示使用的货币名称。                                                   |
-| `frontend.themeColor`                         | string  | `#ffd400`                           | 主题色（强调色），16 进制 `#RRGGBB`；应用于按钮、高亮等 `--accent`。非法值忽略并保留默认黄色。 |
+| `frontend.themeColor`                         | string  | `#ffd400`                           | 主题色（强调色），16 进制 `#RRGGBB`；应用于按钮、高亮等 `--accent`。非法值忽略并保留默认黄色。    |
 | `frontend.maxDistanceResults`                 | int     | `5`                                 | 展示「距离最近」的路线条数（`<=0` 不限制）。与插件 `search.max-distance-results` 对齐。 |
 | `frontend.maxPriceResults`                    | int     | `5`                                 | 展示「票价最低」的路线条数（`<=0` 不限制）。                                      |
 | `frontend.searchWeightDistance`               | number  | `0.5`                               | 混合排序距离权重：候选集内距离归一化后 ×此值，权重越小越靠前。                               |
 | `frontend.searchWeightPrice`                  | number  | `0.5`                               | 混合排序票价权重：候选集内票价归一化后 ×此值。                                       |
-| `frontend.minDirectResults`                   | int     | `1`                                 | 兜底：混排结果全是联程票时至少补最优的这么多条直达（`<=0` 不兜底）。                           |
-| `frontend.maxTransferResults`                 | int     | `3`                                 | 最多展示的联程票（一次换乘）方案条数（`<=0` 不限制，仍受候选上限约束）。                         |
-| `frontend.maxTransferCandidates`              | int     | `30`                                | 联程票寻路最多考察的候选换乘站数量，防止大线组合爆炸；优先直达路径上的经停站。                         |
-| `frontend.transferMinImprovement`             | number  | `0.2`                               | 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。`0` 表示只要严格更短即显示。        |
-| `frontend.routeSearchTimeoutMs`               | int     | `10000`                             | 路线查询超时毫秒数（前端 Web Worker 寻路）。查询期间界面显示查询中动画不卡死；超时则终止计算并提示失败。       |
+| `frontend.minDirectResults`                   | int     | `1`                                 | 兜底：混排结果全是联程票时至少补最优的这么多条直达（`<=0` 不兜底）。                          |
+| `frontend.maxTransferResults`                 | int     | `3`                                 | 最多展示的联程票（一次换乘）方案条数（`<=0` 不限制，仍受候选上限约束）。                        |
+| `frontend.maxTransferCandidates`              | int     | `30`                                | 联程票寻路最多考察的候选换乘站数量，防止大线组合爆炸；优先直达路径上的经停站。                        |
+| `frontend.transferMinImprovement`             | number  | `0.2`                               | 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。`0` 表示只要严格更短即显示。      |
+| `frontend.routeSearchTimeoutMs`               | int     | `10000`                             | 路线查询超时毫秒数（前端 Web Worker 寻路）。查询期间界面显示查询中动画不卡死；超时则终止计算并提示失败。     |
 | `frontend.avatarUrlTemplate`                  | string  | `https://mineskin.eu/helm/{player}` | 玩家头像 URL 模板，`{player}` 会替换为玩家名或 UUID。                          |
 | `frontend.worldTiles.<world>.tileUrl`         | string  | 空                                   | 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。                 |
-| `frontend.worldTiles.<world>.zoom`            | number  | 空                                   | 进入该世界时的初始地图缩放级别。配置后以 `center`（或数据范围中心）为镜头中心定位；不配则按数据范围自动框选缩放。 |
+| `frontend.worldTiles.<world>.zoom`            | number  | 空                                   | 进入该世界时的初始地图缩放级别。配置后以 `center`（或数据范围中心）为镜头中心定位；不配则按数据范围自动框选缩放。  |
 | `frontend.worldTiles.<world>.tileSize`        | number  | `256`                               | 单张瓦片图片像素尺寸。                                                    |
 | `frontend.worldTiles.<world>.opacity`         | number  | `1`                                 | 瓦片图层透明度，范围 `0` 到 `1`；值越低线路越突出。                                 |
 | `frontend.worldTiles.<world>.minNativeZoom`   | number  | `0`                                 | 瓦片源最低实际请求层级。                                                   |
@@ -120,7 +120,7 @@ web-link:
 | `frontend.worldTiles.<world>.scheme`          | string  | `xyz`                               | 瓦片 Y 轴编号方案，可选 `xyz` 或 `tms`。                                   |
 | `frontend.worldTiles.<world>.mapScale`        | number  | `1`                                 | 1 个游戏方块对应多少「原生瓦片像素」。geojson 按游戏比例等比铺图，用它整体缩放对准瓦片。              |
 | `frontend.worldTiles.<world>.mapOffset`       | `[x,z]` | `[0,0]`                             | 游戏坐标整体平移（游戏单位），用它把线路挪到与瓦片底图对齐。                                 |
-| `frontend.worldTiles.<world>.center`          | `[x,z]` | 空                                   | 进入该世界时的初始镜头中心（游戏坐标 `[x,z]`）。不配则回退到数据范围中心。                        |
+| `frontend.worldTiles.<world>.center`          | `[x,z]` | 空                                   | 进入该世界时的初始镜头中心（游戏坐标 `[x,z]`）。不配则回退到数据范围中心。                      |
 | `frontend.mapStyle.lineWidth`                 | number  | `3`                                 | 普通线路宽度，单位为屏幕像素。                                                |
 | `frontend.mapStyle.highlightWidth`            | number  | `7`                                 | 高亮路线宽度，单位为屏幕像素。                                                |
 | `frontend.mapStyle.dimOpacity`                | number  | `0.2`                               | 有高亮路线时非高亮线路透明度。                                                |
@@ -176,6 +176,29 @@ docker compose up --build -d
 ```
 
 Compose 默认会启动 `mysql:8.4`、后端和前端。MySQL 数据保存在 `mysql-data` volume 中；后端的日志和 SQLite 数据文件保存在 `backend-data` volume 中。前端访问 `http://localhost:5173`，后端暴露 `localhost:8080`，插件连接地址为 `ws://<部署机器>:8080/internal/plugin`。
+
+## 数据库维护（生产）
+
+后端启动时会用 `CREATE TABLE IF NOT EXISTS` 自动建表，因此“重建数据库”本质是清空 MySQL 数据卷再重启，无需单独的建表 SQL。相关脚本放在 `scripts/` 下，需在 `docker-compose.prod.yml` 同级目录（含 `.env`）执行。
+
+### 重建数据库
+
+破坏性操作，会删除现有全部数据，容器启动后自动重新建表。
+
+```bash
+./scripts/rebuild-db.sh
+```
+
+### 从备份恢复
+
+把 `db-backups/*.sql.gz` 导入回正在运行的 MySQL 容器。不带参数时使用最新一份备份，也可指定文件。
+
+```bash
+./scripts/restore-db.sh                        # 恢复最新备份
+./scripts/restore-db.sh db-backups/xxx.sql.gz  # 恢复指定备份
+```
+
+两个脚本都会读取 `.env` 里的 `MYSQL_DATABASE` / `MYSQL_ROOT_PASSWORD`。
 
 ## 验证命令
 

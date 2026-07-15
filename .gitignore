@@ -7,4 +7,5 @@
 /backend/data
 /backend/.env
 /backend/config.yml
+/db-backups
 
