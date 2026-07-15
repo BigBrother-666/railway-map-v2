@@ -214,6 +214,39 @@ body,
 }
 .sidebar-left {
   left: 0;
+  transition: transform 0.25s ease;
+  /* 允许折叠按钮溢出到侧栏右缘外侧 */
+  overflow: visible;
+}
+/* 折叠：整体左移，只露出右缘一小条（含折叠按钮） */
+.sidebar-left.collapsed {
+  transform: translateX(calc(-100% + 14px));
+}
+/* 折叠切换按钮：贴在侧栏右缘外侧，始终可见 */
+.sidebar-collapse-btn {
+  position: absolute;
+  top: 50%;
+  right: -14px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 56px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.2);
+}
+.sidebar-collapse-btn:hover {
+  background: var(--panel-2);
 }
 .sidebar-right {
   top: 12px;

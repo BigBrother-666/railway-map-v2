@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { StationSearch } from './StationSearch';
 import { RouteCard } from './RouteCard';
@@ -8,10 +9,20 @@ import type { RideHistoryItem } from '../types';
 /** 左侧边栏：车站信息 / 路线查询 / 列车信息（仿 Google 地图）。 */
 export function LeftSidebar() {
   const sidebar = useStore((s) => s.sidebar);
+  // 折叠状态：折叠后侧栏滑出屏幕、只露出边缘按钮，避免手机上占屏过大。
+  const [collapsed, setCollapsed] = useState(false);
   if (sidebar === 'idle') return null;
 
   return (
-    <div className="sidebar sidebar-left">
+    <div className={`sidebar sidebar-left ${collapsed ? 'collapsed' : ''}`}>
+      <button
+        className="sidebar-collapse-btn"
+        onClick={() => setCollapsed((v) => !v)}
+        aria-label={collapsed ? '展开侧边栏' : '折叠侧边栏'}
+        title={collapsed ? '展开' : '折叠'}
+      >
+        {collapsed ? '›' : '‹'}
+      </button>
       {sidebar === 'station' && <StationPanel />}
       {sidebar === 'route' && <RoutePanel />}
       {sidebar === 'train' && <TrainInfo />}
