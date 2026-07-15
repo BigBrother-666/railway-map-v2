@@ -567,14 +567,18 @@ body,
 .route-metrics {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
 }
 .route-distance,
 .route-price {
+  display: inline-flex;
+  align-items: center;
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 12px;
+  line-height: 18px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -669,9 +673,15 @@ body,
 .fare-row {
   display: grid;
   grid-template-columns: 1fr auto auto;
+  align-items: center;
   gap: 8px;
   padding: 5px 0 0;
+  line-height: 18px;
   color: var(--text);
+}
+.fare-row > span:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .passenger-list {
   display: flex;
