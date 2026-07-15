@@ -64,6 +64,7 @@ func main() {
 	cache := geo.NewCache(st)
 	hub := ws.NewHub(cfg.Realtime.ClientSendBuffer, nil, logger)
 	agg := realtime.NewAggregator(time.Duration(cfg.Realtime.TrainTimeoutSeconds)*time.Second, hub)
+	agg.SetRideFinalizer(st, logger)
 	hub.SetSnapshotter(agg)
 	stopSweeper := agg.StartSweeper()
 	defer stopSweeper()

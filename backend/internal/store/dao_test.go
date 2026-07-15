@@ -69,6 +69,9 @@ func TestCommonRideHistoryUsesCompletedPlatformInterval(t *testing.T) {
 			t.Fatalf("record ride event %s: %v", ev.NodeID, err)
 		}
 	}
+	if err := s.FinalizeRide("train-common"); err != nil {
+		t.Fatalf("finalize ride: %v", err)
+	}
 
 	history, err := s.ListRideHistory(player.UUID, 1, 10)
 	if err != nil {
@@ -107,6 +110,9 @@ func TestExpressRideHistoryRequiresPaymentRouteAndFullPresence(t *testing.T) {
 			t.Fatalf("record missing-passenger event %s: %v", ev.NodeID, err)
 		}
 	}
+	if err := s.FinalizeRide("train-miss"); err != nil {
+		t.Fatalf("finalize missing ride: %v", err)
+	}
 	history, err := s.ListRideHistory(player.UUID, 1, 10)
 	if err != nil {
 		t.Fatalf("list history after missing passenger: %v", err)
@@ -126,6 +132,9 @@ func TestExpressRideHistoryRequiresPaymentRouteAndFullPresence(t *testing.T) {
 		if err := s.RecordRideEvent(ev); err != nil {
 			t.Fatalf("record full event %s: %v", ev.NodeID, err)
 		}
+	}
+	if err := s.FinalizeRide("train-full"); err != nil {
+		t.Fatalf("finalize full ride: %v", err)
 	}
 	history, err = s.ListRideHistory(player.UUID, 1, 10)
 	if err != nil {

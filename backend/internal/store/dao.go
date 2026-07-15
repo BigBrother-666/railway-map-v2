@@ -161,7 +161,9 @@ func (s *Store) RecordRidePayment(pay model.RidePaymentData) error {
 	return err
 }
 
-// RecordRideEvent stores one triggered platform/bcswitcher event and updates player ride history.
+// RecordRideEvent stores one triggered platform/bcswitcher event, recording the
+// set of players aboard the train at that node. Ride history is built later from
+// these events when the train is removed (see FinalizeRide).
 func (s *Store) RecordRideEvent(ev model.RideEventData) error {
 	if ev.ArrivedAt <= 0 {
 		ev.ArrivedAt = time.Now().UnixMilli()
@@ -173,52 +175,24 @@ func (s *Store) RecordRideEvent(ev model.RideEventData) error {
 			ev.TrainType = "common"
 		}
 	}
-	current := make(map[string]model.Player, len(ev.Passengers))
 	uuids := make([]string, 0, len(ev.Passengers))
 	for _, p := range ev.Passengers {
 		if p.UUID == "" {
 			continue
 		}
-		current[p.UUID] = p
 		uuids = append(uuids, p.UUID)
 		if err := s.upsertRidePlayer(p, ev.ArrivedAt); err != nil {
 			return err
 		}
 	}
 	uuidsJSON, _ := json.Marshal(uuids)
-	if _, err := s.db.Exec(
+	_, err := s.db.Exec(
 		`INSERT INTO ride_events
 			(train_id, train_type, node_id, station_name, express, line_id, arrived_at, player_uuids)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		ev.TrainID, ev.TrainType, ev.NodeID, ev.StationName, boolToInt(ev.Express), ev.LineID, ev.ArrivedAt, string(uuidsJSON),
-	); err != nil {
-		return err
-	}
-
-	existing, err := s.activeSessionPlayers(ev.TrainID)
-	if err != nil {
-		return err
-	}
-	for _, uuid := range existing {
-		if _, ok := current[uuid]; !ok {
-			if err := s.finishRideSession(uuid, ev.TrainID); err != nil {
-				return err
-			}
-		}
-	}
-	for _, p := range ev.Passengers {
-		if p.UUID == "" {
-			continue
-		}
-		if ev.Express {
-			if err := s.updateExpressSession(p, ev); err != nil {
-				return err
-			}
-		} else if err := s.updateCommonSession(p, ev); err != nil {
-			return err
-		}
-	}
-	return nil
+	)
+	return err
 }
 
 func (s *Store) upsertRidePlayer(player model.Player, updatedAt int64) error {
@@ -237,21 +211,57 @@ func (s *Store) upsertRidePlayer(player model.Player, updatedAt int64) error {
 	return err
 }
 
-func (s *Store) activeSessionPlayers(trainID string) ([]string, error) {
-	rows, err := s.db.Query(`SELECT player_uuid FROM ride_sessions WHERE train_id = ?`, trainID)
+// rideEventRow is one recorded ride event replayed during finalize.
+type rideEventRow struct {
+	nodeID      string
+	stationName string
+	trainType   string
+	express     bool
+	arrivedAt   int64
+	players     []string
+}
+
+// FinalizeRide builds ride history for every player that appeared aboard the
+// given train, from its recorded ride_events. Called when the train is removed
+// (realtime.removed) or swept for timeout; idempotent via ride_history's unique key.
+func (s *Store) FinalizeRide(trainID string) error {
+	if trainID == "" {
+		return nil
+	}
+	rows, err := s.db.Query(
+		`SELECT node_id, station_name, train_type, express, arrived_at, player_uuids
+		 FROM ride_events WHERE train_id = ? ORDER BY arrived_at ASC, id ASC`,
+		trainID,
+	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
-	var uuids []string
+	var events []rideEventRow
+	present := map[string]struct{}{}
 	for rows.Next() {
-		var uuid string
-		if err := rows.Scan(&uuid); err != nil {
-			return nil, err
+		var ev rideEventRow
+		var express int
+		var uuidsJSON string
+		if err := rows.Scan(&ev.nodeID, &ev.stationName, &ev.trainType, &express, &ev.arrivedAt, &uuidsJSON); err != nil {
+			return err
 		}
-		uuids = append(uuids, uuid)
+		ev.express = intToBool(express)
+		_ = json.Unmarshal([]byte(uuidsJSON), &ev.players)
+		events = append(events, ev)
+		for _, u := range ev.players {
+			present[u] = struct{}{}
+		}
 	}
-	return uuids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for uuid := range present {
+		if err := s.finalizeRidePlayer(uuid, trainID, events); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type ridePayment struct {
@@ -290,208 +300,116 @@ func (s *Store) loadRidePayment(playerUUID, trainID string) (*ridePayment, error
 	return &pay, nil
 }
 
-type rideSession struct {
-	PlayerUUID       string
-	PlayerName       string
-	TrainID          string
-	TrainType        string
-	Express          bool
-	StartedAt        int64
-	UpdatedAt        int64
-	StartStation     string
-	EndStation       string
-	StationCount     int
-	Distance         float64
-	PaidFare         float64
-	NodeIDs          []string
-	CompletedNodeIDs []string
-	RouteNodeIDs     []string
-	AllPresent       bool
+// playerNodeStop is one node at which a player was present, in ride order.
+type playerNodeStop struct {
+	nodeID      string
+	stationName string
+	arrivedAt   int64
 }
 
-func (s *Store) loadRideSession(playerUUID, trainID string) (*rideSession, error) {
-	row := s.db.QueryRow(
-		`SELECT player_uuid, player_name, train_id, train_type, express, started_at, updated_at,
-			start_station, end_station, station_count, distance, paid_fare,
-			node_ids, completed_node_ids, route_node_ids, all_present
-		 FROM ride_sessions WHERE player_uuid = ? AND train_id = ?`,
-		playerUUID, trainID,
-	)
-	var sess rideSession
-	var express, allPresent int
-	var nodeJSON, completedJSON, routeJSON string
-	if err := row.Scan(&sess.PlayerUUID, &sess.PlayerName, &sess.TrainID, &sess.TrainType, &express,
-		&sess.StartedAt, &sess.UpdatedAt, &sess.StartStation, &sess.EndStation, &sess.StationCount,
-		&sess.Distance, &sess.PaidFare, &nodeJSON, &completedJSON, &routeJSON, &allPresent); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
+// finalizeRidePlayer builds and stores one player's ride history from the train's events.
+func (s *Store) finalizeRidePlayer(playerUUID, trainID string, events []rideEventRow) error {
+	var stops []playerNodeStop
+	express := false
+	trainType := ""
+	for _, ev := range events {
+		if !contains(ev.players, playerUUID) {
+			continue
 		}
-		return nil, err
-	}
-	sess.Express = intToBool(express)
-	sess.AllPresent = intToBool(allPresent)
-	_ = json.Unmarshal([]byte(nodeJSON), &sess.NodeIDs)
-	_ = json.Unmarshal([]byte(completedJSON), &sess.CompletedNodeIDs)
-	_ = json.Unmarshal([]byte(routeJSON), &sess.RouteNodeIDs)
-	return &sess, nil
-}
-
-func (s *Store) saveRideSession(sess rideSession) error {
-	nodeJSON, _ := json.Marshal(sess.NodeIDs)
-	completedJSON, _ := json.Marshal(sess.CompletedNodeIDs)
-	routeJSON, _ := json.Marshal(sess.RouteNodeIDs)
-	var query string
-	if s.dialect == dialectMySQL {
-		query = `INSERT INTO ride_sessions
-			(player_uuid, player_name, train_id, train_type, express, started_at, updated_at,
-			 start_station, end_station, station_count, distance, paid_fare,
-			 node_ids, completed_node_ids, route_node_ids, all_present)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON DUPLICATE KEY UPDATE
-				player_name = VALUES(player_name),
-				train_type = VALUES(train_type),
-				express = VALUES(express),
-				started_at = VALUES(started_at),
-				updated_at = VALUES(updated_at),
-				start_station = VALUES(start_station),
-				end_station = VALUES(end_station),
-				station_count = VALUES(station_count),
-				distance = VALUES(distance),
-				paid_fare = VALUES(paid_fare),
-				node_ids = VALUES(node_ids),
-				completed_node_ids = VALUES(completed_node_ids),
-				route_node_ids = VALUES(route_node_ids),
-				all_present = VALUES(all_present)`
-	} else {
-		query = `INSERT OR REPLACE INTO ride_sessions
-			(player_uuid, player_name, train_id, train_type, express, started_at, updated_at,
-			 start_station, end_station, station_count, distance, paid_fare,
-			 node_ids, completed_node_ids, route_node_ids, all_present)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	}
-	_, err := s.db.Exec(
-		query,
-		sess.PlayerUUID, sess.PlayerName, sess.TrainID, sess.TrainType, boolToInt(sess.Express),
-		sess.StartedAt, sess.UpdatedAt, sess.StartStation, sess.EndStation, sess.StationCount,
-		sess.Distance, sess.PaidFare, string(nodeJSON), string(completedJSON), string(routeJSON), boolToInt(sess.AllPresent),
-	)
-	return err
-}
-
-func (s *Store) updateCommonSession(player model.Player, ev model.RideEventData) error {
-	sess, err := s.loadRideSession(player.UUID, ev.TrainID)
-	if err != nil {
-		return err
-	}
-	isPlatform := ev.StationName != ""
-	if sess == nil {
-		if !isPlatform {
-			return nil
+		express = ev.express
+		trainType = ev.trainType
+		// 去重连续相同节点
+		if len(stops) > 0 && stops[len(stops)-1].nodeID == ev.nodeID {
+			continue
 		}
-		sess = &rideSession{
-			PlayerUUID: player.UUID, PlayerName: player.Name, TrainID: ev.TrainID, TrainType: ev.TrainType,
-			Express: false, StartedAt: ev.ArrivedAt, StartStation: ev.StationName, EndStation: ev.StationName,
-			StationCount: 1, UpdatedAt: ev.ArrivedAt, AllPresent: true,
-		}
-		appendUniqueNode(&sess.NodeIDs, ev.NodeID)
-		sess.CompletedNodeIDs = append([]string(nil), sess.NodeIDs...)
-		return s.saveRideSession(*sess)
+		stops = append(stops, playerNodeStop{nodeID: ev.nodeID, stationName: ev.stationName, arrivedAt: ev.arrivedAt})
 	}
-
-	sess.PlayerName = player.Name
-	sess.UpdatedAt = ev.ArrivedAt
-	appendUniqueNode(&sess.NodeIDs, ev.NodeID)
-	if isPlatform {
-		if sess.StartStation == "" {
-			sess.StartStation = ev.StationName
-		}
-		if sess.EndStation != ev.StationName {
-			sess.StationCount++
-		}
-		sess.EndStation = ev.StationName
-		sess.CompletedNodeIDs = append([]string(nil), sess.NodeIDs...)
-	}
-	if err := s.saveRideSession(*sess); err != nil {
-		return err
-	}
-	if isPlatform && sess.StationCount >= 2 {
-		return s.upsertRideHistory(*sess)
-	}
-	return nil
-}
-
-func (s *Store) updateExpressSession(player model.Player, ev model.RideEventData) error {
-	pay, err := s.loadRidePayment(player.UUID, ev.TrainID)
-	if err != nil || pay == nil {
-		return err
-	}
-	if len(pay.RouteNodeIDs) == 0 {
+	if len(stops) == 0 {
 		return nil
 	}
-	sess, err := s.loadRideSession(player.UUID, ev.TrainID)
-	if err != nil {
-		return err
+	name := s.ridePlayerName(playerUUID)
+	if express {
+		return s.finalizeExpress(playerUUID, name, trainID, trainType, stops)
 	}
-	if sess == nil {
-		if ev.NodeID != pay.RouteNodeIDs[0] {
-			return nil
-		}
-		sess = &rideSession{
-			PlayerUUID: player.UUID, PlayerName: player.Name, TrainID: ev.TrainID, TrainType: pay.TrainType,
-			Express: true, StartedAt: ev.ArrivedAt, StartStation: pay.StartStation, EndStation: pay.StartStation,
-			UpdatedAt: ev.ArrivedAt, Distance: pay.Distance, PaidFare: pay.PaidFare, RouteNodeIDs: pay.RouteNodeIDs, AllPresent: true,
-		}
-	}
-	sess.PlayerName = player.Name
-	sess.UpdatedAt = ev.ArrivedAt
-	sess.Distance = pay.Distance
-	sess.PaidFare = pay.PaidFare
-	sess.RouteNodeIDs = pay.RouteNodeIDs
-	appendUniqueNode(&sess.NodeIDs, ev.NodeID)
-	if err := s.saveRideSession(*sess); err != nil {
-		return err
-	}
-	lastNode := pay.RouteNodeIDs[len(pay.RouteNodeIDs)-1]
-	if ev.NodeID == lastNode && ev.StationName == pay.EndStation && sess.AllPresent {
-		sess.StartStation = pay.StartStation
-		sess.EndStation = pay.EndStation
-		sess.NodeIDs = pay.RouteNodeIDs
-		if err := s.upsertRideHistory(*sess); err != nil {
-			return err
-		}
-		_, err := s.db.Exec(`DELETE FROM ride_sessions WHERE player_uuid = ? AND train_id = ?`, player.UUID, ev.TrainID)
-		return err
-	}
-	return nil
+	return s.finalizeCommon(playerUUID, name, trainID, trainType, stops)
 }
 
-func (s *Store) finishRideSession(playerUUID, trainID string) error {
-	sess, err := s.loadRideSession(playerUUID, trainID)
-	if err != nil || sess == nil {
+// finalizeExpress writes history only when the player's present-node sequence
+// exactly equals the paid route (route_node_ids); a missing node writes nothing.
+func (s *Store) finalizeExpress(playerUUID, playerName, trainID, trainType string, stops []playerNodeStop) error {
+	pay, err := s.loadRidePayment(playerUUID, trainID)
+	if err != nil || pay == nil || len(pay.RouteNodeIDs) == 0 {
 		return err
 	}
-	if sess.Express {
-		_, err = s.db.Exec(`DELETE FROM ride_sessions WHERE player_uuid = ? AND train_id = ?`, playerUUID, trainID)
-		return err
+	nodeIDs := make([]string, len(stops))
+	for i, st := range stops {
+		nodeIDs[i] = st.nodeID
 	}
-	if sess.StationCount >= 2 {
-		if err := s.upsertRideHistory(*sess); err != nil {
-			return err
-		}
-	}
-	_, err = s.db.Exec(`DELETE FROM ride_sessions WHERE player_uuid = ? AND train_id = ?`, playerUUID, trainID)
-	return err
-}
-
-func (s *Store) upsertRideHistory(sess rideSession) error {
-	nodeIDs := sess.NodeIDs
-	if !sess.Express {
-		nodeIDs = sess.CompletedNodeIDs
-	}
-	if len(nodeIDs) < 2 || sess.StartStation == "" || sess.EndStation == "" || sess.StartStation == sess.EndStation {
+	if !equalStrings(nodeIDs, pay.RouteNodeIDs) {
 		return nil
 	}
-	nodeJSON, _ := json.Marshal(nodeIDs)
+	if trainType == "" {
+		trainType = pay.TrainType
+	}
+	return s.insertRideHistory(rideHistoryRow{
+		playerUUID: playerUUID, playerName: playerName, trainID: trainID, trainType: trainType,
+		express: true, startedAt: stops[0].arrivedAt, endedAt: stops[len(stops)-1].arrivedAt,
+		distance: pay.Distance, paidFare: pay.PaidFare,
+		startStation: pay.StartStation, endStation: pay.EndStation, nodeIDs: pay.RouteNodeIDs,
+	})
+}
+
+// finalizeCommon trims the leading/trailing non-station nodes so the ride starts
+// and ends on a station node, then writes the resulting interval to history.
+func (s *Store) finalizeCommon(playerUUID, playerName, trainID, trainType string, stops []playerNodeStop) error {
+	start, end := 0, len(stops)-1
+	for start <= end && stops[start].stationName == "" {
+		start++
+	}
+	for end >= start && stops[end].stationName == "" {
+		end--
+	}
+	if start >= end {
+		return nil
+	}
+	trimmed := stops[start : end+1]
+	startStation := trimmed[0].stationName
+	endStation := trimmed[len(trimmed)-1].stationName
+	if startStation == "" || endStation == "" || startStation == endStation {
+		return nil
+	}
+	nodeIDs := make([]string, len(trimmed))
+	for i, st := range trimmed {
+		nodeIDs[i] = st.nodeID
+	}
+	return s.insertRideHistory(rideHistoryRow{
+		playerUUID: playerUUID, playerName: playerName, trainID: trainID, trainType: trainType,
+		express: false, startedAt: trimmed[0].arrivedAt, endedAt: trimmed[len(trimmed)-1].arrivedAt,
+		startStation: startStation, endStation: endStation, nodeIDs: nodeIDs,
+	})
+}
+
+// rideHistoryRow is a finalized ride ready to be written to ride_history.
+type rideHistoryRow struct {
+	playerUUID   string
+	playerName   string
+	trainID      string
+	trainType    string
+	express      bool
+	startedAt    int64
+	endedAt      int64
+	distance     float64
+	paidFare     float64
+	startStation string
+	endStation   string
+	nodeIDs      []string
+}
+
+func (s *Store) insertRideHistory(h rideHistoryRow) error {
+	if len(h.nodeIDs) < 2 || h.startStation == "" || h.endStation == "" || h.startStation == h.endStation {
+		return nil
+	}
+	nodeJSON, _ := json.Marshal(h.nodeIDs)
 	var query string
 	if s.dialect == dialectMySQL {
 		query = `INSERT INTO ride_history
@@ -526,22 +444,41 @@ func (s *Store) upsertRideHistory(sess rideSession) error {
 	}
 	_, err := s.db.Exec(
 		query,
-		sess.PlayerUUID, sess.PlayerName, sess.TrainID, sess.TrainType, boolToInt(sess.Express),
-		sess.StartedAt, sess.UpdatedAt, round2(sess.Distance), sess.StartStation, sess.EndStation,
-		round2(sess.PaidFare), string(nodeJSON),
+		h.playerUUID, h.playerName, h.trainID, h.trainType, boolToInt(h.express),
+		h.startedAt, h.endedAt, round2(h.distance), h.startStation, h.endStation,
+		round2(h.paidFare), string(nodeJSON),
 	)
 	return err
 }
 
-func appendUniqueNode(nodes *[]string, nodeID string) bool {
-	if nodeID == "" {
-		return false
+// ridePlayerName resolves a player's display name from ride_players; "" if unknown.
+func (s *Store) ridePlayerName(uuid string) string {
+	var name string
+	if err := s.db.QueryRow(`SELECT name FROM ride_players WHERE uuid = ?`, uuid).Scan(&name); err != nil {
+		return ""
 	}
-	if len(*nodes) == 0 || (*nodes)[len(*nodes)-1] != nodeID {
-		*nodes = append(*nodes, nodeID)
-		return true
+	return name
+}
+
+func contains(list []string, v string) bool {
+	for _, s := range list {
+		if s == v {
+			return true
+		}
 	}
 	return false
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func round2(v float64) float64 {

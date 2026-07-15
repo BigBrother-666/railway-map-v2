@@ -4,6 +4,7 @@ package realtime
 
 import (
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -16,6 +17,11 @@ type Broadcaster interface {
 	Broadcast(msgType string, payload any)
 }
 
+// RideFinalizer 在列车消失（显式 removed / 超时清除）时结算乘车历史（由 store 实现）。
+type RideFinalizer interface {
+	FinalizeRide(trainID string) error
+}
+
 // trainEntry 是单列车的最近状态与更新时间。
 type trainEntry struct {
 	raw      json.RawMessage // 原始 JSON（保留插件的全部扩展字段，透传前端）
@@ -25,10 +31,12 @@ type trainEntry struct {
 
 // Aggregator 维护当前所有列车状态，按超时剔除，并把增量广播给前端。
 type Aggregator struct {
-	mu      sync.RWMutex
-	trains  map[string]*trainEntry
-	timeout time.Duration
-	bc      Broadcaster
+	mu        sync.RWMutex
+	trains    map[string]*trainEntry
+	timeout   time.Duration
+	bc        Broadcaster
+	finalizer RideFinalizer
+	logger    *slog.Logger
 }
 
 // NewAggregator 创建聚合器。timeout 内未更新的列车视为消失。
@@ -37,6 +45,24 @@ func NewAggregator(timeout time.Duration, bc Broadcaster) *Aggregator {
 		trains:  make(map[string]*trainEntry),
 		timeout: timeout,
 		bc:      bc,
+	}
+}
+
+// SetRideFinalizer 注入乘车历史结算器（列车消失时按 trainId 结算）。
+func (a *Aggregator) SetRideFinalizer(f RideFinalizer, logger *slog.Logger) {
+	a.finalizer = f
+	a.logger = logger
+}
+
+// finalizeRides 对一批消失的列车结算乘车历史。
+func (a *Aggregator) finalizeRides(ids []string) {
+	if a.finalizer == nil {
+		return
+	}
+	for _, id := range ids {
+		if err := a.finalizer.FinalizeRide(id); err != nil && a.logger != nil {
+			a.logger.Warn("Failed to finalize ride history", "err", err, "trainId", id)
+		}
 	}
 }
 
@@ -72,8 +98,11 @@ func (a *Aggregator) Remove(ids []string) {
 		}
 	}
 	a.mu.Unlock()
-	if len(removed) > 0 && a.bc != nil {
-		a.bc.Broadcast(model.WSRemove, removed)
+	if len(removed) > 0 {
+		a.finalizeRides(removed)
+		if a.bc != nil {
+			a.bc.Broadcast(model.WSRemove, removed)
+		}
 	}
 }
 
@@ -102,8 +131,11 @@ func (a *Aggregator) Sweep() {
 	}
 	a.mu.Unlock()
 
-	if len(removed) > 0 && a.bc != nil {
-		a.bc.Broadcast(model.WSRemove, removed)
+	if len(removed) > 0 {
+		a.finalizeRides(removed)
+		if a.bc != nil {
+			a.bc.Broadcast(model.WSRemove, removed)
+		}
 	}
 }
 

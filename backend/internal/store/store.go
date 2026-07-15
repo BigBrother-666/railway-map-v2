@@ -145,25 +145,6 @@ func (s *Store) migrateMySQL() error {
 			paid_at        BIGINT,
 			PRIMARY KEY (train_id, player_uuid)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
-		`CREATE TABLE IF NOT EXISTS ride_sessions (
-			player_uuid        VARCHAR(64),
-			player_name        VARCHAR(128),
-			train_id           VARCHAR(128),
-			train_type         VARCHAR(32),
-			express            TINYINT(1),
-			started_at         BIGINT,
-			updated_at         BIGINT,
-			start_station      VARCHAR(255),
-			end_station        VARCHAR(255),
-			station_count      INT,
-			distance           DOUBLE,
-			paid_fare          DOUBLE,
-			node_ids           TEXT,
-			completed_node_ids TEXT,
-			route_node_ids     TEXT,
-			all_present        TINYINT(1),
-			PRIMARY KEY (player_uuid, train_id)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 		`CREATE TABLE IF NOT EXISTS ride_history (
 			id            BIGINT PRIMARY KEY AUTO_INCREMENT,
 			player_uuid   VARCHAR(64),
@@ -242,25 +223,6 @@ func (s *Store) migrateSQLite() error {
 			route_node_ids TEXT,
 			paid_at       INTEGER,
 			PRIMARY KEY (train_id, player_uuid)
-		);`,
-		`CREATE TABLE IF NOT EXISTS ride_sessions (
-			player_uuid   TEXT,
-			player_name   TEXT,
-			train_id      TEXT,
-			train_type    TEXT,
-			express       INTEGER,
-			started_at    INTEGER,
-			updated_at    INTEGER,
-			start_station TEXT,
-			end_station   TEXT,
-			station_count INTEGER,
-			distance      REAL,
-			paid_fare     REAL,
-			node_ids      TEXT,
-			completed_node_ids TEXT,
-			route_node_ids TEXT,
-			all_present   INTEGER,
-			PRIMARY KEY (player_uuid, train_id)
 		);`,
 		`CREATE TABLE IF NOT EXISTS ride_history (
 			id            INTEGER PRIMARY KEY AUTOINCREMENT,
