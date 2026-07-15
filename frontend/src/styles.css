@@ -381,6 +381,30 @@ body,
   color: var(--text);
   text-shadow: none;
 }
+/* 所属线路 / 铁路系统：全宽堆叠卡片，左侧标志色竖线 */
+.line-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.line-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.line-card-bar {
+  width: 4px;
+  align-self: stretch;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
 
 /* 属性分组卡片：把平铺的键值对收进一张卡，拉开视觉层级 */
 .info-card {

@@ -56,23 +56,23 @@ function StationPanel() {
       <div className="panel-body">
         <div className="panel-section">
           <div className="label">所属线路</div>
-          <div className="chips">
+          <div className="line-cards">
             {lineList.length === 0 && <span className="muted">—</span>}
             {lineList.map((l) => (
-              <span key={l.id} className="chip line-chip">
-                <span className="chip-dot" style={{ background: l.color }} />
+              <div key={l.id} className="line-card">
+                <span className="line-card-bar" style={{ background: l.color }} />
                 {l.name}
-              </span>
+              </div>
             ))}
           </div>
         </div>
         <div className="panel-section">
           <div className="label">所属铁路系统</div>
-          <div className="chips">
+          <div className="line-cards">
             {[...systemIds].map((sid) => (
-              <span key={sid} className="chip chip-outline">
+              <div key={sid} className="line-card">
                 {systems.get(sid)?.name ?? sid}
-              </span>
+              </div>
             ))}
           </div>
         </div>
