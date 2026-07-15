@@ -173,36 +173,26 @@ func (s *Store) RecordRideEvent(ev model.RideEventData) error {
 			ev.TrainType = "common"
 		}
 	}
-	res, err := s.db.Exec(
-		`INSERT INTO ride_events
-			(train_id, train_type, node_id, station_name, express, line_id, arrived_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		ev.TrainID, ev.TrainType, ev.NodeID, ev.StationName, boolToInt(ev.Express), ev.LineID, ev.ArrivedAt,
-	)
-	if err != nil {
-		return err
-	}
-	eventID, err := res.LastInsertId()
-	if err != nil {
-		return err
-	}
-
 	current := make(map[string]model.Player, len(ev.Passengers))
+	uuids := make([]string, 0, len(ev.Passengers))
 	for _, p := range ev.Passengers {
 		if p.UUID == "" {
 			continue
 		}
 		current[p.UUID] = p
+		uuids = append(uuids, p.UUID)
 		if err := s.upsertRidePlayer(p, ev.ArrivedAt); err != nil {
 			return err
 		}
-		query := `INSERT OR IGNORE INTO ride_event_players (train_id, event_id, player_uuid) VALUES (?, ?, ?)`
-		if s.dialect == dialectMySQL {
-			query = `INSERT IGNORE INTO ride_event_players (train_id, event_id, player_uuid) VALUES (?, ?, ?)`
-		}
-		if _, err := s.db.Exec(query, ev.TrainID, eventID, p.UUID); err != nil {
-			return err
-		}
+	}
+	uuidsJSON, _ := json.Marshal(uuids)
+	if _, err := s.db.Exec(
+		`INSERT INTO ride_events
+			(train_id, train_type, node_id, station_name, express, line_id, arrived_at, player_uuids)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		ev.TrainID, ev.TrainType, ev.NodeID, ev.StationName, boolToInt(ev.Express), ev.LineID, ev.ArrivedAt, string(uuidsJSON),
+	); err != nil {
+		return err
 	}
 
 	existing, err := s.activeSessionPlayers(ev.TrainID)

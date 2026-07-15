@@ -123,13 +123,8 @@ func (s *Store) migrateMySQL() error {
 			station_name  VARCHAR(255),
 			express       TINYINT(1),
 			line_id       VARCHAR(128),
-			arrived_at    BIGINT
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
-		`CREATE TABLE IF NOT EXISTS ride_event_players (
-			train_id      VARCHAR(128),
-			event_id      BIGINT,
-			player_uuid   VARCHAR(64),
-			PRIMARY KEY (train_id, event_id, player_uuid)
+			arrived_at    BIGINT,
+			player_uuids  TEXT
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 		`CREATE TABLE IF NOT EXISTS ride_players (
 			uuid          VARCHAR(64) PRIMARY KEY,
@@ -226,13 +221,8 @@ func (s *Store) migrateSQLite() error {
 			station_name  TEXT,
 			express       INTEGER,
 			line_id       TEXT,
-			arrived_at    INTEGER
-		);`,
-		`CREATE TABLE IF NOT EXISTS ride_event_players (
-			train_id      TEXT,
-			event_id      INTEGER,
-			player_uuid   TEXT,
-			PRIMARY KEY (train_id, event_id, player_uuid)
+			arrived_at    INTEGER,
+			player_uuids  TEXT
 		);`,
 		`CREATE TABLE IF NOT EXISTS ride_players (
 			uuid          TEXT PRIMARY KEY,
