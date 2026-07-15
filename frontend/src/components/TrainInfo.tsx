@@ -8,15 +8,20 @@ export function TrainInfo() {
   const train = useStore((s) => (trainId ? s.trains.get(trainId) : null));
   const close = useStore((s) => s.closeSidebar);
 
-  // 直达车：把其 routeNodeIds 作为临时高亮（复用候选高亮通道）
+  // 直达车：把其 routeNodeIds 作为临时高亮（复用候选高亮通道）。
+  // 依赖用 trainId + 路线内容而非整个 train 对象——列车每次位置刷新都会生成新对象，
+  // 若依赖 train 会导致高亮被反复重设，进而反复触发镜头框选、把用户的缩放拉回。
+  const routeKey =
+    train?.express && train.routeNodeIds && train.routeNodeIds.length > 1
+      ? train.routeNodeIds.join(',')
+      : '';
   useEffect(() => {
-    const st = useStore.getState();
-    if (train?.express && train.routeNodeIds && train.routeNodeIds.length > 1) {
+    if (routeKey) {
       useStore.setState({
         candidates: [
           {
             stations: [],
-            nodeIds: train.routeNodeIds,
+            nodeIds: routeKey.split(','),
             lineIdSequence: [],
             distance: 0,
             segments: [],
@@ -32,8 +37,7 @@ export function TrainInfo() {
         useStore.setState({ candidates: [], selectedRouteIndex: null });
       }
     };
-    void st;
-  }, [train]);
+  }, [trainId, routeKey]);
 
   if (!train) return null;
 
