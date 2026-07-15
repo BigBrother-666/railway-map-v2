@@ -78,6 +78,7 @@ interface AppState {
   clickStation: (name: string) => void;
   openRoutePanel: (presetEnd?: string) => void;
   setEndpoint: (role: Endpoint, name: string | null) => void;
+  swapEndpoints: () => void;
   computeRoutes: () => Promise<void>;
   selectRoute: (index: number | null) => void;
   closeSidebar: () => void;
@@ -221,6 +222,14 @@ export const useStore = create<AppState>((set, get) => ({
     }
     const { startStation, endStation } = get();
     if (startStation && endStation) {
+      get().computeRoutes();
+    }
+  },
+
+  swapEndpoints() {
+    const { startStation, endStation } = get();
+    set({ startStation: endStation, endStation: startStation });
+    if (endStation && startStation) {
       get().computeRoutes();
     }
   },

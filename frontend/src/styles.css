@@ -745,6 +745,34 @@ body,
   margin-bottom: 0;
   border-bottom: 1px solid var(--border);
 }
+/* 起点/终点之间的交换按钮 */
+.route-swap-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0;
+}
+.route-swap-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.route-swap-btn:hover:not(:disabled) {
+  background: var(--panel);
+}
+.route-swap-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .history-list {
   display: flex;
   flex-direction: column;

@@ -208,6 +208,7 @@ function RoutePanel() {
   const searching = useStore((s) => s.searching);
   const searchError = useStore((s) => s.searchError);
   const setEndpoint = useStore((s) => s.setEndpoint);
+  const swapEndpoints = useStore((s) => s.swapEndpoints);
   const close = useStore((s) => s.closeSidebar);
 
   const stationNames = graph?.allStationNames() ?? [];
@@ -228,6 +229,17 @@ function RoutePanel() {
           onSelect={(n) => setEndpoint('start', n)}
           onClear={() => setEndpoint('start', null)}
         />
+        <div className="route-swap-row">
+          <button
+            className="route-swap-btn"
+            onClick={swapEndpoints}
+            disabled={!startStation && !endStation}
+            aria-label="交换起点和终点"
+            title="交换起点和终点"
+          >
+            ⇅
+          </button>
+        </div>
         <StationSearch
           value={endStation}
           placeholder={nextPick === 'end' ? '选择终点（或点击地图车站）' : '终点'}
