@@ -1,4 +1,5 @@
 import { useStore } from '../store/useStore';
+import { avatarUrl } from '../config';
 import type { Train } from '../types';
 
 /** 实时列车列表：展示所有世界的实时列车卡片，点击定位并显示列车信息。 */
@@ -63,7 +64,18 @@ function TrainCard({
         </span>
       </div>
       <div className="train-card-meta">
-        <span className="train-pill">👤 {train.passengers.length} 名乘客</span>
+        <span className="train-pill train-passengers">
+          乘客:
+          {train.passengers.length === 0 ? (
+            <span className="train-passengers-empty">无</span>
+          ) : (
+            <span className="train-avatars">
+              {train.passengers.map((name) => (
+                <img key={name} className="train-avatar" src={avatarUrl(name)} alt={name} title={name} />
+              ))}
+            </span>
+          )}
+        </span>
         {train.destination && <span className="train-pill">终到 {train.destination}</span>}
       </div>
     </button>

@@ -976,6 +976,31 @@ body,
   border: 1px solid var(--border);
   color: var(--muted);
 }
+/* 乘客头像：乘客: + 一排叠放的头像 */
+.train-passengers {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.train-avatars {
+  display: inline-flex;
+  align-items: center;
+}
+.train-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  margin-left: -4px;
+}
+.train-avatar:first-child {
+  margin-left: 0;
+}
+.train-passengers-empty {
+  color: var(--muted);
+}
 
 /* 右侧线路开关 */
 .line-group {
