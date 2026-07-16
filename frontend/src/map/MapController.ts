@@ -14,6 +14,8 @@ const SRC_TRAINS = 'trains';
 const SRC_ENDPOINTS = 'route-endpoints';
 const SRC_WORLD_TILES = 'world-tiles';
 const LAYER_WORLD_TILES = 'world-tiles-layer';
+/** 底图背景色（与 style 的 bg 图层一致）；淡化时把颜色混向它而非降透明度，避免重叠处 alpha 累加变实。 */
+const BG_COLOR: [number, number, number] = [0x0f, 0x11, 0x15];
 
 export class MapController {
   private map: maplibregl.Map;
@@ -21,6 +23,10 @@ export class MapController {
   private world = '';
   private hidden: Set<string> = new Set();
   private highlightEdges: Set<string> = new Set();
+  /** 高亮是否生效（用于车站淡化：生效时非高亮车站按 dimOpacity 变半透明）。 */
+  private highlightActive = false;
+  /** 当前高亮边集合覆盖到的车站节点 id（这些车站保持不透明，其余淡化）。 */
+  private highlightStationIds: Set<string> = new Set();
   private onStationClick?: (name: string) => void;
   private onTrainClick?: (id: string) => void;
   private onLineClick?: (lineId: string) => void;
@@ -256,30 +262,94 @@ export class MapController {
     if (!this.fc || !this.map.getLayer('lines-highlight')) return;
     const validLegs = (legs ?? []).filter((leg) => leg.length >= 2);
     if (validLegs.length === 0) {
-      // 清除高亮：highlight 边集合清空（filter 变空集，不渲染），base 恢复正常透明度
+      // 清除高亮：highlight 边集合清空（filter 变空集，不渲染），base 恢复本色与正常透明度，车站恢复不透明
       this.highlightEdges = new Set();
+      this.highlightActive = false;
+      this.highlightStationIds = new Set();
       this.applyLineFilters();
-      this.map.setPaintProperty('lines-layer', 'line-opacity', getConfig().mapStyle.lineOpacity);
+      this.setBaseLineDimmed(false);
       this.setRouteEndpoints(null);
+      this.updateStationSource();
       return;
     }
-    // 收集各段各区间的 edge id（geojson LineString 的 id 属性）
+    // 收集各段各区间的 edge id（geojson LineString 的 id 属性）与途经车站节点 id。
     const edgeIds = new Set<string>();
+    const stationIds = new Set<string>();
     const edgeByEndpoints = this.edgeIdIndex();
     for (const leg of validLegs) {
+      for (const nodeId of leg) stationIds.add(nodeId);
       for (let i = 0; i < leg.length - 1; i++) {
         const id = edgeByEndpoints.get(`${leg[i]}__${leg[i + 1]}`);
         if (id) edgeIds.add(id);
       }
     }
     this.highlightEdges = edgeIds;
+    this.highlightActive = true;
+    this.highlightStationIds = stationIds;
     this.applyLineFilters();
-    // 其它线路淡化，突出高亮
-    this.map.setPaintProperty('lines-layer', 'line-opacity', getConfig().mapStyle.dimOpacity);
+    // 其它线路淡化（改用不透明淡化色，避免半透明叠加变实），突出高亮
+    this.setBaseLineDimmed(true);
+    // 非高亮车站淡化（任务 2）
+    this.updateStationSource();
     // 端点：整程起点（首段首节点）、终点（末段末节点）
     const first = validLegs[0];
     const last = validLegs[validLegs.length - 1];
     this.setRouteEndpoints(first[0], last[last.length - 1]);
+  }
+
+  /**
+   * 高亮整条线路（任务 1 / 3）：按 lineId 收集该线路的所有轨道段与途经车站节点，
+   * 复用 highlightRoute 的高亮通道（加粗、其余淡化、非高亮车站半透明）。lineId 为 null 时清除高亮。
+   */
+  highlightLine(lineId: string | null) {
+    if (!this.fc || !this.map.getLayer('lines-highlight')) return;
+    if (!lineId) {
+      this.highlightRoute(null);
+      return;
+    }
+    const edgeIds = new Set<string>();
+    const stationIds = new Set<string>();
+    const stationNodeIds = new Set<string>();
+    for (const f of this.fc.features) {
+      if (f.geometry?.type !== 'Point') continue;
+      const p = f.properties as PointProps;
+      if (p.type === 'station' && p.world === this.world && p.id) stationNodeIds.add(p.id);
+    }
+    for (const f of this.fc.features) {
+      if (f.geometry?.type !== 'LineString') continue;
+      const l = f.properties as LineStringProps;
+      if (l.lineId !== lineId || l.world !== this.world || !l.id) continue;
+      edgeIds.add(l.id);
+      if (stationNodeIds.has(l.from)) stationIds.add(l.from);
+      if (stationNodeIds.has(l.to)) stationIds.add(l.to);
+    }
+    if (edgeIds.size === 0) {
+      this.highlightRoute(null);
+      return;
+    }
+    this.highlightEdges = edgeIds;
+    this.highlightActive = true;
+    this.highlightStationIds = stationIds;
+    this.applyLineFilters();
+    this.setBaseLineDimmed(true);
+    this.updateStationSource();
+    this.setRouteEndpoints(null);
+  }
+
+  /**
+   * 切换基础线路层的淡化态：
+   * - 淡化：用预计算的不透明 dimColor（本色混向背景），line-opacity=1 —— 重叠处不透明覆盖，不再叠加变实。
+   * - 恢复：用线路本色 + config 的 lineOpacity。
+   */
+  private setBaseLineDimmed(dimmed: boolean) {
+    if (!this.map.getLayer('lines-layer')) return;
+    if (dimmed) {
+      this.map.setPaintProperty('lines-layer', 'line-color', ['coalesce', ['get', 'dimColor'], '#3a3f4b']);
+      this.map.setPaintProperty('lines-layer', 'line-opacity', 1);
+    } else {
+      this.map.setPaintProperty('lines-layer', 'line-color', ['coalesce', ['get', 'color'], '#888888']);
+      this.map.setPaintProperty('lines-layer', 'line-opacity', getConfig().mapStyle.lineOpacity);
+    }
   }
 
   private setRouteEndpoints(startId: string | null, endId?: string) {
@@ -374,7 +444,14 @@ export class MapController {
       },
       filter: ['==', ['get', 'id'], '__none__'],
     });
-    // 车站圆点（固定像素半径）
+    // 车站圆点（固定像素半径）；高亮线路时非高亮车站按 dim 标记淡化（透明度取 config.dimOpacity）。
+    const dim = getConfig().mapStyle.dimOpacity;
+    const stationOpacity: maplibregl.DataDrivenPropertyValueSpecification<number> = [
+      'case',
+      ['get', 'dim'],
+      dim,
+      1,
+    ];
     this.map.addLayer({
       id: 'stations-layer',
       type: 'circle',
@@ -384,6 +461,8 @@ export class MapController {
         'circle-color': '#ffffff',
         'circle-stroke-color': '#222222',
         'circle-stroke-width': getConfig().mapStyle.stationStrokeWidth,
+        'circle-opacity': stationOpacity,
+        'circle-stroke-opacity': stationOpacity,
       },
     });
     // 车站名
@@ -396,8 +475,16 @@ export class MapController {
         'text-size': getConfig().mapStyle.stationTextSize,
         'text-offset': [0, 1.2],
         'text-anchor': 'top',
+        // 碰撞优先级：sort-key 小者优先占位。非淡化（高亮线路上）站名给 0，淡化站名给 1，
+        // 使同名的高亮 label 抢占、透明 label 让位，避免高亮站名被透明副本盖成透明。
+        'symbol-sort-key': ['case', ['get', 'dim'], 1, 0],
       },
-      paint: { 'text-color': '#eaeaea', 'text-halo-color': '#000000', 'text-halo-width': 1.2 },
+      paint: {
+        'text-color': '#eaeaea',
+        'text-halo-color': '#000000',
+        'text-halo-width': 1.2,
+        'text-opacity': stationOpacity,
+      },
     });
     this.map.addLayer({
       id: 'route-endpoints-layer',
@@ -470,9 +557,14 @@ export class MapController {
   private refreshWorldData() {
     if (!this.fc) return;
     this.updateWorldTiles();
-    const lineFeats = this.fc.features.filter(
-      (f) => f.geometry?.type === 'LineString' && (f.properties as LineStringProps).world === this.world,
-    );
+    const lineFeats = this.fc.features
+      .filter((f) => f.geometry?.type === 'LineString' && (f.properties as LineStringProps).world === this.world)
+      // 预计算淡化色：把线路本色按 dimOpacity 混向背景色。淡化时基础层用此不透明色，
+      // 重叠处是不透明像素直接覆盖、不再累加 alpha，避免「半透明叠加变实」（改善项）。
+      .map((f) => {
+        const p = f.properties as LineStringProps;
+        return { ...f, properties: { ...p, dimColor: mixTowardBg(p.color, getConfig().mapStyle.dimOpacity) } };
+      });
     (this.map.getSource(SRC_LINES) as maplibregl.GeoJSONSource)?.setData(this.toLngLatFC(lineFeats));
     this.updateStationSource();
     this.setHiddenLines(this.hidden);
@@ -511,17 +603,41 @@ export class MapController {
     );
   }
 
+  /** 给车站要素写入 dim 标记（不改动其它属性）。 */
+  private setDim(
+    f: FeatureCollection['features'][number],
+    dim: boolean,
+  ): FeatureCollection['features'][number] {
+    const p = f.properties as PointProps;
+    return { ...f, properties: { ...p, dim } } as FeatureCollection['features'][number];
+  }
+
   private updateStationSource() {
     if (!this.fc || !this.map.getSource(SRC_STATIONS)) return;
+    const source = this.map.getSource(SRC_STATIONS) as maplibregl.GeoJSONSource;
     const visibleStationIds = this.computeVisibleStationIds();
     const stationFeats = this.fc.features.filter((f) => {
       if (f.geometry?.type !== 'Point') return false;
       const p = f.properties as PointProps;
       return p.type === 'station' && p.world === this.world && visibleStationIds.has(p.id);
     });
-    (this.map.getSource(SRC_STATIONS) as maplibregl.GeoJSONSource).setData(
-      this.toLngLatFC(this.mergeNearbyStations(stationFeats)),
-    );
+
+    if (!this.highlightActive) {
+      const merged = this.mergeNearbyStations(stationFeats).map((f) => this.setDim(f, false));
+      source.setData(this.toLngLatFC(merged));
+      return;
+    }
+
+    // 高亮生效：只有落在高亮线路上的<b>节点</b>高亮（不透明），按真实位置单独渲染，避免被合并到簇质心而偏离线路。
+    // 其余车站（含同名的其它站台节点）正常合并并淡化。同名的高亮点与淡化点位置相近时，靠 symbol-sort-key
+    // 让不透明的高亮 label 优先占位、透明 label 让位（见 stations-label 的 symbol-sort-key），故站名不会显示为透明。
+    const onRoute = stationFeats.filter((f) => this.highlightStationIds.has((f.properties as PointProps).id));
+    const rest = stationFeats.filter((f) => !this.highlightStationIds.has((f.properties as PointProps).id));
+    const merged = [
+      ...onRoute.map((f) => this.setDim(f, false)),
+      ...this.mergeNearbyStations(rest).map((f) => this.setDim(f, true)),
+    ];
+    source.setData(this.toLngLatFC(merged));
   }
 
   private mergeNearbyStations(feats: FeatureCollection['features']): FeatureCollection['features'] {
@@ -677,6 +793,29 @@ export class MapController {
     });
   }
 
+  /** 平滑缩放并移动到某条线路的完整范围（用于点击线路 / 线路面板 / 车站面板线路名）。 */
+  fitToLine(lineId: string) {
+    if (!this.fc) return;
+    const bounds = new maplibregl.LngLatBounds();
+    let has = false;
+    for (const f of this.fc.features) {
+      if (f.geometry?.type !== 'LineString') continue;
+      const l = f.properties as LineStringProps;
+      if (l.lineId !== lineId || l.world !== this.world) continue;
+      for (const c of (f.geometry as GeoJSON.LineString).coordinates) {
+        bounds.extend(gameToLngLat(c[0], c[1], this.world));
+        has = true;
+      }
+    }
+    if (!has) return;
+    const tile = getConfig().worldTiles[this.world];
+    this.map.fitBounds(bounds, {
+      padding: { top: 80, bottom: 80, right: 80, left: 80 + this.leftInset },
+      maxZoom: tile?.maxZoom ?? 18,
+      duration: 600,
+    });
+  }
+
   /**
    * 平滑移动镜头，把给定游戏坐标居中显示（用于点击实时列车卡片跳转到列车位置）。
    * 保持当前缩放，仅平移；左侧留出侧边栏遮挡宽度，使列车落在可见区域中央。
@@ -704,4 +843,28 @@ export class MapController {
     this.map.setMinZoom(tile?.minZoom ?? 0);
     this.map.setMaxZoom(tile?.maxZoom ?? 20);
   }
+}
+
+/**
+ * 把颜色 hex 按 alpha 混向底图背景色，返回不透明 #rrggbb。
+ * out = color*alpha + bg*(1-alpha)。用不透明淡化色替代半透明，重叠处不再叠加变实。
+ */
+function mixTowardBg(hex: string | undefined, alpha: number): string {
+  const rgb = parseHex(hex);
+  if (!rgb) return '#888888';
+  const a = Math.min(1, Math.max(0, alpha));
+  const mix = (c: number, bg: number) => Math.round(c * a + bg * (1 - a));
+  const r = mix(rgb[0], BG_COLOR[0]);
+  const g = mix(rgb[1], BG_COLOR[1]);
+  const b = mix(rgb[2], BG_COLOR[2]);
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** 解析 #rgb / #rrggbb 为 [r,g,b]；非法返回 null。 */
+function parseHex(hex: string | undefined): [number, number, number] | null {
+  if (!hex) return null;
+  let h = hex.replace('#', '').trim();
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return null;
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }

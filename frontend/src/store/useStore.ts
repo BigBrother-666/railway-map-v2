@@ -58,6 +58,8 @@ interface AppState {
   sidebar: SidebarMode;
   selectedStation: string | null; // 点击车站面板显示的站名
   selectedLineId: string | null; // 点击线路面板显示的线路 id
+  /** 需要高亮的线路 id（点击地图线路 / 线路面板 / 车站面板线路名时设置）。 */
+  highlightLineId: string | null;
   startStation: string | null;
   endStation: string | null;
   nextPick: Endpoint; // 下次点击地图车站设为起点还是终点
@@ -86,6 +88,7 @@ interface AppState {
 
   clickStation: (name: string) => void;
   clickLine: (lineId: string) => void;
+  highlightLine: (lineId: string | null) => void;
   openRoutePanel: (presetEnd?: string) => void;
   setEndpoint: (role: Endpoint, name: string | null) => void;
   swapEndpoints: () => void;
@@ -126,6 +129,7 @@ export const useStore = create<AppState>((set, get) => ({
   sidebar: 'idle',
   selectedStation: null,
   selectedLineId: null,
+  highlightLineId: null,
   startStation: null,
   endStation: null,
   nextPick: 'start',
@@ -216,13 +220,30 @@ export const useStore = create<AppState>((set, get) => ({
       state.setEndpoint(state.nextPick, name);
       return;
     }
-    set({ sidebar: 'station', selectedStation: name, selectedLineId: null, selectedTrainId: null });
+    set({
+      sidebar: 'station',
+      selectedStation: name,
+      selectedLineId: null,
+      highlightLineId: null,
+      selectedTrainId: null,
+    });
   },
 
   clickLine(lineId) {
-    // 路线查询打开时禁用线路点击，避免用户选点时误点到线路（任务 2）。
+    // 路线查询打开时禁用线路点击，避免用户选点时误点到线路。
     if (get().sidebar === 'route') return;
-    set({ sidebar: 'line', selectedLineId: lineId, selectedStation: null, selectedTrainId: null });
+    // 点击地图线路：打开线路详情并高亮该线路（任务 1）。
+    set({
+      sidebar: 'line',
+      selectedLineId: lineId,
+      highlightLineId: lineId,
+      selectedStation: null,
+      selectedTrainId: null,
+    });
+  },
+
+  highlightLine(lineId) {
+    set({ highlightLineId: lineId });
   },
 
   openRoutePanel(presetEnd) {
@@ -234,6 +255,8 @@ export const useStore = create<AppState>((set, get) => ({
       selectedRouteIndex: null,
       searching: false,
       searchError: null,
+      selectedLineId: null,
+      highlightLineId: null,
     });
   },
 
@@ -293,6 +316,7 @@ export const useStore = create<AppState>((set, get) => ({
       sidebar: 'idle',
       selectedStation: null,
       selectedLineId: null,
+      highlightLineId: null,
       selectedTrainId: null,
       // 关闭面板时清空查询与高亮，地图恢复正常（问题 1）
       startStation: null,
@@ -326,8 +350,14 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   selectTrain(id) {
-    // 地图上点击列车：框选整条路线（沿用既有镜头行为）。
-    set({ selectedTrainId: id, trainFocusMode: 'route', sidebar: id ? 'train' : get().sidebar });
+    // 地图上点击列车：框选整条路线（沿用既有镜头行为）。清除线路高亮，避免与列车路线高亮叠加。
+    set({
+      selectedTrainId: id,
+      trainFocusMode: 'route',
+      sidebar: id ? 'train' : get().sidebar,
+      selectedLineId: null,
+      highlightLineId: null,
+    });
   },
 
   openTrainList() {
@@ -338,6 +368,8 @@ export const useStore = create<AppState>((set, get) => ({
       selectedRouteIndex: null,
       searching: false,
       searchError: null,
+      selectedLineId: null,
+      highlightLineId: null,
     });
   },
 
@@ -350,6 +382,8 @@ export const useStore = create<AppState>((set, get) => ({
       selectedTrainId: id,
       trainFocusMode: 'center',
       sidebar: 'train',
+      selectedLineId: null,
+      highlightLineId: null,
     });
   },
 
@@ -380,7 +414,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async openRideHistory() {
-    set({ sidebar: 'history', selectedTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null });
+    set({ sidebar: 'history', selectedTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null, selectedLineId: null, highlightLineId: null });
     await get().loadRideHistory(1);
   },
 

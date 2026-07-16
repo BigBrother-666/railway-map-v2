@@ -44,6 +44,8 @@ function StationPanel() {
   const lines = useStore((s) => s.lines);
   const systems = useStore((s) => s.systemMap);
   const openRoutePanel = useStore((s) => s.openRoutePanel);
+  const highlightLine = useStore((s) => s.highlightLine);
+  const highlightLineId = useStore((s) => s.highlightLineId);
   const close = useStore((s) => s.closeSidebar);
   if (!name) return null;
 
@@ -77,10 +79,16 @@ function StationPanel() {
           <div className="line-cards">
             {lineList.length === 0 && <span className="muted">—</span>}
             {lineList.map((l) => (
-              <div key={l.id} className="line-card">
+              <button
+                key={l.id}
+                type="button"
+                className={`line-card line-card-btn ${highlightLineId === l.id ? 'active' : ''}`}
+                onClick={() => highlightLine(highlightLineId === l.id ? null : l.id)}
+                title={`高亮显示 ${l.name}`}
+              >
                 <span className="line-card-bar" style={{ background: l.color }} />
                 {l.name}
-              </div>
+              </button>
             ))}
           </div>
         </div>

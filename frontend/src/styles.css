@@ -456,6 +456,22 @@ body,
   border-radius: 999px;
   flex-shrink: 0;
 }
+/* 可点击线路卡（车站面板「所属线路」）：外观同 line-card，加悬停反馈 */
+.line-card-btn {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.line-card-btn:hover {
+  border-color: var(--accent);
+  background: var(--panel-3, var(--panel-2));
+}
+.line-card-btn.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
 
 /* 属性分组卡片：把平铺的键值对收进一张卡，拉开视觉层级 */
 .info-card {

@@ -14,6 +14,8 @@ export interface PointProps {
   next?: string[];
   stationIds?: string[];
   mergedCount?: number;
+  /** 渲染态：高亮线路时非高亮车站淡化（由 MapController 写入，非后端字段）。 */
+  dim?: boolean;
 }
 
 /** 线（轨道段）属性。 */

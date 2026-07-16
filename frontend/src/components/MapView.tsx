@@ -19,6 +19,7 @@ export function MapView() {
   const selectedRouteIndex = useStore((s) => s.selectedRouteIndex);
   const trains = useStore((s) => s.trains);
   const sidebar = useStore((s) => s.sidebar);
+  const highlightLineId = useStore((s) => s.highlightLineId);
   const selectedTrainId = useStore((s) => s.selectedTrainId);
   const trainFocusMode = useStore((s) => s.trainFocusMode);
   const clickStation = useStore((s) => s.clickStation);
@@ -73,9 +74,19 @@ export function MapView() {
     if (readyRef.current && ctrlRef.current) ctrlRef.current.setHiddenLines(hiddenLines);
   }, [hiddenLines]);
 
-  // 高亮选中路线（联程票高亮各段并集）
+  // 高亮线路（点击地图线路 / 线路面板 / 车站面板线路名）：整条线路高亮，优先于路线候选高亮。
   useEffect(() => {
     if (!readyRef.current || !ctrlRef.current) return;
+    if (!highlightLineId) return; // 无线路高亮时交由下面的路线高亮 effect 处理
+    ctrlRef.current.highlightLine(highlightLineId);
+    ctrlRef.current.setLeftInset(sidebar !== 'idle' ? LEFT_SIDEBAR_WIDTH : 0);
+    ctrlRef.current.fitToLine(highlightLineId);
+  }, [highlightLineId, sidebar]);
+
+  // 高亮选中路线（联程票高亮各段并集）。线路高亮生效时跳过，避免互相覆盖。
+  useEffect(() => {
+    if (!readyRef.current || !ctrlRef.current) return;
+    if (highlightLineId) return; // 线路高亮优先
     const route = selectedRouteIndex != null ? candidates[selectedRouteIndex] : null;
     if (!route) {
       ctrlRef.current.highlightRoute(null);
@@ -91,7 +102,7 @@ export function MapView() {
     if (!(sidebar === 'train' && trainFocusMode === 'center')) {
       ctrlRef.current.fitToNodes(legs);
     }
-  }, [candidates, selectedRouteIndex, sidebar, trainFocusMode]);
+  }, [candidates, selectedRouteIndex, sidebar, trainFocusMode, highlightLineId]);
 
   // 列车列表点击后居中到列车位置（切换世界后再定位，故依赖 currentWorld）。
   useEffect(() => {
