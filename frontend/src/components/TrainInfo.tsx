@@ -52,10 +52,14 @@ export function TrainInfo() {
       <div className="panel-body">
         <div className="panel-section info-card">
           <Row label="所在世界" value={train.world} />
-          {train.lineId && <Row label="所属线路" value={train.lineId} />}
+          {train.trainName && train.trainName !== 'N/A' && <Row label="列车名称" value={train.trainName} />}
+          {train.lineName && <Row label="所属线路" value={train.lineName} />}
           {train.destination && <Row label="终到站" value={train.destination} />}
           <Row label="速度" value={`${train.speedKph.toFixed(1)} km/h`} />
           <Row label="车厢数" value={String(train.cartCount)} />
+          {typeof train.secondsLived === 'number' && train.secondsLived >= 0 && (
+            <Row label="运行时间" value={`${Math.round(train.secondsLived)}s`} />
+          )}
         </div>
         <div className="panel-section">
           <div className="label">车上玩家（{train.passengers.length}）</div>

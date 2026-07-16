@@ -239,6 +239,10 @@ export interface Train {
   passengers: string[];
   express: boolean;
   lineId?: string;
+  lineName?: string;
+  trainName?: string;
+  /** 列车运行时长（秒）；插件未就绪时为 -1。 */
+  secondsLived?: number;
   destination?: string;
   routeNodeIds?: string[];
   [key: string]: unknown; // 可扩展字段
