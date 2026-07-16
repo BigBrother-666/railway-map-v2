@@ -19,6 +19,8 @@ export function MapView() {
   const selectedRouteIndex = useStore((s) => s.selectedRouteIndex);
   const trains = useStore((s) => s.trains);
   const sidebar = useStore((s) => s.sidebar);
+  const selectedTrainId = useStore((s) => s.selectedTrainId);
+  const trainFocusMode = useStore((s) => s.trainFocusMode);
   const clickStation = useStore((s) => s.clickStation);
   const selectTrain = useStore((s) => s.selectTrain);
 
@@ -59,6 +61,8 @@ export function MapView() {
     if (readyRef.current && ctrlRef.current) {
       ctrlRef.current.setWorld(currentWorld);
       ctrlRef.current.setHiddenLines(hiddenLines);
+      // 列车按世界过滤渲染，切世界后需重刷（否则仍显示旧世界列车）。
+      ctrlRef.current.setTrains([...useStore.getState().trains.values()]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentWorld]);
@@ -82,8 +86,21 @@ export function MapView() {
     // 镜头联动：缩放并移动到选中线路（路线卡片 / 乘车历史通用）；
     // 左侧留出侧边栏宽度，避免线路落在侧边栏下方被遮挡。
     ctrlRef.current.setLeftInset(sidebar !== 'idle' ? LEFT_SIDEBAR_WIDTH : 0);
-    ctrlRef.current.fitToNodes(legs);
-  }, [candidates, selectedRouteIndex, sidebar]);
+    // 列车列表点击（center 模式）：镜头由专门的居中 effect 处理，这里不框选整条路线。
+    if (!(sidebar === 'train' && trainFocusMode === 'center')) {
+      ctrlRef.current.fitToNodes(legs);
+    }
+  }, [candidates, selectedRouteIndex, sidebar, trainFocusMode]);
+
+  // 列车列表点击后居中到列车位置（切换世界后再定位，故依赖 currentWorld）。
+  useEffect(() => {
+    if (!readyRef.current || !ctrlRef.current) return;
+    if (sidebar !== 'train' || trainFocusMode !== 'center' || !selectedTrainId) return;
+    const train = useStore.getState().trains.get(selectedTrainId);
+    if (!train || train.world !== currentWorld) return;
+    ctrlRef.current.setLeftInset(LEFT_SIDEBAR_WIDTH);
+    ctrlRef.current.centerOnGame(train.head.x, train.head.z);
+  }, [selectedTrainId, trainFocusMode, currentWorld, sidebar]);
 
   // 列车
   useEffect(() => {

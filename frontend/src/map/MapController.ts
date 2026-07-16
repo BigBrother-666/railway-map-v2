@@ -573,6 +573,19 @@ export class MapController {
     });
   }
 
+  /**
+   * 平滑移动镜头，把给定游戏坐标居中显示（用于点击实时列车卡片跳转到列车位置）。
+   * 保持当前缩放，仅平移；左侧留出侧边栏遮挡宽度，使列车落在可见区域中央。
+   */
+  centerOnGame(x: number, z: number) {
+    const center = gameToLngLat(x, z, this.world);
+    this.map.easeTo({
+      center,
+      padding: { top: 0, bottom: 0, right: 0, left: this.leftInset },
+      duration: 600,
+    });
+  }
+
   /** 把缩放夹取到当前世界的 min/max 范围（直通约束下手动补上这层限制）。 */
   private clampZoom(zoom: number): number {
     // 构造期回调可能早于 map 赋值；用配置兜底。

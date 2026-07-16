@@ -22,8 +22,11 @@ import type {
   Train,
 } from '../types';
 
-/** 侧栏模式：车站信息 / 路线查询 / 列车信息 / 空。 */
-export type SidebarMode = 'idle' | 'station' | 'route' | 'train' | 'history';
+/** 侧栏模式：车站信息 / 路线查询 / 列车信息 / 实时列车列表 / 乘车历史 / 空。 */
+export type SidebarMode = 'idle' | 'station' | 'route' | 'train' | 'trains' | 'history';
+
+/** 列车高亮后的镜头意图：center=居中到列车位置（列表点击）；route=框选整条路线（地图点击）。 */
+export type TrainFocusMode = 'center' | 'route';
 
 /** 选点角色。 */
 type Endpoint = 'start' | 'end';
@@ -62,6 +65,8 @@ interface AppState {
   // --- 列车 ---
   trains: Map<string, Train>;
   selectedTrainId: string | null;
+  /** 选中列车后的镜头意图，供地图决定居中还是框选路线。 */
+  trainFocusMode: TrainFocusMode;
 
   // --- 登录 ---
   player: Player | null;
@@ -86,6 +91,8 @@ interface AppState {
   upsertTrains: (trains: Train[]) => void;
   removeTrains: (ids: string[]) => void;
   selectTrain: (id: string | null) => void;
+  openTrainList: () => void;
+  focusTrain: (id: string) => void;
 
   refreshPlayer: () => Promise<void>;
   logout: () => Promise<void>;
@@ -122,6 +129,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   trains: new Map(),
   selectedTrainId: null,
+  trainFocusMode: 'route',
 
   player: null,
   rideHistory: null,
@@ -302,7 +310,31 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   selectTrain(id) {
-    set({ selectedTrainId: id, sidebar: id ? 'train' : get().sidebar });
+    // 地图上点击列车：框选整条路线（沿用既有镜头行为）。
+    set({ selectedTrainId: id, trainFocusMode: 'route', sidebar: id ? 'train' : get().sidebar });
+  },
+
+  openTrainList() {
+    set({
+      sidebar: 'trains',
+      selectedTrainId: null,
+      candidates: [],
+      selectedRouteIndex: null,
+      searching: false,
+      searchError: null,
+    });
+  },
+
+  focusTrain(id) {
+    const train = get().trains.get(id);
+    if (!train) return;
+    // 列车列表点击：若不在当前世界则切到对应世界，并要求地图居中到列车位置。
+    set({
+      currentWorld: train.world,
+      selectedTrainId: id,
+      trainFocusMode: 'center',
+      sidebar: 'train',
+    });
   },
 
   async refreshPlayer() {

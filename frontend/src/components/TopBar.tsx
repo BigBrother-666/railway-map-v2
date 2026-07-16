@@ -13,6 +13,7 @@ export function TopBar() {
   const logout = useStore((s) => s.logout);
   const refreshPlayer = useStore((s) => s.refreshPlayer);
   const openRideHistory = useStore((s) => s.openRideHistory);
+  const openTrainList = useStore((s) => s.openTrainList);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const testLogin = async () => {
@@ -28,6 +29,9 @@ export function TopBar() {
     <div className="topbar">
       <div className="topbar-left">
         <span className="brand">帕拉伦铁路线路图</span>
+        <button className="btn ghost topbar-trains-btn" onClick={openTrainList} title="实时列车列表">
+          🚆 实时列车
+        </button>
         <span className={`status-dot ${meta?.online ? 'online' : 'offline'}`} />
         <span className="status-text">{meta?.online ? '实时列车数据正常' : '实时列车数据异常'}</span>
         {worlds.length > 1 && (

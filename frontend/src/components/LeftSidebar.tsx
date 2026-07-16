@@ -3,10 +3,11 @@ import { useStore } from '../store/useStore';
 import { StationSearch } from './StationSearch';
 import { RouteCard } from './RouteCard';
 import { TrainInfo } from './TrainInfo';
+import { TrainList } from './TrainList';
 import { getConfig } from '../config';
 import type { RideHistoryItem } from '../types';
 
-/** 左侧边栏：车站信息 / 路线查询 / 列车信息（仿 Google 地图）。 */
+/** 左侧边栏：车站信息 / 路线查询 / 列车信息 / 实时列车列表（仿 Google 地图）。 */
 export function LeftSidebar() {
   const sidebar = useStore((s) => s.sidebar);
   // 折叠状态：折叠后侧栏滑出屏幕、只露出边缘按钮，避免手机上占屏过大。
@@ -30,6 +31,7 @@ export function LeftSidebar() {
       {sidebar === 'station' && <StationPanel />}
       {sidebar === 'route' && <RoutePanel />}
       {sidebar === 'train' && <TrainInfo />}
+      {sidebar === 'trains' && <TrainList />}
       {sidebar === 'history' && <HistoryPanel />}
     </div>
   );

@@ -80,6 +80,10 @@ body,
   align-items: center;
   gap: 12px;
 }
+.topbar-trains-btn {
+  padding: 4px 12px;
+  font-size: 13px;
+}
 
 .brand {
   font-weight: 600;
@@ -883,6 +887,80 @@ body,
   justify-content: space-between;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* 实时列车列表 */
+.train-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.train-card {
+  width: 100%;
+  flex-shrink: 0;
+  text-align: left;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.train-card:hover {
+  border-color: #3a7afe;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.train-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.train-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.train-badge.express {
+  background: rgba(255, 82, 82, 0.16);
+  border-color: transparent;
+  color: #ff8a80;
+}
+.train-world {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.train-offworld {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(58, 122, 254, 0.16);
+  color: #7eacff;
+}
+.train-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.train-pill {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
 }
 
 /* 右侧线路开关 */
