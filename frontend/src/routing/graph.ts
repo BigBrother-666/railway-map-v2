@@ -115,7 +115,7 @@ export class RouteGraph {
   private stationDistCache: Map<string, Map<string, number>> | null = null;
 
   /**
-   * 站名级「直达可达」缩合距离矩阵：起点站名 → 终点站名 → 一趟直达车的最短距离（km）。复刻插件
+   * 站名级「直达可达」缩合距离矩阵：起点站名 → 终点站名 → 一趟快速车的最短距离（km）。复刻插件
    * GeoRouteGraph.stationDirectDistances。把物理节点（含大量道岔/多站台）缩合为站名节点，只保留
    * 「站名 A 能否一趟直达站名 B、最短多少」，供 findTransferJourneys 快速枚举全部换乘站。
    * <p>

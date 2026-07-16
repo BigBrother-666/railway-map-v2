@@ -159,9 +159,9 @@ function kShortest(
       }
       // 与插件 GeoRouteEngine 一致：中途站的处理
       if (nextNode.type === 'station' && nextNode.name !== endStation) {
-        // 存在正线绕行 → 放弃穿越该 station（避免直达车误进停靠线）
+        // 存在正线绕行 → 放弃穿越该 station（避免快速车误进停靠线）
         if (hasMainlineBypass(graph, cur.nodeId, nextId)) continue;
-        // 折返站 → 直达车不穿越（与插件 isReverseStation 跳过一致）
+        // 折返站 → 快速车不穿越（与插件 isReverseStation 跳过一致）
         if (nextNode.name && isReverse(link.lineId, nextNode.name)) continue;
       }
       pq.push({ nodeId: nextId, dist: cur.dist + link.distance, link, prev: cur });

@@ -166,7 +166,7 @@ function HistoryCard({
     <button className={`history-card ${selected ? 'selected' : ''}`} onClick={onClick}>
       <div className="history-card-head">
         <span className={`history-badge ${item.express ? 'express' : ''}`}>
-          {item.express ? '直达车' : '普通车'}
+          {item.express ? '快速车' : '普通车'}
         </span>
         <span className="history-time">{formatTime(item.startedAt)}</span>
       </div>

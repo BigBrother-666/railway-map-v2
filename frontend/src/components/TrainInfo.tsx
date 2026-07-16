@@ -2,13 +2,13 @@ import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { avatarUrl } from '../config';
 
-/** 列车信息面板：基本信息 + 车上玩家；直达车则高亮其路线。 */
+/** 列车信息面板：基本信息 + 车上玩家；快速车则高亮其路线。 */
 export function TrainInfo() {
   const trainId = useStore((s) => s.selectedTrainId);
   const train = useStore((s) => (trainId ? s.trains.get(trainId) : null));
   const close = useStore((s) => s.closeSidebar);
 
-  // 直达车：把其 routeNodeIds 作为临时高亮（复用候选高亮通道）。
+  // 快速车：把其 routeNodeIds 作为临时高亮（复用候选高亮通道）。
   // 依赖用 trainId + 路线内容而非整个 train 对象——列车每次位置刷新都会生成新对象，
   // 若依赖 train 会导致高亮被反复重设，进而反复触发镜头框选、把用户的缩放拉回。
   const routeKey =
@@ -44,7 +44,7 @@ export function TrainInfo() {
   return (
     <div className="panel">
       <div className="panel-header">
-        <h2>列车 {train.express ? '（直达车）' : '（普通车）'}</h2>
+        <h2>列车 {train.express ? '（快速车）' : '（普通车）'}</h2>
         <button className="icon-btn" onClick={close}>
           ×
         </button>

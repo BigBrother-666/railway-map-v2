@@ -130,7 +130,7 @@ web-link:
 | `frontend.mapStyle.stationTextSize`           | number  | `12`                                | 车站名称字号。                                                        |
 | `frontend.mapStyle.stationMergePixelDistance` | number  | `28`                                | 同名站点在屏幕距离小于该值时合并显示；寻路仍使用原始节点。                                  |
 | `frontend.mapStyle.trainIconSize`             | number  | `0.6`                               | MapLibre symbol 图标缩放。                                          |
-| `frontend.trainIcons.express`                 | string  | 内置 SVG data URL                     | 直达车图标，可配置为 `data:`、`http(s):` 或前端可访问的静态资源 URL。                 |
+| `frontend.trainIcons.express`                 | string  | 内置 SVG data URL                     | 快速车图标，可配置为 `data:`、`http(s):` 或前端可访问的静态资源 URL。                 |
 | `frontend.trainIcons.normal`                  | string  | 内置 SVG data URL                     | 普通车图标。                                                         |
 | `frontend.defaultSystemLogo`                  | string  | 内置 SVG data URL                     | 铁路系统没有 logo 时使用的默认图标。                                          |
 
