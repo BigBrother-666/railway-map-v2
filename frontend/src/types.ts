@@ -202,7 +202,6 @@ export interface FrontendConfig {
 
   // 联程票寻路参数
   maxTransferResults: number;
-  maxTransferCandidates: number;
   transferMinImprovement: number;
   /** 路线查询（Web Worker 寻路）超时毫秒数；超时终止并提示失败。 */
   routeSearchTimeoutMs: number;

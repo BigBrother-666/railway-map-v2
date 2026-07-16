@@ -111,6 +111,61 @@ export class RouteGraph {
     return [...this.stationIndex.keys()];
   }
 
+  /** 站名级缩合距离矩阵的缓存（惰性构建，随图实例失效）。 */
+  private stationDistCache: Map<string, Map<string, number>> | null = null;
+
+  /**
+   * 站名级「直达可达」缩合距离矩阵：起点站名 → 终点站名 → 一趟直达车的最短距离（km）。复刻插件
+   * GeoRouteGraph.stationDirectDistances。把物理节点（含大量道岔/多站台）缩合为站名节点，只保留
+   * 「站名 A 能否一趟直达站名 B、最短多少」，供 findTransferJourneys 快速枚举全部换乘站。
+   * <p>
+   * 口径为下界估计：对每个站名各站台跑普通 Dijkstra（边权 = length，忽略 enterFace / 折返 / 正线绕行约束），
+   * 只用于筛选候选，最终每段仍由 findByStation 权威实体化施加全部约束，故下界乐观性不影响结果正确性。
+   */
+  stationDirectDistances(): Map<string, Map<string, number>> {
+    if (this.stationDistCache) return this.stationDistCache;
+    const matrix = new Map<string, Map<string, number>>();
+    for (const [startName, platforms] of this.stationIndex) {
+      const row = new Map<string, number>();
+      for (const platformId of platforms) this.accumulateShortestToStations(platformId, row);
+      row.delete(startName); // 起点到自身不算直达候选
+      matrix.set(startName, row);
+    }
+    this.stationDistCache = matrix;
+    return matrix;
+  }
+
+  /**
+   * 从单一起点节点做普通 Dijkstra（边权 = 段长，米），把到达各站名的最短距离（km）并入 out（取更小值）。
+   */
+  private accumulateShortestToStations(startNodeId: string, out: Map<string, number>): void {
+    const dist = new Map<string, number>();
+    dist.set(startNodeId, 0);
+    // 简易二叉堆用数组 + 线性 pop 足够（节点数中等）；与后端 PriorityQueue 语义一致（过期条目跳过）。
+    const queue: { id: string; d: number }[] = [{ id: startNodeId, d: 0 }];
+    while (queue.length > 0) {
+      let mi = 0;
+      for (let i = 1; i < queue.length; i++) if (queue[i].d < queue[mi].d) mi = i;
+      const cur = queue.splice(mi, 1)[0];
+      const known = dist.get(cur.id);
+      if (known !== undefined && cur.d > known) continue;
+      const node = this.nodes.get(cur.id);
+      if (node && node.type === 'station' && node.name && cur.d > 0) {
+        const km = cur.d / 1000;
+        const prev = out.get(node.name);
+        if (prev === undefined || km < prev) out.set(node.name, km);
+      }
+      for (const link of this.links(cur.id)) {
+        const nd = cur.d + link.distance;
+        const old = dist.get(link.to);
+        if (old === undefined || nd < old) {
+          dist.set(link.to, nd);
+          queue.push({ id: link.to, d: nd });
+        }
+      }
+    }
+  }
+
   platformNameOfMainlineSwitch(nodeId: string): string | null {
     const links = this.links(nodeId);
     let toSwitch = false;

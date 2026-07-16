@@ -55,7 +55,7 @@ describe('findTransferJourneys', () => {
     expect(direct.length).toBeGreaterThan(0);
     expect(direct[0].distance).toBeCloseTo(100 / 1000, 9);
 
-    const plans = findTransferJourneys(g, 'A', 'E', 0, 30, 0);
+    const plans = findTransferJourneys(g, 'A', 'E', 0, 0);
     expect(plans.length).toBeGreaterThan(0);
     const best = plans[0];
     expect(best.transferStations[0]).toBe('B');
@@ -65,15 +65,15 @@ describe('findTransferJourneys', () => {
   });
 
   it('起终点相同返回空', () => {
-    expect(findTransferJourneys(scenario(), 'A', 'A', 0, 30, 0)).toEqual([]);
+    expect(findTransferJourneys(scenario(), 'A', 'A', 0, 0)).toEqual([]);
   });
 
   it('minImprovement 过滤边际收益的换乘', () => {
     const g = scenario();
     // 阈值 = 100 * (1-0.9) = 10km；换乘总距 20km 不满足，被过滤
-    expect(findTransferJourneys(g, 'A', 'E', 3, 30, 0.9)).toEqual([]);
+    expect(findTransferJourneys(g, 'A', 'E', 3, 0.9)).toEqual([]);
     // 0.2 时阈值 80km，20km 满足
-    expect(findTransferJourneys(g, 'A', 'E', 3, 30, 0.2).length).toBeGreaterThan(0);
+    expect(findTransferJourneys(g, 'A', 'E', 3, 0.2).length).toBeGreaterThan(0);
   });
 });
 

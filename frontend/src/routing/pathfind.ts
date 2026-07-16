@@ -293,9 +293,11 @@ export interface RawJourney {
 /**
  * 启发式寻找「一次换乘」的行程方案（两段直达）：起点站 → 换乘站 → 终点站。复刻插件
  * GeoRouteEngine.findTransferJourneys。用于两站没有便宜直达、但「中途某站下车换乘另一条线路」更近的场景。
+ * <p>
+ * 用站名级缩合距离矩阵（graph.stationDirectDistances）枚举<b>全部</b>换乘站按估计总距离（下界）预筛排序，
+ * 只对最有潜力的前若干个做两段真实寻路实体化 —— 不再截断候选、不再逐个候选跑全图寻路（select-then-materialize）。
  *
  * @param maxResults     最多返回方案数（<=0 不限制）
- * @param maxCandidates  最多考察的候选换乘站数（<=0 不限制），优先直达路径上的经停站
  * @param minImprovement 最低改善比例 [0,1)：换乘总距离须 < 最短直达 ×(1 - 此值)；两站无直达时门槛不生效
  */
 export function findTransferJourneys(
@@ -303,7 +305,6 @@ export function findTransferJourneys(
   startStation: string,
   endStation: string,
   maxResults: number,
-  maxCandidates: number,
   minImprovement: number,
   isReverse: ReversePredicate = () => false,
 ): RawJourney[] {
@@ -318,24 +319,36 @@ export function findTransferJourneys(
     threshold = bestDirect * (1 - minImprovement);
   }
 
-  // 候选换乘站集合（启发式，保序）：直达路径经停站 ∪ 终点线路经停站，去掉起终点
-  const candidates = new Set<string>();
-  for (const p of directPaths) for (const s of p.stations) candidates.add(s);
-  for (const s of stationsOnEndLines(graph, endStation)) candidates.add(s);
-  candidates.delete(startStation);
-  candidates.delete(endStation);
-  let candidateList = [...candidates];
-  if (maxCandidates > 0 && candidateList.length > maxCandidates) {
-    candidateList = candidateList.slice(0, maxCandidates);
+  // 站名级缩合矩阵：枚举全部换乘站，按「start 直达 mid + mid 直达 end」估计总距离（下界）预筛 + 排序。
+  // 缩合距离忽略了 enterFace / 折返约束是乐观下界，只用于选候选并排序，最终每段仍由 findByStation 权威实体化。
+  const matrix = graph.stationDirectDistances();
+  const fromStart = matrix.get(startStation) ?? new Map<string, number>();
+  const ranked: { mid: string; est: number }[] = [];
+  for (const [mid, d1] of fromStart) {
+    if (mid === startStation || mid === endStation) continue;
+    const d2 = matrix.get(mid)?.get(endStation);
+    if (d2 === undefined) continue; // mid 到不了终点
+    const est = d1 + d2;
+    if (est >= threshold) continue; // 下界都不比阈值近
+    ranked.push({ mid, est });
   }
+  ranked.sort((a, b) => a.est - b.est);
 
-  // 逐候选站求两段最短路，按换乘站去重（留总距离最短者）
+  // 只对最有潜力的前若干候选做实体化；取需要条数的数倍作缓冲，兼顾下界乐观导致的淘汰。<=0（不限）时实体化全部。
+  const MATERIALIZE_FACTOR = 3;
+  const MATERIALIZE_MIN = 8;
+  const materializeCap = maxResults > 0 ? Math.max(maxResults * MATERIALIZE_FACTOR, MATERIALIZE_MIN) : Infinity;
+
+  // 逐候选站实体化两段真实路径，按换乘站去重（留总距离最短者）
   const byTransfer = new Map<string, RawJourney>();
-  for (const mid of candidateList) {
+  let materialized = 0;
+  for (const { mid } of ranked) {
+    if (materialized >= materializeCap) break;
     const leg1 = findByStation(graph, startStation, mid, 1, isReverse);
     if (leg1.length === 0) continue;
     const leg2 = findByStation(graph, mid, endStation, 1, isReverse);
     if (leg2.length === 0) continue;
+    materialized++;
     const total = leg1[0].distance + leg2[0].distance;
     if (total >= threshold) continue;
     const old = byTransfer.get(mid);
@@ -346,27 +359,4 @@ export function findTransferJourneys(
 
   const ret = [...byTransfer.values()].sort((a, b) => a.totalDistance - b.totalDistance);
   return maxResults > 0 ? ret.slice(0, maxResults) : ret;
-}
-
-/**
- * 收集终点站所属线路经停的所有车站名（换乘站候选来源之一）。复刻插件 stationsOnEndLines：
- * 终点站各站台的 lineIds 即服务该终点站的线路；再扫全图 station 节点，凡 lineIds 与之有交集者都是候选。
- */
-function stationsOnEndLines(graph: RouteGraph, endStation: string): string[] {
-  const endLineIds = new Set<string>();
-  for (const id of graph.stationNodes(endStation)) {
-    graph.nodes.get(id)?.lineIds.forEach((l) => endLineIds.add(l));
-  }
-  const result = new Set<string>();
-  if (endLineIds.size === 0) return [];
-  for (const node of graph.nodes.values()) {
-    if (node.type !== 'station' || !node.name) continue;
-    for (const lineId of node.lineIds) {
-      if (endLineIds.has(lineId)) {
-        result.add(node.name);
-        break;
-      }
-    }
-  }
-  return [...result];
 }

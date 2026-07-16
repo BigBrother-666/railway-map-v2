@@ -36,13 +36,12 @@ export function computeCandidates(graph: RouteGraph, input: ComputeInput): Route
     (p) => ({ ...withFare(p), kind: 'direct' as const }),
   );
 
-  // 联程票候选：限方案数 + 限候选换乘站数
+  // 联程票候选：限方案数（换乘站用站名级缩合矩阵枚举全部，不再截断候选）
   const throughCandidates: RoutePath[] = findTransferJourneys(
     graph,
     startStation,
     endStation,
     cfg.maxTransferResults,
-    cfg.maxTransferCandidates,
     cfg.transferMinImprovement,
     isReverse,
   ).map((j) => {

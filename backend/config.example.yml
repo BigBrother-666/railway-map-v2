@@ -43,8 +43,6 @@ frontend:
   minDirectResults: 1
   # 联程票（一次换乘 / 两段直达）方案条数（<=0 不限制，仍受候选上限约束）
   maxTransferResults: 2
-  # 联程票寻路最多考察的候选换乘站数量，防止大线组合爆炸；优先直达路径上的经停站
-  maxTransferCandidates: 10
   # 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1 - 此值) 时才显示联程票。0 表示只要严格更短即显示
   transferMinImprovement: 0.2
   # 路线查询超时毫秒数（前端 Web Worker 寻路）；超时终止计算并提示失败。<=0 用默认 10000

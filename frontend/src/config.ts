@@ -46,7 +46,6 @@ const DEFAULT_CONFIG: FrontendConfig = {
   searchWeightPrice: 0.5,
   minDirectResults: 1,
   maxTransferResults: 3,
-  maxTransferCandidates: 30,
   transferMinImprovement: 0.2,
   routeSearchTimeoutMs: 10000,
 };
