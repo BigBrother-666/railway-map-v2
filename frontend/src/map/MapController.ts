@@ -6,7 +6,7 @@
 import maplibregl from 'maplibre-gl';
 import type { FeatureCollection, LineStringProps, PointProps, Train } from '../types';
 import { gameToLngLat, gameLineToLngLat } from './coords';
-import { getConfig } from '../config';
+import { getConfig, CONTACT_SYSTEM_ID } from '../config';
 
 const SRC_LINES = 'lines';
 const SRC_STATIONS = 'stations';
@@ -23,6 +23,7 @@ export class MapController {
   private highlightEdges: Set<string> = new Set();
   private onStationClick?: (name: string) => void;
   private onTrainClick?: (id: string) => void;
+  private onLineClick?: (lineId: string) => void;
   /** 左侧被侧边栏遮挡的像素宽度，框选时作为左侧内边距，避免内容落在侧边栏下方。 */
   private leftInset = 0;
 
@@ -61,9 +62,14 @@ export class MapController {
     this.map.on('load', cb);
   }
 
-  setHandlers(onStationClick: (name: string) => void, onTrainClick: (id: string) => void) {
+  setHandlers(
+    onStationClick: (name: string) => void,
+    onTrainClick: (id: string) => void,
+    onLineClick: (lineId: string) => void,
+  ) {
     this.onStationClick = onStationClick;
     this.onTrainClick = onTrainClick;
+    this.onLineClick = onLineClick;
   }
 
   /** 设置左侧侧边栏遮挡宽度（0 表示未打开），供框选时留出左侧内边距。 */
@@ -112,13 +118,98 @@ export class MapController {
     this.updateStationSource();
   }
 
-  /** 当前世界 + 未隐藏的可见性过滤（base 与 highlight 共用的基础部分）。 */
+  /**
+   * 当前世界 + 未隐藏的可见性过滤（base 与 highlight 共用的基础部分）。
+   * 联络线（lineId===contact）不受 hiddenLines 直接控制，而是按两端节点是否可见自动显隐：
+   * 仅当该联络线段的 edge id 落在「可见联络线」集合内才渲染。
+   */
   private visibilityFilter(): maplibregl.FilterSpecification {
+    const visibleContact = [...this.computeVisibleContactEdges()];
     return [
       'all',
       ['==', ['get', 'world'], this.world],
-      ['!', ['in', ['get', 'lineId'], ['literal', [...this.hidden]]]],
-    ];
+      [
+        'case',
+        ['==', ['get', 'lineId'], CONTACT_SYSTEM_ID],
+        ['in', ['get', 'id'], ['literal', visibleContact]],
+        ['!', ['in', ['get', 'lineId'], ['literal', [...this.hidden]]]],
+      ],
+    ] as maplibregl.FilterSpecification;
+  }
+
+  /**
+   * 计算当前世界下应显示的联络线段 edge id 集合。
+   *
+   * 联络线两端节点通常是道岔：有的道岔本身挂在普通线路上（PointProps.lineIds，排除 contact 自身），
+   * 有的则是「纯中转道岔」——不属于任何普通线路，只作为两条联络线之间的连接点（联络线链式相连）。
+   *
+   * 规则：把「经纯中转道岔互连」的联络线段并为一组，组的边界是挂有普通线路的<b>终端节点</b>；
+   * 当且仅当该组所有终端节点都仍有可见普通线路时，整组联络线显示——任一终端的普通线路全被隐藏，则整组隐藏。
+   * 这样链中间的纯中转道岔（无普通线路）不会被误判为「不可见」而拖垮整条链。
+   */
+  private computeVisibleContactEdges(): Set<string> {
+    const result = new Set<string>();
+    if (!this.fc) return result;
+
+    // 节点 id → 关联的非联络线 lineId 列表（当前世界）
+    const nodeNormalLines = new Map<string, string[]>();
+    for (const f of this.fc.features) {
+      if (f.geometry?.type !== 'Point') continue;
+      const p = f.properties as PointProps;
+      if (p.world !== this.world || !p.id) continue;
+      nodeNormalLines.set(p.id, (p.lineIds ?? []).filter((id) => id !== CONTACT_SYSTEM_ID));
+    }
+    const hasNormalLine = (id: string) => (nodeNormalLines.get(id)?.length ?? 0) > 0;
+    // 终端节点可见：至少一条普通线路未被隐藏（与车站显隐口径一致）。
+    const terminalVisible = (id: string) =>
+      (nodeNormalLines.get(id) ?? []).some((lineId) => !this.hidden.has(lineId));
+
+    // 收集当前世界所有联络线段，并建立「节点 → 关联联络线段索引」邻接。
+    const contactEdges: { id: string; from: string; to: string }[] = [];
+    const nodeContactEdges = new Map<string, number[]>();
+    for (const f of this.fc.features) {
+      if (f.geometry?.type !== 'LineString') continue;
+      const l = f.properties as LineStringProps;
+      if (l.lineId !== CONTACT_SYSTEM_ID || l.world !== this.world || !l.id) continue;
+      const idx = contactEdges.length;
+      contactEdges.push({ id: l.id, from: l.from, to: l.to });
+      for (const n of [l.from, l.to]) {
+        const arr = nodeContactEdges.get(n) ?? [];
+        arr.push(idx);
+        nodeContactEdges.set(n, arr);
+      }
+    }
+
+    // 逐组 BFS：只经纯中转道岔（无普通线路）跨到相邻联络线段，终端节点作为边界不跨越。
+    const visited = new Array(contactEdges.length).fill(false);
+    for (let start = 0; start < contactEdges.length; start++) {
+      if (visited[start]) continue;
+      const group: number[] = [];
+      const terminals = new Set<string>();
+      const stack = [start];
+      visited[start] = true;
+      while (stack.length) {
+        const ei = stack.pop() as number;
+        group.push(ei);
+        const e = contactEdges[ei];
+        for (const n of [e.from, e.to]) {
+          if (hasNormalLine(n)) {
+            terminals.add(n); // 终端：不再向外扩散
+            continue;
+          }
+          for (const adj of nodeContactEdges.get(n) ?? []) {
+            if (!visited[adj]) {
+              visited[adj] = true;
+              stack.push(adj);
+            }
+          }
+        }
+      }
+      // 组可见：存在终端且所有终端仍有可见普通线路。
+      const groupVisible = terminals.size > 0 && [...terminals].every((n) => terminalVisible(n));
+      if (groupVisible) for (const ei of group) result.add(contactEdges[ei].id);
+    }
+    return result;
   }
 
   /**
@@ -356,7 +447,17 @@ export class MapController {
       const id = e.features?.[0]?.properties?.trainId as string | undefined;
       if (id) this.onTrainClick?.(id);
     });
-    for (const layer of ['stations-layer', 'trains-layer']) {
+    // 线路点击：弹出线路详情（任务 2）。车站圆点 / 列车图标叠在线路之上，
+    // 若同一点还命中车站或列车则让位给它们，避免点击车站时误触线路。
+    this.map.on('click', 'lines-layer', (e) => {
+      const hitOverlay = this.map.queryRenderedFeatures(e.point, {
+        layers: ['stations-layer', 'trains-layer'],
+      });
+      if (hitOverlay.length > 0) return;
+      const lineId = e.features?.[0]?.properties?.lineId as string | undefined;
+      if (lineId && lineId !== CONTACT_SYSTEM_ID) this.onLineClick?.(lineId);
+    });
+    for (const layer of ['stations-layer', 'trains-layer', 'lines-layer']) {
       this.map.on('mouseenter', layer, () => (this.map.getCanvas().style.cursor = 'pointer'));
       this.map.on('mouseleave', layer, () => (this.map.getCanvas().style.cursor = ''));
     }

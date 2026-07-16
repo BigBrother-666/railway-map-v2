@@ -24,7 +24,7 @@ import type {
 } from '../types';
 
 /** 侧栏模式：车站信息 / 路线查询 / 列车信息 / 实时列车列表 / 乘车历史 / 空。 */
-export type SidebarMode = 'idle' | 'station' | 'route' | 'train' | 'trains' | 'history';
+export type SidebarMode = 'idle' | 'station' | 'line' | 'route' | 'train' | 'trains' | 'history';
 
 /** 列车高亮后的镜头意图：center=居中到列车位置（列表点击）；route=框选整条路线（地图点击）。 */
 export type TrainFocusMode = 'center' | 'route';
@@ -57,6 +57,7 @@ interface AppState {
   // --- 侧栏 / 选择 ---
   sidebar: SidebarMode;
   selectedStation: string | null; // 点击车站面板显示的站名
+  selectedLineId: string | null; // 点击线路面板显示的线路 id
   startStation: string | null;
   endStation: string | null;
   nextPick: Endpoint; // 下次点击地图车站设为起点还是终点
@@ -84,6 +85,7 @@ interface AppState {
   setSystemVisible: (systemId: string, visible: boolean) => void;
 
   clickStation: (name: string) => void;
+  clickLine: (lineId: string) => void;
   openRoutePanel: (presetEnd?: string) => void;
   setEndpoint: (role: Endpoint, name: string | null) => void;
   swapEndpoints: () => void;
@@ -123,6 +125,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   sidebar: 'idle',
   selectedStation: null,
+  selectedLineId: null,
   startStation: null,
   endStation: null,
   nextPick: 'start',
@@ -213,7 +216,13 @@ export const useStore = create<AppState>((set, get) => ({
       state.setEndpoint(state.nextPick, name);
       return;
     }
-    set({ sidebar: 'station', selectedStation: name, selectedTrainId: null });
+    set({ sidebar: 'station', selectedStation: name, selectedLineId: null, selectedTrainId: null });
+  },
+
+  clickLine(lineId) {
+    // 路线查询打开时禁用线路点击，避免用户选点时误点到线路（任务 2）。
+    if (get().sidebar === 'route') return;
+    set({ sidebar: 'line', selectedLineId: lineId, selectedStation: null, selectedTrainId: null });
   },
 
   openRoutePanel(presetEnd) {
@@ -283,6 +292,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       sidebar: 'idle',
       selectedStation: null,
+      selectedLineId: null,
       selectedTrainId: null,
       // 关闭面板时清空查询与高亮，地图恢复正常（问题 1）
       startStation: null,

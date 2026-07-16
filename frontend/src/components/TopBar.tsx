@@ -14,6 +14,7 @@ export function TopBar() {
   const refreshPlayer = useStore((s) => s.refreshPlayer);
   const openRideHistory = useStore((s) => s.openRideHistory);
   const openTrainList = useStore((s) => s.openTrainList);
+  const trainCount = useStore((s) => s.trains.size);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const testLogin = async () => {
@@ -31,7 +32,7 @@ export function TopBar() {
         <span className="brand">帕拉伦铁路线路图</span>
         <button className="btn ghost topbar-trains-btn" onClick={openTrainList} title="实时列车列表">
           <span className={`status-dot ${meta?.online ? 'online' : 'offline'}`} />
-             🚆 实时列车
+             🚆 实时列车（{trainCount}）
         </button>
       </div>
       {worlds.length > 1 && (

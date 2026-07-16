@@ -5,7 +5,7 @@ import { RouteCard } from './RouteCard';
 import { TrainInfo } from './TrainInfo';
 import { TrainList } from './TrainList';
 import { getConfig } from '../config';
-import type { RideHistoryItem } from '../types';
+import type { LineStringProps, RideHistoryItem } from '../types';
 
 /** 左侧边栏：车站信息 / 路线查询 / 列车信息 / 实时列车列表（仿 Google 地图）。 */
 export function LeftSidebar() {
@@ -29,6 +29,7 @@ export function LeftSidebar() {
         {collapsed ? '›' : '‹'}
       </button>
       {sidebar === 'station' && <StationPanel />}
+      {sidebar === 'line' && <LinePanel />}
       {sidebar === 'route' && <RoutePanel />}
       {sidebar === 'train' && <TrainInfo />}
       {sidebar === 'trains' && <TrainList />}
@@ -97,6 +98,85 @@ function StationPanel() {
       <button className="btn primary" onClick={() => openRoutePanel(name)}>
         路线
       </button>
+    </div>
+  );
+}
+
+function LinePanel() {
+  const lineId = useStore((s) => s.selectedLineId);
+  const lines = useStore((s) => s.lines);
+  const systems = useStore((s) => s.systemMap);
+  const geojson = useStore((s) => s.geojson);
+  const close = useStore((s) => s.closeSidebar);
+
+  const line = lines.find((l) => l.id === lineId);
+  if (!line) return null;
+
+  const system = systems.get(line.systemId);
+  // 线路全长：累加该 lineId 的所有轨道段长度（按无序端点去重，避免往返段重复计入），米 → km。
+  let meters = 0;
+  const counted = new Set<string>();
+  for (const f of geojson?.features ?? []) {
+    if (f.geometry?.type !== 'LineString') continue;
+    const p = f.properties as LineStringProps;
+    if (p.lineId !== line.id) continue;
+    const key = p.from < p.to ? `${p.from}__${p.to}` : `${p.to}__${p.from}`;
+    if (counted.has(key)) continue;
+    counted.add(key);
+    meters += p.length ?? 0;
+  }
+  const lengthKm = meters / 1000;
+  // 环线的 stations 首尾为同一站，计数时去掉重复的末项。
+  const stationCount =
+    line.ring && line.stations.length > 1 && line.stations[0] === line.stations[line.stations.length - 1]
+      ? line.stations.length - 1
+      : line.stations.length;
+  const pricePerKm = system?.pricePerKm ?? getConfig().defaultPricePerKm;
+
+  return (
+    <div className="panel">
+      <div className="panel-header station-header">
+        <div className="station-title-block">
+          <div className="station-eyebrow">线路</div>
+          <h2>{line.name}</h2>
+          <div className="station-sub">{stationCount} 座车站 · {lengthKm.toFixed(2)} km</div>
+        </div>
+        <button className="icon-btn" onClick={close}>
+          ×
+        </button>
+      </div>
+      <div className="panel-body">
+        <div className="panel-section">
+          <div className="label">所属铁路公司</div>
+          <div className="line-cards">
+            <div className="line-card">
+              <img
+                className="system-logo"
+                src={system?.logoUrl || getConfig().defaultSystemLogo}
+                alt=""
+              />
+              {system?.name ?? line.systemId}
+            </div>
+          </div>
+        </div>
+        <div className="panel-section">
+          <div className="label">线路信息</div>
+          <div className="info-card">
+            <div className="info-row">
+              <span className="label">线路全长</span>
+              <span className="value">{lengthKm.toFixed(2)} km</span>
+            </div>
+            <div className="info-row">
+              <span className="label">车站个数</span>
+              <span className="value">{stationCount}</span>
+            </div>
+            <div className="info-row">
+              <span className="label">快速车价格</span>
+              <span className="value">{pricePerKm.toFixed(2)} {getConfig().currencyName}/km</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -32,6 +32,7 @@ export function MapView() {
     ctrl.setHandlers(
       (name) => useStore.getState().clickStation(name),
       (id) => useStore.getState().selectTrain(id),
+      (lineId) => useStore.getState().clickLine(lineId),
     );
     ctrl.onReady(() => {
       readyRef.current = true;

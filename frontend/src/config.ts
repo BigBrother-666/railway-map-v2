@@ -2,6 +2,9 @@ import type { FrontendConfig } from './types';
 
 export const API_BASE = '/api/v1';
 
+/** 联络线所属的铁路系统 id：这类线路不在线路栏列出，且随两端节点可见性自动显隐。 */
+export const CONTACT_SYSTEM_ID = 'contact';
+
 const DEFAULT_CONFIG: FrontendConfig = {
   realtimeWsPath: '/api/v1/realtime',
   defaultWorld: 'world1',
