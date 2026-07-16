@@ -87,6 +87,11 @@ function StationPanel() {
                 title={`高亮显示 ${l.name}`}
               >
                 <span className="line-card-bar" style={{ background: l.color }} />
+                <img
+                  className="system-logo"
+                  src={systems.get(l.systemId)?.logoUrl || getConfig().defaultSystemLogo}
+                  alt=""
+                />
                 {l.name}
               </button>
             ))}
@@ -97,6 +102,11 @@ function StationPanel() {
           <div className="line-cards">
             {[...systemIds].map((sid) => (
               <div key={sid} className="line-card">
+                <img
+                  className="system-logo"
+                  src={systems.get(sid)?.logoUrl || getConfig().defaultSystemLogo}
+                  alt=""
+                />
                 {systems.get(sid)?.name ?? sid}
               </div>
             ))}
