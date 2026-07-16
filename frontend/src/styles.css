@@ -74,11 +74,23 @@ body,
   z-index: 10;
 }
 
+.topbar {
+  position: relative;
+}
 .topbar-left,
 .topbar-right {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+/* 世界切换：绝对居中于顶栏中部，不受左右两侧宽度影响 */
+.topbar-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
 }
 .topbar-trains-btn {
   padding: 4px 12px;

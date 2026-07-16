@@ -34,7 +34,9 @@ export function TopBar() {
         </button>
         <span className={`status-dot ${meta?.online ? 'online' : 'offline'}`} />
         <span className="status-text">{meta?.online ? '实时列车数据正常' : '实时列车数据异常'}</span>
-        {worlds.length > 1 && (
+      </div>
+      {worlds.length > 1 && (
+        <div className="topbar-center">
           <select value={currentWorld} onChange={(e) => setWorld(e.target.value)}>
             {worlds.map((w) => (
               <option key={w} value={w}>
@@ -42,8 +44,8 @@ export function TopBar() {
               </option>
             ))}
           </select>
-        )}
-      </div>
+        </div>
+      )}
       <div className="topbar-right">
         {player ? (
           <div className="player-menu">

@@ -5,7 +5,9 @@ import { getConfig } from '../config';
 /** 右侧边栏：按铁路系统分组的线路显示开关（§二.3），可收起（改进 1）。 */
 export function RightSidebar() {
   const systems = useStore((s) => s.systems);
-  const lines = useStore((s) => s.lines);
+  const allLines = useStore((s) => s.lines);
+  const lineWorlds = useStore((s) => s.lineWorlds);
+  const currentWorld = useStore((s) => s.currentWorld);
   const [collapsed, setCollapsed] = useState(true); // 默认收起线路显示面板
 
   if (collapsed) {
@@ -15,6 +17,9 @@ export function RightSidebar() {
       </button>
     );
   }
+
+  // 线路列表仅含当前世界的线路（世界归属由 geojson 反推；无归属信息时保留显示）。
+  const lines = allLines.filter((l) => (lineWorlds.get(l.id) ?? currentWorld) === currentWorld);
 
   // 按系统分组；无系统归入「其它」
   const groups = new Map<string, { name: string; logoUrl: string | null; lines: typeof lines }>();

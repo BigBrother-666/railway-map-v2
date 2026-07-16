@@ -12,6 +12,7 @@ import { getConfig, setRuntimeConfig } from '../config';
 import type {
   FeatureCollection,
   Line,
+  LineStringProps,
   Meta,
   Player,
   PointProps,
@@ -47,6 +48,8 @@ interface AppState {
   // --- 世界 ---
   worlds: string[];
   currentWorld: string;
+  /** lineId → 所属世界（由 geojson LineString 反推），用于按世界过滤线路列表。 */
+  lineWorlds: Map<string, string>;
 
   // --- 图层可见性（lineId → 是否显示） ---
   hiddenLines: Set<string>;
@@ -114,6 +117,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   worlds: [],
   currentWorld: getConfig().defaultWorld,
+  lineWorlds: new Map(),
 
   hiddenLines: new Set(),
 
@@ -157,6 +161,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
       }
       const worlds = extractWorlds(geojson);
+      const lineWorlds = extractLineWorlds(geojson);
       set({
         meta,
         geojson,
@@ -166,6 +171,7 @@ export const useStore = create<AppState>((set, get) => ({
         systemMap,
         reverseSet,
         worlds,
+        lineWorlds,
         currentWorld: worlds.includes(get().currentWorld)
           ? get().currentWorld
           : worlds[0] ?? getConfig().defaultWorld,
@@ -385,7 +391,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 }));
 
-/** 从 geojson 提取所有出现过的世界名。 */
+/** 从 geojson 提取所有出现过的世界名（按首次出现顺序，首个即默认世界兜底）。 */
 function extractWorlds(fc: FeatureCollection): string[] {
   const set = new Set<string>();
   for (const f of fc.features) {
@@ -393,4 +399,15 @@ function extractWorlds(fc: FeatureCollection): string[] {
     if (w) set.add(w);
   }
   return [...set];
+}
+
+/** 从 geojson LineString 反推 lineId → 所属世界，用于按世界过滤线路列表。 */
+function extractLineWorlds(fc: FeatureCollection): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const f of fc.features) {
+    if (f.geometry?.type !== 'LineString') continue;
+    const p = f.properties as LineStringProps;
+    if (p?.lineId && p.world && !map.has(p.lineId)) map.set(p.lineId, p.world);
+  }
+  return map;
 }
