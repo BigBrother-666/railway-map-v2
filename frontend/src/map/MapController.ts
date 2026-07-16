@@ -342,8 +342,11 @@ export class MapController {
   private ensureSources() {
     if (this.map.getSource(SRC_LINES)) return;
     const empty: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
-    this.map.addSource(SRC_LINES, { type: 'geojson', data: empty });
-    this.map.addSource(SRC_STATIONS, { type: 'geojson', data: empty });
+    // GeoJSON source 会在内部按瓦片切分：默认 tolerance(0.375) 的简化会在高缩放抹掉细短线段，
+    // 默认 maxzoom(18) 之上靠 overzoom 拉伸、落在瓦片 buffer 外的短段会被裁掉——
+    // 表现为「放大到一定级别少量线段消失、缩小又出现」。故对线路关闭简化并抬高 maxzoom + 加大 buffer。
+    this.map.addSource(SRC_LINES, { type: 'geojson', data: empty, tolerance: 0, maxzoom: 24, buffer: 512 });
+    this.map.addSource(SRC_STATIONS, { type: 'geojson', data: empty, maxzoom: 24, buffer: 512 });
     this.map.addSource(SRC_TRAINS, { type: 'geojson', data: empty });
     this.map.addSource(SRC_ENDPOINTS, { type: 'geojson', data: empty });
 
