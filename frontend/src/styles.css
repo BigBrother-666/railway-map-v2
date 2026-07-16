@@ -93,6 +93,9 @@ body,
   align-items: center;
 }
 .topbar-trains-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 12px;
   font-size: 13px;
 }
@@ -111,6 +114,9 @@ body,
 }
 
 .status-dot {
+  margin-right: 6px;
+  display: inline-block;
+  flex-shrink: 0;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -120,10 +126,6 @@ body,
 }
 .status-dot.offline {
   background: #888;
-}
-.status-text {
-  font-size: 13px;
-  color: var(--muted);
 }
 .player-name {
   font-size: 13px;
