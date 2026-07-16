@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { StationSearch } from './StationSearch';
 import { RouteCard } from './RouteCard';
@@ -11,6 +11,10 @@ export function LeftSidebar() {
   const sidebar = useStore((s) => s.sidebar);
   // 折叠状态：折叠后侧栏滑出屏幕、只露出边缘按钮，避免手机上占屏过大。
   const [collapsed, setCollapsed] = useState(false);
+  // 侧栏关闭后再次打开时恢复展开态，避免残留折叠状态。
+  useEffect(() => {
+    if (sidebar === 'idle') setCollapsed(false);
+  }, [sidebar]);
   if (sidebar === 'idle') return null;
 
   return (

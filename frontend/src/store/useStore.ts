@@ -291,8 +291,14 @@ export const useStore = create<AppState>((set, get) => ({
   removeTrains(ids) {
     const trains = new Map(get().trains);
     for (const id of ids) trains.delete(id);
-    const selectedTrainId = ids.includes(get().selectedTrainId ?? '') ? null : get().selectedTrainId;
-    set({ trains, selectedTrainId });
+    const removedSelected = ids.includes(get().selectedTrainId ?? '');
+    if (removedSelected && get().sidebar === 'train') {
+      // 正在跟踪的列车被销毁：整体关闭列车信息面板（含折叠按钮），而非留下空面板。
+      get().closeSidebar();
+      set({ trains });
+    } else {
+      set({ trains, selectedTrainId: removedSelected ? null : get().selectedTrainId });
+    }
   },
 
   selectTrain(id) {
