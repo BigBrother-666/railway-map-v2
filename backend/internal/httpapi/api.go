@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"railway-map-backend/internal/auth"
@@ -31,7 +33,9 @@ type API struct {
 	auth     *auth.Service
 	store    DataStore
 	frontend model.FrontendBootstrap
-	logger   *slog.Logger
+	// frontendBaseURL 是 OAuth 回调完成后跳转回的地图页面地址（带 ?login=... 提示）。
+	frontendBaseURL string
+	logger          *slog.Logger
 }
 
 // DataStore records purchases and ride history (implemented by store.Store).
@@ -49,6 +53,7 @@ type Options struct {
 	Auth            *auth.Service
 	Store           DataStore
 	Frontend        config.FrontendConfig
+	FrontendBaseURL string
 	TestAuthEnabled bool
 	TestAuthUUIDs   []string
 	Logger          *slog.Logger
@@ -68,7 +73,8 @@ func New(o Options) *API {
 			TestAuthEnabled: o.TestAuthEnabled,
 			TestAuthUUIDs:   o.TestAuthUUIDs,
 		},
-		logger: o.Logger,
+		frontendBaseURL: o.FrontendBaseURL,
+		logger:          o.Logger,
 	}
 }
 
@@ -158,12 +164,12 @@ func (a *API) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	stateCookie, err := r.Cookie("bcts_oauth_state")
 	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
-		writeError(w, http.StatusBadRequest, "bad-state", "state 校验失败")
+		a.redirectLogin(w, r, "error", "bad-state")
 		return
 	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "no-code", "缺少授权码")
+		a.redirectLogin(w, r, "error", "no-code")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -172,21 +178,32 @@ func (a *API) Callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err == auth.ErrNotBound {
 			a.logger.Warn("Login rejected for unbound player")
-			writeError(w, http.StatusForbidden, "not-bound",
-				"请先进入游戏并执行 /ticket weblogin bind 绑定账号")
+			a.redirectLogin(w, r, "error", "not-bound")
 			return
 		}
 		a.logger.Warn("Login failed", "err", err)
-		writeError(w, http.StatusUnauthorized, "login-failed", "登录失败")
+		a.redirectLogin(w, r, "error", "login-failed")
 		return
 	}
 	if err := a.auth.IssueCookie(w, player); err != nil {
 		a.logger.Warn("Failed to issue session cookie", "err", err, "player", player.UUID)
-		writeError(w, http.StatusInternalServerError, "session-failed", "签发会话失败")
+		a.redirectLogin(w, r, "error", "session-failed")
 		return
 	}
 	a.logger.Info("Login completed", "player", player.UUID, "name", player.Name)
-	writeJSON(w, http.StatusOK, player)
+	a.redirectLogin(w, r, "success", "")
+}
+
+// redirectLogin 302 跳转回前端地图页，用 ?login=success|error（失败附 &reason=）告知结果，
+// 由前端读取后弹出提示并清理 URL。避免把原始 JSON 直接暴露给用户。
+func (a *API) redirectLogin(w http.ResponseWriter, r *http.Request, status, reason string) {
+	base := strings.TrimRight(a.frontendBaseURL, "/") // 空则兜底为同源根路径
+	q := url.Values{}
+	q.Set("login", status)
+	if reason != "" {
+		q.Set("reason", reason)
+	}
+	http.Redirect(w, r, base+"/?"+q.Encode(), http.StatusFound)
 }
 
 func (a *API) TestLogin(w http.ResponseWriter, r *http.Request) {

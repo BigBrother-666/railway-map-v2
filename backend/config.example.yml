@@ -1,6 +1,9 @@
 server:
   addr: ":8080"
   publicBaseUrl: "http://localhost:8080"
+  # 地图页面地址：微软登录回调完成后跳转回此处并弹出登录成功/失败提示。
+  # 留空则回退到 publicBaseUrl（生产同源反代场景）；开发时前端独立端口需填如 http://localhost:5173
+  frontendBaseUrl: ""
 log:
   level: "info"
   dir: "data/logs"

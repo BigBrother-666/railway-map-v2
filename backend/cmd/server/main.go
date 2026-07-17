@@ -100,7 +100,8 @@ func main() {
 	api := httpapi.New(httpapi.Options{
 		Cache: cache, Agg: agg, Plugin: pluginServer,
 		Purchase: orchestrator, Auth: authSvc, Store: st, Logger: logger,
-		Frontend: cfg.Frontend, TestAuthEnabled: cfg.Auth.TestAuthEnabled, TestAuthUUIDs: cfg.Auth.TestAuthUUIDs,
+		Frontend: cfg.Frontend, FrontendBaseURL: cfg.Server.FrontendBaseURL,
+		TestAuthEnabled: cfg.Auth.TestAuthEnabled, TestAuthUUIDs: cfg.Auth.TestAuthUUIDs,
 	})
 
 	r := buildRouter(cfg, api, pluginServer, hub, logger)

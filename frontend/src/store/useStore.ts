@@ -8,6 +8,8 @@ import { routeClient, RouteSearchTimeoutError } from '../routing/routeClient';
 
 // 路线查询请求序号：仅应用最新一次查询结果，避免快速改动起终点时旧结果覆盖新结果。
 let searchSeq = 0;
+// Toast 自增 id：即使连续弹出相同内容，id 变化也能让提示组件重新计时。
+let toastSeq = 0;
 import { getConfig, setRuntimeConfig } from '../config';
 import type {
   FeatureCollection,
@@ -28,6 +30,13 @@ export type SidebarMode = 'idle' | 'station' | 'line' | 'route' | 'train' | 'tra
 
 /** 列车高亮后的镜头意图：center=居中到列车位置（列表点击）；route=框选整条路线（地图点击）。 */
 export type TrainFocusMode = 'center' | 'route';
+
+/** 顶部临时提示（如登录成功 / 失败）。id 用于触发重复提示的重新计时。 */
+export interface Toast {
+  id: number;
+  kind: 'success' | 'error';
+  message: string;
+}
 
 /** 选点角色。 */
 type Endpoint = 'start' | 'end';
@@ -80,6 +89,9 @@ interface AppState {
   historyLoading: boolean;
   selectedHistoryId: number | null;
 
+  // --- 顶部提示 ---
+  toast: Toast | null;
+
   // --- actions ---
   init: () => Promise<void>;
   setWorld: (world: string) => void;
@@ -107,6 +119,9 @@ interface AppState {
   loadRideHistory: (page?: number) => Promise<void>;
   openRideHistory: () => Promise<void>;
   selectHistory: (item: RideHistoryItem) => void;
+
+  showToast: (kind: Toast['kind'], message: string) => void;
+  dismissToast: () => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -146,6 +161,8 @@ export const useStore = create<AppState>((set, get) => ({
   rideHistory: null,
   historyLoading: false,
   selectedHistoryId: null,
+
+  toast: null,
 
   async init() {
     set({ loading: true, loadError: null });
@@ -432,6 +449,14 @@ export const useStore = create<AppState>((set, get) => ({
       }],
       selectedRouteIndex: 0,
     });
+  },
+
+  showToast(kind, message) {
+    set({ toast: { id: ++toastSeq, kind, message } });
+  },
+
+  dismissToast() {
+    set({ toast: null });
   },
 }));
 

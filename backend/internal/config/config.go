@@ -23,6 +23,9 @@ type Config struct {
 type ServerConfig struct {
 	Addr          string `yaml:"addr"`
 	PublicBaseURL string `yaml:"publicBaseUrl"`
+	// FrontendBaseURL 是地图页面的访问地址，OAuth 回调完成后跳转回此处（带 ?login=... 提示）。
+	// 留空则回退到 PublicBaseURL（生产同源反代场景）；开发时前端独立端口需单独配置。
+	FrontendBaseURL string `yaml:"frontendBaseUrl"`
 }
 
 type LogConfig struct {
@@ -147,6 +150,9 @@ func Load(path string) (*Config, error) {
 func (c *Config) applyDefaults() {
 	if c.Server.Addr == "" {
 		c.Server.Addr = ":8080"
+	}
+	if c.Server.FrontendBaseURL == "" {
+		c.Server.FrontendBaseURL = c.Server.PublicBaseURL
 	}
 	if c.Log.Level == "" {
 		c.Log.Level = "info"

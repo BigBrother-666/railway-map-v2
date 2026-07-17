@@ -69,6 +69,7 @@ web-link:
 |---------------------------------|-------------|---------------------------------------------------|-----------------------------------------------------------------|
 | `server.addr`                   | string      | `:8080`                                           | HTTP 和 WebSocket 监听地址。                                          |
 | `server.publicBaseUrl`          | string      | 空                                                 | 后端对外基础 URL，用于拼接微软 OAuth 回调地址，也用于 CORS 允许来源。                     |
+| `server.frontendBaseUrl`        | string      | `server.publicBaseUrl`                            | 微软登录回调完成后跳转回此处并弹出登录成功/失败提示。                                     |
 | `log.level`                     | string      | `info`                                            | 日志级别，可用 `debug`、`info`、`warn`、`error`。                          |
 | `log.dir`                       | string      | `data/logs`                                       | 日志文件目录。相对路径按后端进程工作目录解析，默认即 `backend/data/logs`。                 |
 | `plugin.sharedToken`            | string      | 空                                                 | 插件连接 `/internal/plugin` 的 Bearer token。                         |
