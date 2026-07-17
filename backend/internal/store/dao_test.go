@@ -93,7 +93,7 @@ func TestCommonRideHistoryUsesCompletedPlatformInterval(t *testing.T) {
 	}
 }
 
-func TestExpressRideHistoryRequiresPaymentRouteAndFullPresence(t *testing.T) {
+func TestExpressRideHistoryRequiresPaymentRouteCoverage(t *testing.T) {
 	s := openTestStore(t)
 	player := model.Player{UUID: "uuid-1", Name: "Steve"}
 	route := []string{"node-a", "switch-1", "node-b"}
@@ -118,7 +118,7 @@ func TestExpressRideHistoryRequiresPaymentRouteAndFullPresence(t *testing.T) {
 		t.Fatalf("list history after missing passenger: %v", err)
 	}
 	if history.Total != 0 {
-		t.Fatalf("express history should not be written if passenger missed an event; total=%d", history.Total)
+		t.Fatalf("express history should not be written if a paid route node is uncovered; total=%d", history.Total)
 	}
 
 	if err := s.RecordRidePayment(payment("train-full", player, route)); err != nil {
@@ -152,6 +152,118 @@ func TestExpressRideHistoryRequiresPaymentRouteAndFullPresence(t *testing.T) {
 	}
 	if !reflect.DeepEqual(item.NodeIDs, route) {
 		t.Fatalf("unexpected express route nodes: got %v want %v", item.NodeIDs, route)
+	}
+}
+
+// 玩家实际多经过了购票路线之外的节点（前后各一站），只要覆盖了全部购票节点仍应记历史。
+// 起止时间取购票路线首/末节点的到达时刻，而非整段乘车的首尾。
+func TestExpressRideHistoryAllowsExtraNodesBeyondRoute(t *testing.T) {
+	s := openTestStore(t)
+	player := model.Player{UUID: "uuid-2", Name: "Alex"}
+	route := []string{"node-a", "switch-1", "node-b"}
+
+	if err := s.RecordRidePayment(payment("train-extra", player, route)); err != nil {
+		t.Fatalf("record payment: %v", err)
+	}
+	for _, ev := range []model.RideEventData{
+		expressEvent("train-extra", "node-x", "X", 1000, player), // 购票路线之前
+		expressEvent("train-extra", "node-a", "A", 2000, player),
+		expressEvent("train-extra", "switch-1", "", 3000, player),
+		expressEvent("train-extra", "node-b", "B", 4000, player),
+		expressEvent("train-extra", "node-y", "Y", 5000, player), // 购票路线之后
+	} {
+		if err := s.RecordRideEvent(ev); err != nil {
+			t.Fatalf("record extra-node event %s: %v", ev.NodeID, err)
+		}
+	}
+	if err := s.FinalizeRide("train-extra"); err != nil {
+		t.Fatalf("finalize extra ride: %v", err)
+	}
+	history, err := s.ListRideHistory(player.UUID, 1, 10)
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if history.Total != 1 || len(history.Items) != 1 {
+		t.Fatalf("expected one express history item despite extra nodes, total=%d len=%d", history.Total, len(history.Items))
+	}
+	item := history.Items[0]
+	// 起止时间应落在购票路线首/末节点上，而非 node-x / node-y。
+	if item.StartedAt != 2000 || item.EndedAt != 4000 {
+		t.Fatalf("express interval should span paid route nodes only: startedAt=%d endedAt=%d", item.StartedAt, item.EndedAt)
+	}
+	if !reflect.DeepEqual(item.NodeIDs, route) {
+		t.Fatalf("unexpected express route nodes: got %v want %v", item.NodeIDs, route)
+	}
+}
+
+// 环线快速车：购票路线首尾同为 node-a（A→B→A 绕一圈）。玩家真正绕回 node-a 才算走完，
+// 起止时间应跨越整圈（首个 node-a 到第二个 node-a），而非塌缩到同一时刻。
+func TestExpressRideHistoryRecordsLoopBackToStart(t *testing.T) {
+	s := openTestStore(t)
+	player := model.Player{UUID: "uuid-3", Name: "Loop"}
+	route := []string{"node-a", "switch-1", "node-b", "switch-2", "node-a"}
+
+	if err := s.RecordRidePayment(payment("train-loop", player, route)); err != nil {
+		t.Fatalf("record payment: %v", err)
+	}
+	for _, ev := range []model.RideEventData{
+		expressEvent("train-loop", "node-a", "A", 1000, player),
+		expressEvent("train-loop", "switch-1", "", 2000, player),
+		expressEvent("train-loop", "node-b", "B", 3000, player),
+		expressEvent("train-loop", "switch-2", "", 4000, player),
+		expressEvent("train-loop", "node-a", "A", 5000, player), // 绕回起点
+	} {
+		if err := s.RecordRideEvent(ev); err != nil {
+			t.Fatalf("record loop event %s: %v", ev.NodeID, err)
+		}
+	}
+	if err := s.FinalizeRide("train-loop"); err != nil {
+		t.Fatalf("finalize loop ride: %v", err)
+	}
+	history, err := s.ListRideHistory(player.UUID, 1, 10)
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if history.Total != 1 || len(history.Items) != 1 {
+		t.Fatalf("expected one express loop history item, total=%d len=%d", history.Total, len(history.Items))
+	}
+	item := history.Items[0]
+	if item.StartedAt != 1000 || item.EndedAt != 5000 {
+		t.Fatalf("loop interval should span the full loop: startedAt=%d endedAt=%d", item.StartedAt, item.EndedAt)
+	}
+	if !reflect.DeepEqual(item.NodeIDs, route) {
+		t.Fatalf("unexpected loop route nodes: got %v want %v", item.NodeIDs, route)
+	}
+}
+
+// 环线快速车但玩家没绕回起点（坐到 node-b 就下车）。购票路线末节点 node-a 的第二次出现
+// 无法匹配，不应记历史——这正是集合覆盖语义会误判、有序子序列语义能拦住的场景。
+func TestExpressRideHistoryRejectsIncompleteLoop(t *testing.T) {
+	s := openTestStore(t)
+	player := model.Player{UUID: "uuid-4", Name: "Half"}
+	route := []string{"node-a", "switch-1", "node-b", "switch-2", "node-a"}
+
+	if err := s.RecordRidePayment(payment("train-half", player, route)); err != nil {
+		t.Fatalf("record payment: %v", err)
+	}
+	for _, ev := range []model.RideEventData{
+		expressEvent("train-half", "node-a", "A", 1000, player),
+		expressEvent("train-half", "switch-1", "", 2000, player),
+		expressEvent("train-half", "node-b", "B", 3000, player), // 在此下车，未绕回 node-a
+	} {
+		if err := s.RecordRideEvent(ev); err != nil {
+			t.Fatalf("record half-loop event %s: %v", ev.NodeID, err)
+		}
+	}
+	if err := s.FinalizeRide("train-half"); err != nil {
+		t.Fatalf("finalize half loop: %v", err)
+	}
+	history, err := s.ListRideHistory(player.UUID, 1, 10)
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if history.Total != 0 {
+		t.Fatalf("incomplete loop should not be recorded; total=%d", history.Total)
 	}
 }
 

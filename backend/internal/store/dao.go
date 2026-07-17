@@ -334,29 +334,55 @@ func (s *Store) finalizeRidePlayer(playerUUID, trainID string, events []rideEven
 	return s.finalizeCommon(playerUUID, name, trainID, trainType, stops)
 }
 
-// finalizeExpress writes history only when the player's present-node sequence
-// exactly equals the paid route (route_node_ids); a missing node writes nothing.
+// finalizeExpress writes history only when the paid route (route_node_ids) appears
+// as an ordered subsequence of the player's present nodes — every route node is
+// matched, in order, though the player may pass through extra nodes in between or
+// at the ends. Order (rather than plain set coverage) is required so loop routes
+// whose first and last node are the same (e.g. A→…→A) only finalize once the player
+// has actually completed the loop back to the terminal node.
 func (s *Store) finalizeExpress(playerUUID, playerName, trainID, trainType string, stops []playerNodeStop) error {
 	pay, err := s.loadRidePayment(playerUUID, trainID)
 	if err != nil || pay == nil || len(pay.RouteNodeIDs) == 0 {
 		return err
 	}
-	nodeIDs := make([]string, len(stops))
-	for i, st := range stops {
-		nodeIDs[i] = st.nodeID
-	}
-	if !equalStrings(nodeIDs, pay.RouteNodeIDs) {
-		return nil
+	startedAt, endedAt, ok := matchRouteInterval(stops, pay.RouteNodeIDs)
+	if !ok {
+		return nil // 未按顺序走完购票路线（含环线未绕回终点），不记历史
 	}
 	if trainType == "" {
 		trainType = pay.TrainType
 	}
 	return s.insertRideHistory(rideHistoryRow{
 		playerUUID: playerUUID, playerName: playerName, trainID: trainID, trainType: trainType,
-		express: true, startedAt: stops[0].arrivedAt, endedAt: stops[len(stops)-1].arrivedAt,
-		distance: pay.Distance, paidFare: pay.PaidFare,
+		express:   true,
+		startedAt: startedAt,
+		endedAt:   endedAt,
+		distance:  pay.Distance, paidFare: pay.PaidFare,
 		startStation: pay.StartStation, endStation: pay.EndStation, nodeIDs: pay.RouteNodeIDs,
 	})
+}
+
+// matchRouteInterval greedily matches route as an ordered subsequence of stops.
+// On success it returns the arrival time of the first matched route node and of the
+// last, so the recorded interval spans exactly the paid route (extra nodes before
+// the first match or after the last are excluded). Greedy first-match is correct
+// for subsequence existence; for a loop route the trailing terminal node matches a
+// later occurrence than the leading one, giving a full-loop interval.
+func matchRouteInterval(stops []playerNodeStop, route []string) (startedAt, endedAt int64, ok bool) {
+	i := 0
+	for _, st := range stops {
+		if st.nodeID != route[i] {
+			continue
+		}
+		if i == 0 {
+			startedAt = st.arrivedAt
+		}
+		i++
+		if i == len(route) {
+			return startedAt, st.arrivedAt, true
+		}
+	}
+	return 0, 0, false
 }
 
 // finalizeCommon trims the leading/trailing non-station nodes so the ride starts
@@ -474,18 +500,6 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func round2(v float64) float64 {
