@@ -28,6 +28,7 @@ export function TrainInfo() {
             distance: 0,
             segments: [],
             estimatedFare: 0,
+            expressRoute: true, // 快速车路线：中途站淡化，仅起终点不透明
           },
         ],
         selectedRouteIndex: 0,

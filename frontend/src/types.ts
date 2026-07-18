@@ -100,6 +100,11 @@ export interface RoutePath {
   kind?: 'direct' | 'through';
   /** kind==='through' 时的联程票方案（两段直达 + 换乘站）。 */
   journey?: JourneyPlan;
+  /**
+   * 是否为快速车路线（点击快速车 / 快速车历史 / 车票查询结果）。高亮时仅起点、终点、
+   * 联程票换乘站保持不透明，中途车站淡化（任务：快速车路线中途站透明）。
+   */
+  expressRoute?: boolean;
 }
 
 /**

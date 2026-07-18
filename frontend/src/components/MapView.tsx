@@ -94,7 +94,7 @@ export function MapView() {
     }
     const legs =
       route.kind === 'through' && route.journey ? route.journey.legs.map((l) => l.nodeIds) : [route.nodeIds];
-    ctrlRef.current.highlightRoute(legs);
+    ctrlRef.current.highlightRoute(legs, route.expressRoute ?? false);
     // 镜头联动：缩放并移动到选中线路（路线卡片 / 乘车历史通用）；
     // 左侧留出侧边栏宽度，避免线路落在侧边栏下方被遮挡。
     ctrlRef.current.setLeftInset(sidebar !== 'idle' ? LEFT_SIDEBAR_WIDTH : 0);

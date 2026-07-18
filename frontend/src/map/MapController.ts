@@ -264,8 +264,11 @@ export class MapController {
   /**
    * 高亮一条路线（节点 id 序列）：在同一 lines source 上用 lines-highlight 图层按边 id 过滤，
    * 加粗并用<b>线路本身颜色</b>（问题 2）；其余线路淡化。null 时清除高亮、恢复正常（问题 1）。
+   *
+   * expressRoute=true（快速车路线）时，仅各段首尾节点（起点 / 终点 / 联程票换乘站）保持不透明，
+   * 中途车站淡化；否则路线上所有车站均不透明。
    */
-  highlightRoute(legs: string[][] | null) {
+  highlightRoute(legs: string[][] | null, expressRoute = false) {
     if (!this.fc || !this.map.getLayer('lines-highlight')) return;
     const validLegs = (legs ?? []).filter((leg) => leg.length >= 2);
     if (validLegs.length === 0) {
@@ -279,12 +282,18 @@ export class MapController {
       this.updateStationSource();
       return;
     }
-    // 收集各段各区间的 edge id（geojson LineString 的 id 属性）与途经车站节点 id。
+    // 收集各段各区间的 edge id（geojson LineString 的 id 属性）与需保持不透明的车站节点 id。
+    // 快速车路线：仅各段首尾节点（起终点、换乘站）不透明；否则路线上全部节点不透明。
     const edgeIds = new Set<string>();
     const stationIds = new Set<string>();
     const edgeByEndpoints = this.edgeIdIndex();
     for (const leg of validLegs) {
-      for (const nodeId of leg) stationIds.add(nodeId);
+      if (expressRoute) {
+        stationIds.add(leg[0]);
+        stationIds.add(leg[leg.length - 1]);
+      } else {
+        for (const nodeId of leg) stationIds.add(nodeId);
+      }
       for (let i = 0; i < leg.length - 1; i++) {
         const id = edgeByEndpoints.get(`${leg[i]}__${leg[i + 1]}`);
         if (id) edgeIds.add(id);

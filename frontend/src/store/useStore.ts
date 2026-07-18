@@ -313,7 +313,9 @@ export const useStore = create<AppState>((set, get) => ({
         cfg.routeSearchTimeoutMs,
       );
       if (seq !== searchSeq) return; // 已有更新的查询，丢弃本次结果
-      set({ candidates, selectedRouteIndex: candidates.length > 0 ? 0 : null, searching: false, searchError: null });
+      // 车票查询结果均为快速车路线：高亮时中途站淡化，仅起终点 / 换乘站不透明。
+      const marked = candidates.map((c) => ({ ...c, expressRoute: true }));
+      set({ candidates: marked, selectedRouteIndex: marked.length > 0 ? 0 : null, searching: false, searchError: null });
     } catch (e) {
       if (seq !== searchSeq) return; // 过期查询的错误也一并忽略
       const searchError =
@@ -446,6 +448,8 @@ export const useStore = create<AppState>((set, get) => ({
         distance: item.distance,
         segments: [],
         estimatedFare: item.paidFare ?? 0,
+        // 快速车历史：路线中途站淡化，仅起终点不透明。
+        expressRoute: item.express,
       }],
       selectedRouteIndex: 0,
     });
