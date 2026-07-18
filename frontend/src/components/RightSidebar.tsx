@@ -18,11 +18,11 @@ export function RightSidebar() {
     );
   }
 
-  // 线路列表仅含当前世界的线路（世界归属由 geojson 反推；无归属信息时保留显示）；
-  // 联络线（systemId===contact）不在此列出，其显隐随两端节点自动联动。
+  // 线路列表仅含当前世界的线路（世界归属由 geojson 的 LineString 反推）。
+  // 没有对应 geojson 段的线路不在 lineWorlds 中，一律不显示（任务 2）；
+  // 联络线（systemId===contact）也不列出，其显隐随两端节点自动联动。
   const lines = allLines.filter(
-    (l) =>
-      l.systemId !== CONTACT_SYSTEM_ID && (lineWorlds.get(l.id) ?? currentWorld) === currentWorld,
+    (l) => l.systemId !== CONTACT_SYSTEM_ID && lineWorlds.get(l.id) === currentWorld,
   );
 
   // 按系统分组；无系统归入「其它」
