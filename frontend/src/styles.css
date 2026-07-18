@@ -931,29 +931,33 @@ body,
   width: 100%;
   flex-shrink: 0;
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
+  border-radius: 12px;
+  padding: 13px 15px;
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
 .train-card:hover {
-  border-color: #3a7afe;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  border-color: var(--accent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  transform: translateY(-1px);
 }
 .train-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
 }
 .train-badge {
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 8px;
+  letter-spacing: 0.02em;
+  padding: 3px 9px;
   border-radius: 999px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -979,10 +983,96 @@ body,
   background: rgba(58, 122, 254, 0.16);
   color: #7eacff;
 }
+
+/* 列车卡：普通车所在线路（颜色竖条 + 名称） */
+.train-body-row {
+  display: flex;
+  align-items: center;
+}
+.train-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.train-line-bar {
+  width: 4px;
+  height: 15px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.train-line-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 列车卡：快速车始发 → 终到（连点竖线，仿历史卡） */
+.train-route {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 3px;
+  position: relative;
+}
+.train-route::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  background: var(--border);
+}
+.train-endpoint {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  z-index: 1;
+}
+.train-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px var(--panel-2);
+}
+.train-dot.start {
+  background: #4ade80;
+}
+.train-dot.end {
+  background: #ef4444;
+}
+
+/* 列车卡：运行时间等键值信息行 */
+.train-info-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.train-info-label {
+  color: var(--muted);
+}
+.train-info-value {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .train-card-meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border);
 }
 .train-pill {
   font-size: 12px;

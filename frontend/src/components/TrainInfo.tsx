@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { avatarUrl } from '../config';
+import { formatDuration } from '../format';
 
 /** 列车信息面板：基本信息 + 车上玩家；快速车则高亮其路线。 */
 export function TrainInfo() {
   const trainId = useStore((s) => s.selectedTrainId);
   const train = useStore((s) => (trainId ? s.trains.get(trainId) : null));
+  const graph = useStore((s) => s.graph);
   const close = useStore((s) => s.closeSidebar);
 
   // 快速车：把其 routeNodeIds 作为临时高亮（复用候选高亮通道）。
@@ -41,6 +43,12 @@ export function TrainInfo() {
 
   if (!train) return null;
 
+  // 快速车的始发 / 终到车站：routeNodeIds 首尾可能是道岔，故从两端向内找第一个车站节点。
+  const route = train.express ? train.routeNodeIds ?? [] : [];
+  const startStation = route.length > 0 ? graph?.firstStationName(route) ?? null : null;
+  const endStation =
+    route.length > 0 ? graph?.firstStationName(route, true) ?? null : train.destination ?? null;
+
   return (
     <div className="panel">
       <div className="panel-header">
@@ -53,12 +61,22 @@ export function TrainInfo() {
         <div className="panel-section info-card">
           <Row label="所在世界" value={train.world} />
           {train.trainName && train.trainName !== 'N/A' && <Row label="列车名称" value={train.trainName} />}
-          {train.lineName && <Row label="所属线路" value={train.lineName} />}
-          {train.destination && <Row label="终到站" value={train.destination} />}
+          {/* 快速车不显示所属线路，改为展示始发 / 终到车站（任务 4）；普通车仍显示所属线路。 */}
+          {train.express ? (
+            <>
+              {startStation && <Row label="始发车站" value={startStation} />}
+              {endStation && <Row label="终到车站" value={endStation} />}
+            </>
+          ) : (
+            <>
+              {train.lineName && <Row label="所属线路" value={train.lineName} />}
+              {train.destination && <Row label="终到站" value={train.destination} />}
+            </>
+          )}
           <Row label="速度" value={`${train.speedKph.toFixed(1)} km/h`} />
           <Row label="车厢数" value={String(train.cartCount)} />
           {typeof train.secondsLived === 'number' && train.secondsLived >= 0 && (
-            <Row label="运行时间" value={`${Math.round(train.secondsLived)}s`} />
+            <Row label="运行时间" value={formatDuration(train.secondsLived)} />
           )}
         </div>
         <div className="panel-section">

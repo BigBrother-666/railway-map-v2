@@ -4,7 +4,7 @@ import { StationSearch } from './StationSearch';
 import { RouteCard } from './RouteCard';
 import { TrainInfo } from './TrainInfo';
 import { TrainList } from './TrainList';
-import { getConfig } from '../config';
+import { getConfig, CONTACT_SYSTEM_ID } from '../config';
 import type { LineStringProps, RideHistoryItem } from '../types';
 
 /** 左侧边栏：车站信息 / 路线查询 / 列车信息 / 实时列车列表（仿 Google 地图）。 */
@@ -49,15 +49,17 @@ function StationPanel() {
   const close = useStore((s) => s.closeSidebar);
   if (!name) return null;
 
-  // 收集该站所属线路 / 系统
+  // 收集该站所属线路 / 系统（排除联络线 contact：它是特殊 systemId，不作为车站的所属线路/系统展示）
   const lineIds = new Set<string>();
   const systemIds = new Set<string>();
   for (const id of graph?.stationNodes(name) ?? []) {
     const n = graph?.nodes.get(id);
     n?.lineIds.forEach((l) => lineIds.add(l));
-    n?.systemIds.forEach((s) => systemIds.add(s));
+    n?.systemIds.forEach((s) => {
+      if (s !== CONTACT_SYSTEM_ID) systemIds.add(s);
+    });
   }
-  const lineList = lines.filter((l) => lineIds.has(l.id));
+  const lineList = lines.filter((l) => lineIds.has(l.id) && l.systemId !== CONTACT_SYSTEM_ID);
 
   return (
     <div className="panel">

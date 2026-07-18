@@ -243,11 +243,18 @@ export class MapController {
       const p = f.properties as PointProps;
       if (p.type === 'station' && p.world === this.world && p.id) stationIds.add(p.id);
     }
+    // 联络线段不受 hiddenLines 直接控制，其可见性由 computeVisibleContactEdges 单独判定；
+    // 若沿用 hidden.has(contact)（恒 false）会把联络线当作永远可见的边，导致普通线路全隐藏后
+    // 仅靠联络线相连的孤立车站不消失（问题 3）。故用可见联络线集合判断这类边。
+    const visibleContact = this.computeVisibleContactEdges();
     // 遍历可见边，把端点是车站的标记为可见
     for (const f of this.fc.features) {
       if (f.geometry?.type !== 'LineString') continue;
       const l = f.properties as LineStringProps;
-      if (l.world !== this.world || this.hidden.has(l.lineId)) continue;
+      if (l.world !== this.world) continue;
+      const visible =
+        l.lineId === CONTACT_SYSTEM_ID ? visibleContact.has(l.id) : !this.hidden.has(l.lineId);
+      if (!visible) continue;
       if (stationIds.has(l.from)) result.add(l.from);
       if (stationIds.has(l.to)) result.add(l.to);
     }

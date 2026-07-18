@@ -107,6 +107,22 @@ export class RouteGraph {
     return this.stationIndex.get(name) ?? [];
   }
 
+  /**
+   * 从节点序列的一端向内遍历，返回第一个车站节点的站名。
+   * 用于从路线 nodeIds 推断始发 / 终到车站——首尾节点可能是道岔，需向内找到最近的车站。
+   * @param nodeIds 路线节点序列
+   * @param fromEnd false 从头（始发）向后找；true 从尾（终到）向前找
+   */
+  firstStationName(nodeIds: string[], fromEnd = false): string | null {
+    const n = nodeIds.length;
+    for (let k = 0; k < n; k++) {
+      const id = nodeIds[fromEnd ? n - 1 - k : k];
+      const node = this.nodes.get(id);
+      if (node?.type === 'station' && node.name) return node.name;
+    }
+    return null;
+  }
+
   allStationNames(): string[] {
     return [...this.stationIndex.keys()];
   }
