@@ -721,11 +721,6 @@ body,
 .route-actions .btn {
   width: 100%;
 }
-.route-msg {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #ffd993;
-}
 .fare-details {
   border-top: 1px solid #3a4050;
   border-bottom: 1px solid #3a4050;

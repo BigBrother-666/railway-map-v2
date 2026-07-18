@@ -11,6 +11,7 @@ plugin:
   sharedToken: "${BCTS_PLUGIN_TOKEN}"   # 与插件 config_web.yml 的 shared-token 一致
   heartbeatSeconds: 15
   purchaseTimeoutSeconds: 10
+  purchaseMinIntervalSeconds: 3         # 同一玩家两次购票的最小间隔（秒），防止频繁购票压垮服务器；<=0 不限频
 realtime:
   trainTimeoutSeconds: 30
   clientSendBuffer: 64

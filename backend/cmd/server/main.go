@@ -102,6 +102,7 @@ func main() {
 		Purchase: orchestrator, Auth: authSvc, Store: st, Logger: logger,
 		Frontend: cfg.Frontend, FrontendBaseURL: cfg.Server.FrontendBaseURL,
 		TestAuthEnabled: cfg.Auth.TestAuthEnabled, TestAuthUUIDs: cfg.Auth.TestAuthUUIDs,
+		PurchaseMinInterval: time.Duration(cfg.Plugin.PurchaseMinIntervalSeconds) * time.Second,
 	})
 
 	r := buildRouter(cfg, api, pluginServer, hub, logger)

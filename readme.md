@@ -75,6 +75,7 @@ web-link:
 | `plugin.sharedToken`            | string      | 空                                                 | 插件连接 `/internal/plugin` 的 Bearer token。                         |
 | `plugin.heartbeatSeconds`       | int         | `15`                                              | 后端向插件发送 ping 的间隔秒数。                                             |
 | `plugin.purchaseTimeoutSeconds` | int         | `10`                                              | 在线购票等待插件扣款/出票回执的超时秒数。                                           |
+| `plugin.purchaseMinIntervalSeconds` | int     | `3`                                               | 同一玩家两次购票的最小间隔秒数，防止频繁购票压垮服务器；`<=0` 表示不限频。                        |
 | `realtime.trainTimeoutSeconds`  | int         | `30`                                              | 列车多久未更新就视为消失，并向前端广播移除矿车图标。                                      |
 | `realtime.clientSendBuffer`     | int         | `64`                                              | 每个前端实时 WebSocket 连接的发送缓冲帧数，满时丢弃最旧帧。                             |
 | `auth.microsoft.clientId`       | string      | 空                                                 | Azure 应用 Client ID，为空时微软登录不可用。                                  |

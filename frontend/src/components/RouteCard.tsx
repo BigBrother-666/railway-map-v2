@@ -11,6 +11,7 @@ const REASON_TEXT: Record<PurchaseReason, string> = {
   'insufficient-funds': '余额不足',
   'traversal-running': '铁路系统正在遍历，请稍后再试',
   'purchase-disabled': '当前未开放网页购票',
+  'rate-limited': '购票太频繁，请稍后再试',
   'internal-error': '游戏服务器无响应，请稍后再试',
 };
 
@@ -20,9 +21,9 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
   const player = useStore((s) => s.player);
   const meta = useStore((s) => s.meta);
   const lines = useStore((s) => s.lines);
+  const showToast = useStore((s) => s.showToast);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   const lineColor = (lineId?: string) => lines.find((l) => l.id === lineId)?.color ?? '#8a90a0';
 
   const canPurchase = !!player && !!meta?.online;
@@ -38,7 +39,6 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
 
   const purchase = async () => {
     setBusy(true);
-    setMsg(null);
     try {
       if (path.kind === 'through' && path.journey) {
         // 联程票：顺序下发各段购票（复刻插件 ThroughTicket 一次买整程、逐段交付）
@@ -48,26 +48,26 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
         for (let i = 0; i < legs.length; i++) {
           const result = await purchaseLeg(legs[i]);
           if (!result.success) {
-            setMsg(`第 ${i + 1} 段购票失败：${result.reason ? REASON_TEXT[result.reason] : '未知原因'}`);
-            setBusy(false);
+            showToast('error', `第 ${i + 1} 段购票失败：${result.reason ? REASON_TEXT[result.reason] : '未知原因'}`);
             return;
           }
           names.push(result.ticketName ?? `第${i + 1}段`);
           totalPaid += result.price ?? 0;
         }
-        setMsg(`联程票购票成功：${names.join(' + ')}（共花费 ${totalPaid.toFixed(2)} ${getConfig().currencyName}）`);
+        showToast('success', `联程票购票成功：${names.join(' + ')}（共花费 ${totalPaid.toFixed(2)} ${getConfig().currencyName}）`);
         return;
       }
       const result = await purchaseLeg(path);
       if (result.success) {
-        setMsg(
+        showToast(
+          'success',
           `购票成功：${result.ticketName ?? ''}（花费 ${result.price?.toFixed(2)}，余额 ${result.balanceAfter?.toFixed(2)}）`,
         );
       } else {
-        setMsg(result.reason ? REASON_TEXT[result.reason] : '购票失败');
+        showToast('error', result.reason ? REASON_TEXT[result.reason] : '购票失败');
       }
     } catch {
-      setMsg('购票请求失败');
+      showToast('error', '购票请求失败');
     } finally {
       setBusy(false);
     }
@@ -141,7 +141,6 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
           {busy ? '购票中...' : '购票'}
         </button>
       </div>
-      {msg && <div className="route-msg">{msg}</div>}
     </article>
   );
 }

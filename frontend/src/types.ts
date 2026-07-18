@@ -138,6 +138,7 @@ export type PurchaseReason =
   | 'insufficient-funds'
   | 'traversal-running'
   | 'purchase-disabled'
+  | 'rate-limited'
   | 'internal-error';
 
 export interface PurchaseResult {

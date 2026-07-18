@@ -37,6 +37,9 @@ type PluginConfig struct {
 	SharedToken            string `yaml:"sharedToken"`
 	HeartbeatSeconds       int    `yaml:"heartbeatSeconds"`
 	PurchaseTimeoutSeconds int    `yaml:"purchaseTimeoutSeconds"`
+	// PurchaseMinIntervalSeconds 是同一玩家两次购票的最小间隔（秒），防止频繁购票压垮服务器。
+	// <=0 时用默认 3 秒。
+	PurchaseMinIntervalSeconds int `yaml:"purchaseMinIntervalSeconds"`
 }
 
 type RealtimeConfig struct {
@@ -165,6 +168,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Plugin.PurchaseTimeoutSeconds <= 0 {
 		c.Plugin.PurchaseTimeoutSeconds = 10
+	}
+	if c.Plugin.PurchaseMinIntervalSeconds <= 0 {
+		c.Plugin.PurchaseMinIntervalSeconds = 3
 	}
 	if c.Realtime.TrainTimeoutSeconds <= 0 {
 		c.Realtime.TrainTimeoutSeconds = 30

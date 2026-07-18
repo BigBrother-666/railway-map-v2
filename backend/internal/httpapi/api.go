@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"railway-map-backend/internal/auth"
@@ -36,6 +37,11 @@ type API struct {
 	// frontendBaseURL 是 OAuth 回调完成后跳转回的地图页面地址（带 ?login=... 提示）。
 	frontendBaseURL string
 	logger          *slog.Logger
+
+	// 购票频率限制：同一玩家两次购票的最小间隔，及各玩家最近一次购票时间。
+	purchaseMinInterval time.Duration
+	purchaseMu          sync.Mutex
+	lastPurchaseAt      map[string]time.Time
 }
 
 // DataStore records purchases and ride history (implemented by store.Store).
@@ -56,7 +62,9 @@ type Options struct {
 	FrontendBaseURL string
 	TestAuthEnabled bool
 	TestAuthUUIDs   []string
-	Logger          *slog.Logger
+	// PurchaseMinInterval 是同一玩家两次购票的最小间隔（<=0 时购票不限频）。
+	PurchaseMinInterval time.Duration
+	Logger              *slog.Logger
 }
 
 // New 创建 API。
@@ -73,8 +81,10 @@ func New(o Options) *API {
 			TestAuthEnabled: o.TestAuthEnabled,
 			TestAuthUUIDs:   o.TestAuthUUIDs,
 		},
-		frontendBaseURL: o.FrontendBaseURL,
-		logger:          o.Logger,
+		frontendBaseURL:     o.FrontendBaseURL,
+		logger:              o.Logger,
+		purchaseMinInterval: o.PurchaseMinInterval,
+		lastPurchaseAt:      make(map[string]time.Time),
 	}
 }
 
@@ -300,6 +310,12 @@ func (a *API) Purchase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "plugin-offline", "游戏服务器暂时无法购票")
 		return
 	}
+	// 购票频率限制：同一玩家两次购票间隔过短则拒绝，减轻服务器压力。
+	if !a.allowPurchase(player.UUID) {
+		a.logger.Info("Purchase rejected due to rate limit", "player", player.UUID)
+		writeJSON(w, http.StatusOK, model.PurchaseResult{Success: false, Reason: "rate-limited"})
+		return
+	}
 	a.logger.Info("Purchase request submitted", "player", player.UUID, "nodes", len(req.NodeIDs))
 	result := a.purchase.Submit(player.UUID, player.Name, req)
 	if a.store != nil {
@@ -309,6 +325,22 @@ func (a *API) Purchase(w http.ResponseWriter, r *http.Request) {
 	}
 	a.logger.Info("Purchase request completed", "requestId", result.RequestID, "player", player.UUID, "success", result.Success, "reason", result.Reason, "price", result.Price)
 	writeJSON(w, http.StatusOK, result)
+}
+
+// allowPurchase 判断该玩家此刻是否允许购票（距上次购票已超过最小间隔）。
+// 允许时记录本次时间并返回 true；间隔内返回 false。minInterval<=0 时不限频。
+func (a *API) allowPurchase(uuid string) bool {
+	if a.purchaseMinInterval <= 0 {
+		return true
+	}
+	now := time.Now()
+	a.purchaseMu.Lock()
+	defer a.purchaseMu.Unlock()
+	if last, ok := a.lastPurchaseAt[uuid]; ok && now.Sub(last) < a.purchaseMinInterval {
+		return false
+	}
+	a.lastPurchaseAt[uuid] = now
+	return true
 }
 
 // requirePlayer 从会话取玩家，未登录写 401 并返回 nil。
