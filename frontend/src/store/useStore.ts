@@ -209,6 +209,11 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setWorld(world) {
+    // 切换世界：只要侧栏处于打开状态（任意内容），一律关闭并清理其选择 / 高亮 / 查询，
+    // 避免残留内容或折叠按钮（如列车详情切世界后面板内容消失、折叠按钮却仍在）。
+    if (get().sidebar !== 'idle') {
+      get().closeSidebar();
+    }
     set({ currentWorld: world, selectedTrainId: null });
   },
 
