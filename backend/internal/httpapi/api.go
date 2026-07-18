@@ -311,7 +311,8 @@ func (a *API) Purchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 购票频率限制：同一玩家两次购票间隔过短则拒绝，减轻服务器压力。
-	if !a.allowPurchase(player.UUID) {
+	// 联程票续段（throughContinuation）属于同一次购票动作，跳过间隔检查，避免第二段被冷却拦下。
+	if !a.allowPurchase(player.UUID, req.ThroughContinuation) {
 		a.logger.Info("Purchase rejected due to rate limit", "player", player.UUID)
 		writeJSON(w, http.StatusOK, model.PurchaseResult{Success: false, Reason: "rate-limited"})
 		return
@@ -329,15 +330,18 @@ func (a *API) Purchase(w http.ResponseWriter, r *http.Request) {
 
 // allowPurchase 判断该玩家此刻是否允许购票（距上次购票已超过最小间隔）。
 // 允许时记录本次时间并返回 true；间隔内返回 false。minInterval<=0 时不限频。
-func (a *API) allowPurchase(uuid string) bool {
+// continuation=true（联程票续段）跳过间隔检查，但仍刷新时间戳，使整程结束后正常计冷却。
+func (a *API) allowPurchase(uuid string, continuation bool) bool {
 	if a.purchaseMinInterval <= 0 {
 		return true
 	}
 	now := time.Now()
 	a.purchaseMu.Lock()
 	defer a.purchaseMu.Unlock()
-	if last, ok := a.lastPurchaseAt[uuid]; ok && now.Sub(last) < a.purchaseMinInterval {
-		return false
+	if !continuation {
+		if last, ok := a.lastPurchaseAt[uuid]; ok && now.Sub(last) < a.purchaseMinInterval {
+			return false
+		}
 	}
 	a.lastPurchaseAt[uuid] = now
 	return true

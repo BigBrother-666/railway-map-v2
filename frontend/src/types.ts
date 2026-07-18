@@ -130,6 +130,8 @@ export interface PurchaseRequest {
   lineIdSequence: string[];
   speedKph?: number;
   maxUses?: number;
+  /** 联程票首段之后的续段：属于同一次购票动作，后端购票频率限制跳过间隔检查。 */
+  throughContinuation?: boolean;
 }
 
 export type PurchaseReason =

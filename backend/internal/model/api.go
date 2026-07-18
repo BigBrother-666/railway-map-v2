@@ -8,6 +8,9 @@ type PurchaseRequest struct {
 	LineIDSequence []string `json:"lineIdSequence"`
 	SpeedKph       *float64 `json:"speedKph,omitempty"`
 	MaxUses        *int     `json:"maxUses,omitempty"`
+	// ThroughContinuation 表示这是联程票首段之后的续段：同一次购票动作的一部分，
+	// 购票频率限制对其跳过间隔检查，避免联程票第二段被自己的冷却拦下。
+	ThroughContinuation bool `json:"throughContinuation,omitempty"`
 }
 
 // PurchaseRequestWire 是后端转发给插件的 purchase.request 负载。

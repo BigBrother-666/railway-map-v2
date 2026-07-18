@@ -33,8 +33,8 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
       ? '游戏服务器离线，暂不可购票'
       : '';
 
-  const purchaseLeg = async (leg: RoutePath) => {
-    return api.purchase({ nodeIds: leg.nodeIds, lineIdSequence: leg.lineIdSequence });
+  const purchaseLeg = async (leg: RoutePath, throughContinuation = false) => {
+    return api.purchase({ nodeIds: leg.nodeIds, lineIdSequence: leg.lineIdSequence, throughContinuation });
   };
 
   const purchase = async () => {
@@ -46,7 +46,8 @@ export function RouteCard({ path, index }: { path: RoutePath; index: number }) {
         const names: string[] = [];
         let totalPaid = 0;
         for (let i = 0; i < legs.length; i++) {
-          const result = await purchaseLeg(legs[i]);
+          // 首段正常受购票频率限制，后续段标记为续段跳过间隔检查（同一次联程购票）。
+          const result = await purchaseLeg(legs[i], i > 0);
           if (!result.success) {
             showToast('error', `第 ${i + 1} 段购票失败：${result.reason ? REASON_TEXT[result.reason] : '未知原因'}`);
             return;
