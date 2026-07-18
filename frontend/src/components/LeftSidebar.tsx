@@ -167,7 +167,7 @@ function LinePanel() {
       </div>
       <div className="panel-body">
         <div className="panel-section">
-          <div className="label">所属铁路公司</div>
+          <div className="label">所属铁路系统</div>
           <div className="line-cards">
             <div className="line-card">
               <img
