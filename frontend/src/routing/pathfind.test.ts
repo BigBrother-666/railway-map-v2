@@ -116,3 +116,51 @@ describe('findByStation 入向面门控', () => {
     expect(findByStation(g, 'A', 'X', 0).length).toBeGreaterThan(0);
   });
 });
+
+describe('findByStation 站名去重', () => {
+  it('拒绝正线经过同名车站两次的路线', () => {
+    const g = RouteGraph.fromFeatureCollection(
+      fc([
+        point('nA', 'station', 'A', 0, 0),
+        point('bIn1', 'switch', null, 10, 0),
+        point('bOut1', 'switch', null, 20, 0),
+        point('mid', 'switch', null, 30, 0),
+        point('bIn2', 'switch', null, 40, 0),
+        point('bOut2', 'switch', null, 50, 0),
+        point('nB1', 'station', 'B', 10, 10),
+        point('nB2', 'station', 'B', 40, 10),
+        point('nD', 'station', 'D', 60, 0),
+        line('e.L.nA__bIn1', 'nA', 'bIn1', 'L', 10, { departDir: 'e' }),
+        line('e.L.bIn1__nB1', 'bIn1', 'nB1', 'L', 1, { departDir: 's' }),
+        line('e.L.bIn1__bOut1', 'bIn1', 'bOut1', 'L', 1, { departDir: 'e' }),
+        line('e.L.bOut1__mid', 'bOut1', 'mid', 'L', 10, { departDir: 'e' }),
+        line('e.L.mid__bIn2', 'mid', 'bIn2', 'L', 10, { departDir: 'e' }),
+        line('e.L.bIn2__nB2', 'bIn2', 'nB2', 'L', 1, { departDir: 's' }),
+        line('e.L.bIn2__bOut2', 'bIn2', 'bOut2', 'L', 1, { departDir: 'e' }),
+        line('e.L.bOut2__nD', 'bOut2', 'nD', 'L', 10, { departDir: 'e' }),
+      ]),
+    );
+
+    expect(findByStation(g, 'A', 'D', 0)).toEqual([]);
+  });
+
+  it('起终点相同时允许最终到达同名站', () => {
+    const g = RouteGraph.fromFeatureCollection(
+      fc([
+        point('nR', 'station', 'R', 0, 0),
+        point('c1', 'switch', null, 10, 0),
+        point('rIn', 'switch', null, 20, 0),
+        point('nR2', 'station', 'R', 20, 10),
+        point('dead', 'switch', null, 30, 0),
+        line('e.L.nR__c1', 'nR', 'c1', 'L', 10, { departDir: 'e' }),
+        line('e.L.c1__rIn', 'c1', 'rIn', 'L', 10, { departDir: 'e' }),
+        line('e.L.rIn__nR2', 'rIn', 'nR2', 'L', 10, { departDir: 's' }),
+        line('e.L.rIn__dead', 'rIn', 'dead', 'L', 1, { departDir: 'e' }),
+      ]),
+    );
+
+    const paths = findByStation(g, 'R', 'R', 1);
+    expect(paths).toHaveLength(1);
+    expect(paths[0].nodeIds).toEqual(['nR', 'c1', 'rIn', 'nR2']);
+  });
+});

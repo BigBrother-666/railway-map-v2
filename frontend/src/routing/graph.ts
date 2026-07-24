@@ -182,7 +182,16 @@ export class RouteGraph {
     }
   }
 
-  platformNameOfMainlineSwitch(nodeId: string): string | null {
+  private isEnterSwitcher(nodeId: string, lineId: string | undefined): boolean {
+    const node = this.nodes.get(nodeId);
+    if (!node || node.type === 'station' || !lineId) return false;
+    const links = this.links(nodeId);
+    if (links.length === 0) return false;
+    return links.every((link) => link.lineId === lineId);
+  }
+
+  platformNameOfMainlineSwitch(nodeId: string, lineId: string | undefined): string | null {
+    if (!this.isEnterSwitcher(nodeId, lineId)) return null;
     const links = this.links(nodeId);
     let toSwitch = false;
     let platformName: string | null = null;

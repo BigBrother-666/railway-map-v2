@@ -131,7 +131,9 @@ function kShortest(
   isReverse: ReversePredicate,
 ): RoutePath[] {
   const results: RoutePath[] = [];
-  if (!graph.nodes.has(startId) || k < 1) return results;
+  const startNode = graph.nodes.get(startId);
+  if (!startNode || k < 1) return results;
+  const startStation = startNode.type === 'station' ? startNode.name : undefined;
 
   const pq = new MinHeap();
   pq.push({ nodeId: startId, dist: 0, link: null, prev: null });
@@ -153,6 +155,18 @@ function kShortest(
       if (!nextNode) continue;
       // 入向面门控：与插件 enterFaceAllows 一致，拒绝「从错误到达面接反向牌出边」的非法接续
       if (!enterFaceAllows(cur.link, link)) continue;
+      const curStationName =
+        curNode && curNode.type !== 'station' ? getNodeStationName(graph, cur.nodeId, link.lineId) : null;
+      const nextIsTerminal = nextNode.type === 'station' && nextNode.name === endStation;
+      if (repeatsStation(graph, cur, curStationName, startStation, endStation, nextIsTerminal)) continue;
+      const nextStationName = nextNode.type === 'station' ? nextNode.name : undefined;
+      if (
+        nextStationName &&
+        nextStationName !== curStationName &&
+        repeatsStation(graph, cur, nextStationName, startStation, endStation, nextIsTerminal)
+      ) {
+        continue;
+      }
       if (inPath(cur, nextId)) {
         const closesLoop = nextId === startId && nextNode.type === 'station' && nextNode.name === endStation;
         if (!closesLoop) continue;
@@ -211,6 +225,35 @@ function inPath(entry: Entry, nodeId: string): boolean {
   return false;
 }
 
+function repeatsStation(
+  graph: RouteGraph,
+  cur: Entry,
+  stationName: string | null | undefined,
+  startStation: string | undefined,
+  endStation: string,
+  nextIsTerminal: boolean,
+): boolean {
+  if (!stationName || !stationInPath(graph, cur, stationName)) return false;
+  return !nextIsTerminal || stationName !== startStation || stationName !== endStation;
+}
+
+function stationInPath(graph: RouteGraph, entry: Entry, stationName: string): boolean {
+  let outgoing: GraphLink | null = null;
+  for (let e: Entry | null = entry; e; e = e.prev) {
+    const currentStation = getNodeStationName(graph, e.nodeId, outgoing?.lineId);
+    if (currentStation === stationName) return true;
+    outgoing = e.link;
+  }
+  return false;
+}
+
+function getNodeStationName(graph: RouteGraph, nodeId: string, lineId: string | undefined): string | null {
+  const node = graph.nodes.get(nodeId);
+  if (!node) return null;
+  if (node.type === 'station') return node.name ?? null;
+  return graph.platformNameOfMainlineSwitch(nodeId, lineId);
+}
+
 /** 从回溯链构建 RoutePath（与后端结构一致，距离换算为 km）。 */
 function buildPath(graph: RouteGraph, end: Entry): RoutePath {
   const nodeIds: string[] = [];
@@ -247,8 +290,8 @@ function buildPath(graph: RouteGraph, end: Entry): RoutePath {
       const lineId = i < lineIdSequence.length ? lineIdSequence[i] : lineIdSequence[i - 1];
       pushStationStep(stationSteps, n.name, lineId);
     } else if (n) {
-      const stationName = graph.platformNameOfMainlineSwitch(id);
       const lineId = i < lineIdSequence.length ? lineIdSequence[i] : undefined;
+      const stationName = graph.platformNameOfMainlineSwitch(id, lineId);
       if (stationName && lineId) pushStationStep(stationSteps, stationName, lineId);
     }
   }
