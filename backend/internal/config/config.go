@@ -74,6 +74,7 @@ type FrontendConfig struct {
 	ThemeColor        string                     `yaml:"themeColor" json:"themeColor"`
 	WorldTiles        map[string]WorldTileConfig `yaml:"worldTiles" json:"worldTiles"`
 	MapStyle          MapStyleConfig             `yaml:"mapStyle" json:"mapStyle"`
+	RouteDiagram      RouteDiagramConfig         `yaml:"routeDiagram" json:"routeDiagram"`
 	TrainIcons        TrainIconsConfig           `yaml:"trainIcons" json:"trainIcons"`
 	DefaultSystemLogo string                     `yaml:"defaultSystemLogo" json:"defaultSystemLogo"`
 	AvatarURLTemplate string                     `yaml:"avatarUrlTemplate" json:"avatarUrlTemplate"`
@@ -88,7 +89,6 @@ type FrontendConfig struct {
 
 	// 联程票（一次换乘 / 两段直达）寻路参数（复刻插件 search.max-transfer-* / transfer-min-improvement）
 	MaxTransferResults     int     `yaml:"maxTransferResults" json:"maxTransferResults"`
-	MaxTransferCandidates  int     `yaml:"maxTransferCandidates" json:"maxTransferCandidates"`
 	TransferMinImprovement float64 `yaml:"transferMinImprovement" json:"transferMinImprovement"`
 	// 路线查询（前端 Web Worker 寻路）超时毫秒数，超时则终止计算并提示失败。<=0 用默认 10000。
 	RouteSearchTimeoutMs int `yaml:"routeSearchTimeoutMs" json:"routeSearchTimeoutMs"`
@@ -120,6 +120,15 @@ type MapStyleConfig struct {
 	StationTextSize           float64 `yaml:"stationTextSize" json:"stationTextSize"`
 	StationMergePixelDistance float64 `yaml:"stationMergePixelDistance" json:"stationMergePixelDistance"`
 	TrainIconSize             float64 `yaml:"trainIconSize" json:"trainIconSize"`
+	TrainFocusZoom            float64 `yaml:"trainFocusZoom" json:"trainFocusZoom"`
+}
+
+type RouteDiagramConfig struct {
+	ProjectionThresholdBlocks float64 `yaml:"projectionThresholdBlocks" json:"projectionThresholdBlocks"`
+	StationGapPx             float64 `yaml:"stationGapPx" json:"stationGapPx"`
+	FoldMinStations          int     `yaml:"foldMinStations" json:"foldMinStations"`
+	TrainClusterProgress     float64 `yaml:"trainClusterProgress" json:"trainClusterProgress"`
+	TrainIconScale           float64 `yaml:"trainIconScale" json:"trainIconScale"`
 }
 
 type TrainIconsConfig struct {
@@ -230,6 +239,24 @@ func (c *Config) applyDefaults() {
 	if c.Frontend.MapStyle.TrainIconSize <= 0 {
 		c.Frontend.MapStyle.TrainIconSize = 0.6
 	}
+	if c.Frontend.MapStyle.TrainFocusZoom <= 0 {
+		c.Frontend.MapStyle.TrainFocusZoom = 16
+	}
+	if c.Frontend.RouteDiagram.ProjectionThresholdBlocks <= 0 {
+		c.Frontend.RouteDiagram.ProjectionThresholdBlocks = 40
+	}
+	if c.Frontend.RouteDiagram.StationGapPx <= 0 {
+		c.Frontend.RouteDiagram.StationGapPx = 34
+	}
+	if c.Frontend.RouteDiagram.FoldMinStations <= 0 {
+		c.Frontend.RouteDiagram.FoldMinStations = 10
+	}
+	if c.Frontend.RouteDiagram.TrainClusterProgress <= 0 {
+		c.Frontend.RouteDiagram.TrainClusterProgress = 0.035
+	}
+	if c.Frontend.RouteDiagram.TrainIconScale <= 0 {
+		c.Frontend.RouteDiagram.TrainIconScale = 1
+	}
 	if c.Frontend.TrainIcons.Express == "" {
 		c.Frontend.TrainIcons.Express = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
 	}
@@ -270,9 +297,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Frontend.MaxTransferResults == 0 {
 		c.Frontend.MaxTransferResults = 3
-	}
-	if c.Frontend.MaxTransferCandidates == 0 {
-		c.Frontend.MaxTransferCandidates = 30
 	}
 	if c.Frontend.TransferMinImprovement == 0 {
 		c.Frontend.TransferMinImprovement = 0.2

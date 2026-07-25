@@ -4,6 +4,7 @@ import { StationSearch } from './StationSearch';
 import { RouteCard } from './RouteCard';
 import { TrainInfo } from './TrainInfo';
 import { TrainList } from './TrainList';
+import { LineRouteDiagram } from './LineRouteDiagram';
 import { getConfig, CONTACT_SYSTEM_ID } from '../config';
 import type { LineStringProps, RideHistoryItem } from '../types';
 
@@ -198,6 +199,7 @@ function LinePanel() {
             </div>
           </div>
         </div>
+        <LineRouteDiagram line={line} />
       </div>
     </div>
   );

@@ -75,6 +75,13 @@ frontend:
     stationTextSize: 12
     stationMergePixelDistance: 28
     trainIconSize: 0.6
+    trainFocusZoom: 9
+  routeDiagram:
+    projectionThresholdBlocks: 25 # 列车坐标到线路投影的最大允许距离（游戏方块）；超过则不显示在示意图上
+    stationGapPx: 45              # 示意图中相邻车站的固定间距（px），不按真实里程比例拉伸
+    foldMinStations: 8           # 非环线站数达到该值后折叠为 n 形
+    trainClusterProgress: 0.035   # 列车显示进度差低于该值时错开显示
+    trainIconScale: 0.8             # 线路路线图中列车图标缩放倍率，例如 0.5 表示缩小为一半
   trainIcons:
     express: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
     normal: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%2342a5f5'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"

@@ -841,10 +841,11 @@ export class MapController {
    * 平滑移动镜头，把给定游戏坐标居中显示（用于点击实时列车卡片跳转到列车位置）。
    * 保持当前缩放，仅平移；左侧留出侧边栏遮挡宽度，使列车落在可见区域中央。
    */
-  centerOnGame(x: number, z: number) {
+  centerOnGame(x: number, z: number, zoom?: number) {
     const center = gameToLngLat(x, z, this.world);
     this.map.easeTo({
       center,
+      zoom: zoom === undefined ? this.map.getZoom() : this.clampZoom(zoom),
       padding: { top: 0, bottom: 0, right: 0, left: this.leftInset },
       duration: 600,
     });

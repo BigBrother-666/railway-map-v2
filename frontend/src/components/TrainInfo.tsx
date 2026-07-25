@@ -2,17 +2,21 @@ import { useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { avatarUrl } from '../config';
 import { formatDuration } from '../format';
+import { LineRouteDiagram } from './LineRouteDiagram';
 
 /** 列车信息面板：基本信息 + 车上玩家；快速车则高亮其路线。 */
 export function TrainInfo() {
   const trainId = useStore((s) => s.selectedTrainId);
   const train = useStore((s) => (trainId ? s.trains.get(trainId) : null));
   const graph = useStore((s) => s.graph);
+  const lines = useStore((s) => s.lines);
+  const clickLine = useStore((s) => s.clickLine);
+  const trackingTrainId = useStore((s) => s.trackingTrainId);
+  const toggleTrainTracking = useStore((s) => s.toggleTrainTracking);
   const close = useStore((s) => s.closeSidebar);
 
   // 快速车：把其 routeNodeIds 作为临时高亮（复用候选高亮通道）。
-  // 依赖用 trainId + 路线内容而非整个 train 对象——列车每次位置刷新都会生成新对象，
-  // 若依赖 train 会导致高亮被反复重设，进而反复触发镜头框选、把用户的缩放拉回。
+  // 依赖 trainId + 路线内容而非整个 train 对象，避免位置刷新反复触发路线框选。
   const routeKey =
     train?.express && train.routeNodeIds && train.routeNodeIds.length > 1
       ? train.routeNodeIds.join(',')
@@ -28,14 +32,13 @@ export function TrainInfo() {
             distance: 0,
             segments: [],
             estimatedFare: 0,
-            expressRoute: true, // 快速车路线：中途站淡化，仅起终点不透明
+            expressRoute: true,
           },
         ],
         selectedRouteIndex: 0,
       });
     }
     return () => {
-      // 离开列车面板时清掉临时高亮
       if (useStore.getState().sidebar !== 'route') {
         useStore.setState({ candidates: [], selectedRouteIndex: null });
       }
@@ -44,25 +47,36 @@ export function TrainInfo() {
 
   if (!train) return null;
 
-  // 快速车的始发 / 终到车站：routeNodeIds 首尾可能是道岔，故从两端向内找第一个车站节点。
   const route = train.express ? train.routeNodeIds ?? [] : [];
   const startStation = route.length > 0 ? graph?.firstStationName(route) ?? null : null;
   const endStation =
     route.length > 0 ? graph?.firstStationName(route, true) ?? null : train.destination ?? null;
+  const currentLine = !train.express && train.lineId ? lines.find((line) => line.id === train.lineId) ?? null : null;
+  const tracking = trackingTrainId === train.trainId;
 
   return (
     <div className="panel">
       <div className="panel-header">
         <h2>列车 {train.express ? '（快速车）' : '（普通车）'}</h2>
-        <button className="icon-btn" onClick={close}>
-          ×
-        </button>
+        <div className="panel-header-actions">
+          <button
+            type="button"
+            className={`track-btn ${tracking ? 'active' : ''}`}
+            title={tracking ? '停止跟踪列车' : '跟踪列车'}
+            onClick={() => toggleTrainTracking(train.trainId)}
+          >
+            {tracking ? '停止跟踪' : '跟踪'}
+          </button>
+          <button className="icon-btn" onClick={close}>
+            ×
+          </button>
+        </div>
       </div>
       <div className="panel-body">
         <div className="panel-section info-card">
+          {currentLine && <RowButton label="所属线路" value={currentLine.name} onClick={() => clickLine(currentLine.id)} />}
           <Row label="所在世界" value={train.world} />
           {train.trainName && train.trainName !== 'N/A' && <Row label="列车名称" value={train.trainName} />}
-          {/* 快速车不显示所属线路，改为展示始发 / 终到车站（任务 4）；普通车仍显示所属线路。 */}
           {train.express ? (
             <>
               {startStation && <Row label="始发车站" value={startStation} />}
@@ -70,7 +84,6 @@ export function TrainInfo() {
             </>
           ) : (
             <>
-              {train.lineName && <Row label="所属线路" value={train.lineName} />}
               {train.destination && <Row label="终到站" value={train.destination} />}
             </>
           )}
@@ -92,6 +105,7 @@ export function TrainInfo() {
             ))}
           </div>
         </div>
+        {currentLine && <LineRouteDiagram line={currentLine} />}
       </div>
     </div>
   );
@@ -103,5 +117,14 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="label">{label}</span>
       <span className="value">{value}</span>
     </div>
+  );
+}
+
+function RowButton({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
+  return (
+    <button type="button" className="info-row info-row-button" onClick={onClick}>
+      <span className="label">{label}</span>
+      <span className="value">{value}</span>
+    </button>
   );
 }

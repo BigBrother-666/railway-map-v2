@@ -489,6 +489,37 @@ body,
   font-size: 14px;
   border-bottom: 1px solid var(--border);
 }
+.info-row-button {
+  width: 100%;
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: inherit;
+  cursor: pointer;
+}
+.info-row-button .label {
+  margin-bottom: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  font-size: 13px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.info-row-button .value {
+  color: var(--text);
+  font-weight: 500;
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.info-row-button:hover .value {
+  color: var(--accent);
+}
 .info-row:last-child {
   border-bottom: none;
 }
@@ -498,11 +529,119 @@ body,
   letter-spacing: normal;
   font-weight: 400;
   font-size: 13px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .info-row .value {
   color: var(--text);
   font-weight: 500;
   text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.route-diagram-section {
+  margin-bottom: 4px;
+}
+.route-diagram-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.route-diagram-card.ring {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.route-diagram-card.folded {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.route-diagram {
+  position: relative;
+  width: 100%;
+}
+.route-diagram-folded {
+  width: 268px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+.route-diagram-track {
+  position: absolute;
+  left: 36px;
+  top: 18px;
+  bottom: 18px;
+  width: 7px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+.route-diagram-station,
+.route-diagram-ring-station,
+.route-diagram-folded-station {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+}
+.route-diagram-station {
+  left: 39px;
+}
+.route-diagram-dot-svg {
+  fill: #f5f7fb;
+  stroke: var(--panel);
+  stroke-width: 4;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
+.route-diagram-station-label,
+.route-diagram-ring-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  color: #dce2ee;
+  font-size: 12px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+.route-diagram-station-label.left,
+.route-diagram-ring-label.left {
+  right: 13px;
+  text-align: right;
+}
+.route-diagram-station-label.right,
+.route-diagram-ring-label.right {
+  left: 13px;
+  text-align: left;
+}
+.route-diagram-ring-label {
+  font-size: 11px;
+}
+.route-diagram-path-svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.route-diagram-train {
+  position: absolute;
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+  cursor: pointer;
+}
+.route-diagram-empty {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 /* 站名搜索 */
@@ -794,6 +933,28 @@ body,
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
+}
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.track-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.track-btn:hover {
+  background: var(--panel-2);
+}
+.track-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .route-swap-btn:hover:not(:disabled) {
   background: var(--panel);

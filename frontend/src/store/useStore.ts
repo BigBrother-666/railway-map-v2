@@ -82,6 +82,10 @@ interface AppState {
   selectedTrainId: string | null;
   /** 选中列车后的镜头意图，供地图决定居中还是框选路线。 */
   trainFocusMode: TrainFocusMode;
+  /** 列车聚焦序号：即使重复点击同一列车，也能触发地图再次居中。 */
+  trainFocusSeq: number;
+  /** 持续跟踪中的列车 id。 */
+  trackingTrainId: string | null;
 
   // --- 登录 ---
   player: Player | null;
@@ -113,6 +117,7 @@ interface AppState {
   selectTrain: (id: string | null) => void;
   openTrainList: () => void;
   focusTrain: (id: string) => void;
+  toggleTrainTracking: (id: string) => void;
 
   refreshPlayer: () => Promise<void>;
   logout: () => Promise<void>;
@@ -156,6 +161,8 @@ export const useStore = create<AppState>((set, get) => ({
   trains: new Map(),
   selectedTrainId: null,
   trainFocusMode: 'route',
+  trainFocusSeq: 0,
+  trackingTrainId: null,
 
   player: null,
   rideHistory: null,
@@ -248,6 +255,7 @@ export const useStore = create<AppState>((set, get) => ({
       selectedLineId: null,
       highlightLineId: null,
       selectedTrainId: null,
+      trackingTrainId: null,
     });
   },
 
@@ -261,6 +269,7 @@ export const useStore = create<AppState>((set, get) => ({
       highlightLineId: lineId,
       selectedStation: null,
       selectedTrainId: null,
+      trackingTrainId: null,
     });
   },
 
@@ -279,6 +288,7 @@ export const useStore = create<AppState>((set, get) => ({
       searchError: null,
       selectedLineId: null,
       highlightLineId: null,
+      trackingTrainId: null,
     });
   },
 
@@ -342,6 +352,7 @@ export const useStore = create<AppState>((set, get) => ({
       selectedLineId: null,
       highlightLineId: null,
       selectedTrainId: null,
+      trackingTrainId: null,
       // 关闭面板时清空查询与高亮，地图恢复正常（问题 1）
       startStation: null,
       endStation: null,
@@ -364,12 +375,17 @@ export const useStore = create<AppState>((set, get) => ({
     const trains = new Map(get().trains);
     for (const id of ids) trains.delete(id);
     const removedSelected = ids.includes(get().selectedTrainId ?? '');
+    const removedTracking = ids.includes(get().trackingTrainId ?? '');
     if (removedSelected && get().sidebar === 'train') {
       // 正在跟踪的列车被销毁：整体关闭列车信息面板（含折叠按钮），而非留下空面板。
       get().closeSidebar();
       set({ trains });
     } else {
-      set({ trains, selectedTrainId: removedSelected ? null : get().selectedTrainId });
+      set({
+        trains,
+        selectedTrainId: removedSelected ? null : get().selectedTrainId,
+        trackingTrainId: removedTracking ? null : get().trackingTrainId,
+      });
     }
   },
 
@@ -381,6 +397,7 @@ export const useStore = create<AppState>((set, get) => ({
       sidebar: id ? 'train' : get().sidebar,
       selectedLineId: null,
       highlightLineId: null,
+      trackingTrainId: null,
     });
   },
 
@@ -388,6 +405,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       sidebar: 'trains',
       selectedTrainId: null,
+      trackingTrainId: null,
       candidates: [],
       selectedRouteIndex: null,
       searching: false,
@@ -405,6 +423,24 @@ export const useStore = create<AppState>((set, get) => ({
       currentWorld: train.world,
       selectedTrainId: id,
       trainFocusMode: 'center',
+      trainFocusSeq: get().trainFocusSeq + 1,
+      trackingTrainId: null,
+      sidebar: 'train',
+      selectedLineId: null,
+      highlightLineId: null,
+    });
+  },
+
+  toggleTrainTracking(id) {
+    const train = get().trains.get(id);
+    if (!train) return;
+    const enabled = get().trackingTrainId !== id;
+    set({
+      currentWorld: train.world,
+      selectedTrainId: id,
+      trainFocusMode: 'center',
+      trainFocusSeq: enabled ? get().trainFocusSeq + 1 : get().trainFocusSeq,
+      trackingTrainId: enabled ? id : null,
       sidebar: 'train',
       selectedLineId: null,
       highlightLineId: null,
@@ -438,13 +474,14 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async openRideHistory() {
-    set({ sidebar: 'history', selectedTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null, selectedLineId: null, highlightLineId: null });
+    set({ sidebar: 'history', selectedTrainId: null, trackingTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null, selectedLineId: null, highlightLineId: null });
     await get().loadRideHistory(1);
   },
 
   selectHistory(item) {
     set({
       selectedHistoryId: item.id,
+      trackingTrainId: null,
       candidates: [{
         stations: [item.startStation, item.endStation],
         stationSteps: [{ stationName: item.startStation }, { stationName: item.endStation }],

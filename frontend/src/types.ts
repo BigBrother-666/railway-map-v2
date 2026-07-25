@@ -192,6 +192,19 @@ export interface FrontendConfig {
     stationTextSize: number;
     stationMergePixelDistance: number;
     trainIconSize: number;
+    trainFocusZoom: number;
+  };
+  routeDiagram: {
+    /** 鍒楄溅鍧愭爣鎶曞奖鍒扮嚎璺殑鏈€澶у厑璁歌窛绂伙紙娓告垙鏂瑰潡锛夈€?*/
+    projectionThresholdBlocks: number;
+    /** 绀烘剰鍥句腑鐩搁偦杞︾珯鐨勫浐瀹氶棿璺濓紙px锛夈€?*/
+    stationGapPx: number;
+    /** 闈炵幆绾跨珯鏁拌揪鍒拌鍊煎悗鎶樺彔涓?n 褰€?*/
+    foldMinStations: number;
+    /** 列车显示进度差低于该值时错开显示。 */
+    trainClusterProgress: number;
+    /** 线路路线图内列车图标缩放倍率。 */
+    trainIconScale: number;
   };
   trainIcons: {
     express: string;

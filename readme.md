@@ -107,9 +107,13 @@ web-link:
 | `frontend.searchWeightPrice`                  | number  | `0.5`                               | 混合排序票价权重：候选集内票价归一化后 ×此值。                                       |
 | `frontend.minDirectResults`                   | int     | `1`                                 | 兜底：混排结果全是联程票时至少补最优的这么多条直达（`<=0` 不兜底）。                          |
 | `frontend.maxTransferResults`                 | int     | `3`                                 | 最多展示的联程票（一次换乘）方案条数（`<=0` 不限制，仍受候选上限约束）。                        |
-| `frontend.maxTransferCandidates`              | int     | `30`                                | 联程票寻路最多考察的候选换乘站数量，防止大线组合爆炸；优先直达路径上的经停站。                        |
 | `frontend.transferMinImprovement`             | number  | `0.2`                               | 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。`0` 表示只要严格更短即显示。      |
 | `frontend.routeSearchTimeoutMs`               | int     | `10000`                             | 路线查询超时毫秒数（前端 Web Worker 寻路）。查询期间界面显示查询中动画不卡死；超时则终止计算并提示失败。     |
+| `frontend.routeDiagram.projectionThresholdBlocks` | number  | `25`                                | 线路详情路线图中，列车坐标投影到线路的最大允许距离（游戏方块）；超过则不显示，避免吸附到相邻线路。             |
+| `frontend.routeDiagram.stationGapPx`          | number  | `45`                                | 路线图中相邻车站的固定显示间距（px），不按真实里程比例拉伸。                                |
+| `frontend.routeDiagram.foldMinStations`       | int     | `8`                                | 非环线站数达到该值后，路线图折叠为 n 形以节省高度。                                    |
+| `frontend.routeDiagram.trainClusterProgress`  | number  | `0.035`                             | 路线图中列车显示进度差低于该值时，认为位置接近并错开显示。                                |
+| `frontend.routeDiagram.trainIconScale`        | number  | `0.8`                                 | 线路路线图中列车图标缩放倍率，例如 `0.5` 表示缩小为一半。                              |
 | `frontend.avatarUrlTemplate`                  | string  | `https://mineskin.eu/helm/{player}` | 玩家头像 URL 模板，`{player}` 会替换为玩家名或 UUID。                          |
 | `frontend.worldTiles.<world>.tileUrl`         | string  | 空                                   | 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。                 |
 | `frontend.worldTiles.<world>.zoom`            | number  | 空                                   | 进入该世界时的初始地图缩放级别。配置后以 `center`（或数据范围中心）为镜头中心定位；不配则按数据范围自动框选缩放。  |
@@ -132,6 +136,7 @@ web-link:
 | `frontend.mapStyle.stationTextSize`           | number  | `12`                                | 车站名称字号。                                                        |
 | `frontend.mapStyle.stationMergePixelDistance` | number  | `28`                                | 同名站点在屏幕距离小于该值时合并显示；寻路仍使用原始节点。                                  |
 | `frontend.mapStyle.trainIconSize`             | number  | `0.6`                               | MapLibre symbol 图标缩放。                                          |
+| `frontend.mapStyle.trainFocusZoom`            | number  | `16`                                | 点击实时列车卡片或线路路线图列车图标时，地图居中列车后使用的缩放级别。                            |
 | `frontend.trainIcons.express`                 | string  | 内置 SVG data URL                     | 快速车图标，可配置为 `data:`、`http(s):` 或前端可访问的静态资源 URL。                 |
 | `frontend.trainIcons.normal`                  | string  | 内置 SVG data URL                     | 普通车图标。                                                         |
 | `frontend.defaultSystemLogo`                  | string  | 内置 SVG data URL                     | 铁路系统没有 logo 时使用的默认图标。                                          |

@@ -21,6 +21,14 @@ const DEFAULT_CONFIG: FrontendConfig = {
     stationTextSize: 12,
     stationMergePixelDistance: 28,
     trainIconSize: 0.6,
+    trainFocusZoom: 6,
+  },
+  routeDiagram: {
+    projectionThresholdBlocks: 25,
+    stationGapPx: 45,
+    foldMinStations: 8,
+    trainClusterProgress: 0.035,
+    trainIconScale: 0.8,
   },
   trainIcons: {
     express:
@@ -61,6 +69,7 @@ export function setRuntimeConfig(config: FrontendConfig) {
     ...config,
     worldTiles: config.worldTiles ?? DEFAULT_CONFIG.worldTiles,
     mapStyle: { ...DEFAULT_CONFIG.mapStyle, ...config.mapStyle },
+    routeDiagram: { ...DEFAULT_CONFIG.routeDiagram, ...config.routeDiagram },
     trainIcons: { ...DEFAULT_CONFIG.trainIcons, ...config.trainIcons },
   };
   applyThemeColor(runtimeConfig.themeColor);

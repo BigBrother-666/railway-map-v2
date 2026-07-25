@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapController } from '../map/MapController';
 import { useStore } from '../store/useStore';
+import { getConfig } from '../config';
 
 /** 左侧侧边栏宽度（与 styles.css 的 .sidebar 保持一致），用于框选时留出遮挡内边距。 */
 const LEFT_SIDEBAR_WIDTH = 320;
@@ -22,6 +23,8 @@ export function MapView() {
   const highlightLineId = useStore((s) => s.highlightLineId);
   const selectedTrainId = useStore((s) => s.selectedTrainId);
   const trainFocusMode = useStore((s) => s.trainFocusMode);
+  const trainFocusSeq = useStore((s) => s.trainFocusSeq);
+  const trackingTrainId = useStore((s) => s.trackingTrainId);
   const clickStation = useStore((s) => s.clickStation);
   const selectTrain = useStore((s) => s.selectTrain);
 
@@ -111,13 +114,22 @@ export function MapView() {
     const train = useStore.getState().trains.get(selectedTrainId);
     if (!train || train.world !== currentWorld) return;
     ctrlRef.current.setLeftInset(LEFT_SIDEBAR_WIDTH);
-    ctrlRef.current.centerOnGame(train.head.x, train.head.z);
-  }, [selectedTrainId, trainFocusMode, currentWorld, sidebar]);
+    ctrlRef.current.centerOnGame(train.head.x, train.head.z, getConfig().mapStyle.trainFocusZoom);
+  }, [selectedTrainId, trainFocusMode, trainFocusSeq, currentWorld, sidebar]);
 
   // 列车
   useEffect(() => {
     if (readyRef.current && ctrlRef.current) ctrlRef.current.setTrains([...trains.values()]);
   }, [trains]);
+
+  useEffect(() => {
+    if (!readyRef.current || !ctrlRef.current) return;
+    if (sidebar !== 'train' || !trackingTrainId) return;
+    const train = trains.get(trackingTrainId);
+    if (!train || train.world !== currentWorld) return;
+    ctrlRef.current.setLeftInset(LEFT_SIDEBAR_WIDTH);
+    ctrlRef.current.centerOnGame(train.head.x, train.head.z);
+  }, [trains, trackingTrainId, currentWorld, sidebar]);
 
   // 防 ESLint 未用告警（handlers 已在 onReady 内绑定到 getState）
   void clickStation;

@@ -30,8 +30,8 @@ func TestFrontendDefaults(t *testing.T) {
 	if f.MinDirectResults != 1 {
 		t.Errorf("MinDirectResults = %d, want 1", f.MinDirectResults)
 	}
-	if f.MaxTransferResults != 3 || f.MaxTransferCandidates != 30 {
-		t.Errorf("transfer caps = %d/%d, want 3/30", f.MaxTransferResults, f.MaxTransferCandidates)
+	if f.MaxTransferResults != 3 {
+		t.Errorf("MaxTransferResults = %d, want 3", f.MaxTransferResults)
 	}
 	if f.TransferMinImprovement != 0.2 {
 		t.Errorf("TransferMinImprovement = %v, want 0.2", f.TransferMinImprovement)
