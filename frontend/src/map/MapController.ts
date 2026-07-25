@@ -18,6 +18,21 @@ const LAYER_WORLD_TILES = 'world-tiles-layer';
 /** 底图背景色（与 style 的 bg 图层一致）；淡化时把颜色混向它而非降透明度，避免重叠处 alpha 累加变实。 */
 const BG_COLOR: [number, number, number] = [0x0f, 0x11, 0x15];
 
+interface TrainVisualState {
+  train: Train;
+  world: string;
+  currentX: number;
+  currentZ: number;
+  currentYaw: number;
+  targetX: number;
+  targetZ: number;
+  targetYaw: number;
+}
+
+const TRAIN_SMOOTHING_MS = 180;
+const TRAIN_SMOOTHING_EPSILON = 0.001;
+const TRAIN_FOCUS_ANIMATION_MS = 600;
+
 export class MapController {
   private map: maplibregl.Map;
   private fc: FeatureCollection | null = null;
@@ -34,6 +49,12 @@ export class MapController {
   private onLineClick?: (lineId: string) => void;
   /** 左侧被侧边栏遮挡的像素宽度，框选时作为左侧内边距，避免内容落在侧边栏下方。 */
   private leftInset = 0;
+  private trackedTrainId: string | null = null;
+  private trackingResumeAt = 0;
+  private trackingZooming = false;
+  private trainStates = new Map<string, TrainVisualState>();
+  private trainAnimFrame: number | null = null;
+  private trainAnimLast = 0;
 
   constructor(container: HTMLElement) {
     this.map = new maplibregl.Map({
@@ -85,7 +106,14 @@ export class MapController {
     this.leftInset = Math.max(0, px);
   }
 
+  setTrackingTrainId(id: string | null) {
+    if (this.trackedTrainId === id) return;
+    this.trackedTrainId = id;
+    this.trackingResumeAt = id ? performance.now() + TRAIN_FOCUS_ANIMATION_MS : 0;
+  }
+
   destroy() {
+    this.stopTrainAnimation();
     this.map.remove();
   }
 
@@ -414,20 +442,102 @@ export class MapController {
   /** 更新列车图层。 */
   setTrains(trains: Train[]) {
     if (!this.map.getSource(SRC_TRAINS)) return;
-    const feats = trains
-      .filter((t) => t.world === this.world)
-      .map((t) => ({
+    const seen = new Set<string>();
+    for (const train of trains) {
+      if (!train.trainId) continue;
+      seen.add(train.trainId);
+      const prev = this.trainStates.get(train.trainId);
+      const switchedWorld = prev && prev.world !== train.world;
+      this.trainStates.set(train.trainId, {
+        train,
+        world: train.world,
+        currentX: prev && !switchedWorld ? prev.currentX : train.head.x,
+        currentZ: prev && !switchedWorld ? prev.currentZ : train.head.z,
+        currentYaw: prev && !switchedWorld ? prev.currentYaw : train.head.yaw,
+        targetX: train.head.x,
+        targetZ: train.head.z,
+        targetYaw: train.head.yaw,
+      });
+    }
+    for (const id of this.trainStates.keys()) {
+      if (!seen.has(id)) this.trainStates.delete(id);
+    }
+    this.renderTrainSource();
+    this.startTrainAnimation();
+  }
+
+  // --- 内部 ---
+
+  private renderTrainSource() {
+    const source = this.map.getSource(SRC_TRAINS) as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    const feats = [...this.trainStates.values()]
+      .filter((state) => state.world === this.world)
+      .map((state) => ({
         type: 'Feature' as const,
-        properties: { trainId: t.trainId, express: t.express, yaw: t.head.yaw },
-        geometry: { type: 'Point' as const, coordinates: gameToLngLat(t.head.x, t.head.z, t.world) },
+        properties: { trainId: state.train.trainId, express: state.train.express, yaw: state.currentYaw },
+        geometry: { type: 'Point' as const, coordinates: gameToLngLat(state.currentX, state.currentZ, state.world) },
       }));
-    (this.map.getSource(SRC_TRAINS) as maplibregl.GeoJSONSource).setData({
+    source.setData({
       type: 'FeatureCollection',
       features: feats,
     });
   }
 
-  // --- 内部 ---
+  private startTrainAnimation() {
+    if (this.trainAnimFrame != null) return;
+    this.trainAnimLast = performance.now();
+    this.trainAnimFrame = requestAnimationFrame((now) => this.stepTrainAnimation(now));
+  }
+
+  private stopTrainAnimation() {
+    if (this.trainAnimFrame == null) return;
+    cancelAnimationFrame(this.trainAnimFrame);
+    this.trainAnimFrame = null;
+    this.trainAnimLast = 0;
+  }
+
+  private stepTrainAnimation(now: number) {
+    this.trainAnimFrame = null;
+    const dt = Math.max(0, now - this.trainAnimLast);
+    this.trainAnimLast = now;
+    const alpha = dt <= 0 ? 1 : 1 - Math.exp(-dt / TRAIN_SMOOTHING_MS);
+    let moving = false;
+
+    for (const state of this.trainStates.values()) {
+      state.currentX += (state.targetX - state.currentX) * alpha;
+      state.currentZ += (state.targetZ - state.currentZ) * alpha;
+      state.currentYaw = lerpAngle(state.currentYaw, state.targetYaw, alpha);
+
+      const close =
+        Math.abs(state.targetX - state.currentX) < TRAIN_SMOOTHING_EPSILON &&
+        Math.abs(state.targetZ - state.currentZ) < TRAIN_SMOOTHING_EPSILON &&
+        Math.abs(angleDelta(state.currentYaw, state.targetYaw)) < 0.1;
+      if (close) {
+        state.currentX = state.targetX;
+        state.currentZ = state.targetZ;
+        state.currentYaw = state.targetYaw;
+      } else {
+        moving = true;
+      }
+    }
+
+    this.renderTrainSource();
+    this.centerTrackedTrain();
+    if (moving) this.trainAnimFrame = requestAnimationFrame((next) => this.stepTrainAnimation(next));
+  }
+
+  private centerTrackedTrain() {
+    if (!this.trackedTrainId) return;
+    if (this.trackingZooming || this.map.isZooming() || this.map.isMoving()) return;
+    if (performance.now() < this.trackingResumeAt) return;
+    const state = this.trainStates.get(this.trackedTrainId);
+    if (!state || state.world !== this.world) return;
+    this.map.jumpTo({
+      center: gameToLngLat(state.currentX, state.currentZ, this.world),
+      padding: { top: 0, bottom: 0, right: 0, left: this.leftInset },
+    });
+  }
 
   private ensureSources() {
     if (this.map.getSource(SRC_LINES)) return;
@@ -571,7 +681,19 @@ export class MapController {
       this.map.on('mouseenter', layer, () => (this.map.getCanvas().style.cursor = 'pointer'));
       this.map.on('mouseleave', layer, () => (this.map.getCanvas().style.cursor = ''));
     }
-    this.map.on('zoomend', () => this.updateStationSource());
+    this.map.on('zoomstart', () => {
+      this.trackingZooming = true;
+    });
+    this.map.on('zoomend', () => {
+      this.trackingZooming = false;
+      this.trackingResumeAt = Math.max(this.trackingResumeAt, performance.now() + 140);
+      this.updateStationSource();
+      window.setTimeout(() => this.centerTrackedTrain(), 150);
+    });
+    this.map.on('moveend', () => {
+      if (!this.trackedTrainId) return;
+      window.setTimeout(() => this.centerTrackedTrain(), 0);
+    });
   }
 
   private refreshWorldData() {
@@ -847,7 +969,7 @@ export class MapController {
       center,
       zoom: zoom === undefined ? this.map.getZoom() : this.clampZoom(zoom),
       padding: { top: 0, bottom: 0, right: 0, left: this.leftInset },
-      duration: 600,
+      duration: TRAIN_FOCUS_ANIMATION_MS,
     });
   }
 
@@ -871,6 +993,14 @@ export class MapController {
  * 把颜色 hex 按 alpha 混向底图背景色，返回不透明 #rrggbb。
  * out = color*alpha + bg*(1-alpha)。用不透明淡化色替代半透明，重叠处不再叠加变实。
  */
+function lerpAngle(from: number, to: number, alpha: number): number {
+  return from + angleDelta(from, to) * alpha;
+}
+
+function angleDelta(from: number, to: number): number {
+  return ((((to - from) % 360) + 540) % 360) - 180;
+}
+
 function mixTowardBg(hex: string | undefined, alpha: number): string {
   const rgb = parseHex(hex);
   if (!rgb) return '#888888';

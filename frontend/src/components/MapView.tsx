@@ -124,12 +124,8 @@ export function MapView() {
 
   useEffect(() => {
     if (!readyRef.current || !ctrlRef.current) return;
-    if (sidebar !== 'train' || !trackingTrainId) return;
-    const train = trains.get(trackingTrainId);
-    if (!train || train.world !== currentWorld) return;
-    ctrlRef.current.setLeftInset(LEFT_SIDEBAR_WIDTH);
-    ctrlRef.current.centerOnGame(train.head.x, train.head.z);
-  }, [trains, trackingTrainId, currentWorld, sidebar]);
+    ctrlRef.current.setTrackingTrainId(sidebar === 'train' ? trackingTrainId : null);
+  }, [trackingTrainId, sidebar, currentWorld]);
 
   // 防 ESLint 未用告警（handlers 已在 onReady 内绑定到 getState）
   void clickStation;
