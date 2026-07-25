@@ -130,15 +130,22 @@ function StraightDiagram({
           strokeLinecap="round"
         />
         <StationDots points={axis.stations.map((station) => ({ point: { x: xTrack, z: yOf(station.progress) }, key: station.name }))} />
+        {axis.stations.map((station, i) => {
+          const y = yOf(station.progress);
+          return (
+            <text
+              key={`${station.name}-${i}`}
+              className="route-diagram-station-text"
+              x={xTrack - 13}
+              y={y}
+              textAnchor="end"
+              dominantBaseline="middle"
+            >
+              {station.name}
+            </text>
+          );
+        })}
       </svg>
-      {axis.stations.map((station, i) => {
-        const y = yOf(station.progress);
-        return (
-          <div key={`${station.name}-${i}`} className="route-diagram-station" style={{ left: xTrack, top: y }}>
-            <span className="route-diagram-station-label left">{station.name}</span>
-          </div>
-        );
-      })}
       {markers.map((marker) => (
         <TrainIcon
           key={marker.train.trainId}
@@ -192,20 +199,23 @@ function FoldedDiagram({
             return { point: p, key: station.name };
           })}
         />
+        {axis.stations.map((station, i) => {
+          const p = pointOf(station.progress);
+          const onRight = p.x > (xLeft + xRight) / 2;
+          return (
+            <text
+              key={`${station.name}-${i}`}
+              className="route-diagram-station-text"
+              x={p.x + (onRight ? 13 : -13)}
+              y={p.z}
+              textAnchor={onRight ? 'start' : 'end'}
+              dominantBaseline="middle"
+            >
+              {station.name}
+            </text>
+          );
+        })}
       </svg>
-      {axis.stations.map((station, i) => {
-        const p = pointOf(station.progress);
-        const onRight = p.x > (xLeft + xRight) / 2;
-        return (
-          <div
-            key={`${station.name}-${i}`}
-            className={`route-diagram-folded-station ${onRight ? 'right' : 'left'}`}
-            style={{ left: p.x, top: p.z }}
-          >
-            <span className={`route-diagram-station-label ${onRight ? 'right' : 'left'}`}>{station.name}</span>
-          </div>
-        );
-      })}
       {markers.map((marker) => {
         const p = pointOf(marker.progress);
         return (
@@ -267,20 +277,23 @@ function RingDiagram({
             return { point: p, key: station.name };
           })}
         />
+        {axis.stations.map((station, i) => {
+          const p = pointOf(station.progress);
+          const onRight = p.x > outerWidth / 2;
+          return (
+            <text
+              key={`${station.name}-${i}`}
+              className="route-diagram-station-text ring"
+              x={p.x + (onRight ? 13 : -13)}
+              y={p.z}
+              textAnchor={onRight ? 'start' : 'end'}
+              dominantBaseline="middle"
+            >
+              {station.name}
+            </text>
+          );
+        })}
       </svg>
-      {axis.stations.map((station, i) => {
-        const p = pointOf(station.progress);
-        const onRight = p.x > outerWidth / 2;
-        return (
-          <div
-            key={`${station.name}-${i}`}
-            className={`route-diagram-ring-station ${onRight ? 'right' : 'left'}`}
-            style={{ left: p.x, top: p.z }}
-          >
-            <span className={`route-diagram-ring-label ${onRight ? 'right' : 'left'}`}>{station.name}</span>
-          </div>
-        );
-      })}
       {markers.map((marker) => {
         const p = pointOf(marker.progress);
         const side = p.x > outerWidth / 2 ? 1 : -1;

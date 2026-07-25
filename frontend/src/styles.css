@@ -578,17 +578,6 @@ body,
   border-radius: 999px;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
 }
-.route-diagram-station,
-.route-diagram-ring-station,
-.route-diagram-folded-station {
-  position: absolute;
-  width: 0;
-  height: 0;
-  transform: translate(-50%, -50%);
-}
-.route-diagram-station {
-  left: 39px;
-}
 .route-diagram-dot-svg {
   fill: #f5f7fb;
   stroke: var(--panel);
@@ -596,30 +585,16 @@ body,
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.5));
   pointer-events: none;
 }
-.route-diagram-station-label,
-.route-diagram-ring-label {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  overflow: visible;
-  text-overflow: clip;
-  white-space: nowrap;
-  color: #dce2ee;
+.route-diagram-station-text {
+  fill: #dce2ee;
   font-size: 12px;
   font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  paint-order: stroke fill;
+  stroke: rgba(0, 0, 0, 0.72);
+  stroke-width: 3px;
+  pointer-events: none;
 }
-.route-diagram-station-label.left,
-.route-diagram-ring-label.left {
-  right: 13px;
-  text-align: right;
-}
-.route-diagram-station-label.right,
-.route-diagram-ring-label.right {
-  left: 13px;
-  text-align: left;
-}
-.route-diagram-ring-label {
+.route-diagram-station-text.ring {
   font-size: 11px;
 }
 .route-diagram-path-svg {
