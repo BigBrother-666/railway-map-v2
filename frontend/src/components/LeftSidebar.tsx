@@ -127,6 +127,7 @@ function LinePanel() {
   const lines = useStore((s) => s.lines);
   const systems = useStore((s) => s.systemMap);
   const geojson = useStore((s) => s.geojson);
+  const graph = useStore((s) => s.graph);
   const close = useStore((s) => s.closeSidebar);
 
   const line = lines.find((l) => l.id === lineId);
@@ -140,6 +141,7 @@ function LinePanel() {
     if (f.geometry?.type !== 'LineString') continue;
     const p = f.properties as LineStringProps;
     if (p.lineId !== line.id) continue;
+    if (graph?.isMainlineBypassSegment(p.from, p.to, p.lineId)) continue;
     const key = p.from < p.to ? `${p.from}__${p.to}` : `${p.to}__${p.from}`;
     if (counted.has(key)) continue;
     counted.add(key);

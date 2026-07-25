@@ -206,4 +206,10 @@ export class RouteGraph {
     }
     return toSwitch ? platformName : null;
   }
+
+  isMainlineBypassSegment(from: string | undefined, to: string | undefined, lineId: string | undefined): boolean {
+    if (!from || !to || !lineId) return false;
+    const toNode = this.nodes.get(to);
+    return toNode?.type !== 'station' && this.platformNameOfMainlineSwitch(from, lineId) != null;
+  }
 }

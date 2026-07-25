@@ -164,3 +164,21 @@ describe('findByStation 站名去重', () => {
     expect(paths[0].nodeIds).toEqual(['nR', 'c1', 'rIn', 'nR2']);
   });
 });
+
+describe('RouteGraph 正线绕站段判断', () => {
+  it('只把进站道岔通往非站台的同线出边识别为正线绕站段', () => {
+    const g = RouteGraph.fromFeatureCollection(
+      fc([
+        point('in', 'switch', null, 0, 0),
+        point('platform', 'station', 'P', 10, 10),
+        point('out', 'switch', null, 20, 0),
+        line('e.L.in__platform', 'in', 'platform', 'L', 5, { departDir: 's' }),
+        line('e.L.in__out', 'in', 'out', 'L', 5, { departDir: 'e' }),
+      ]),
+    );
+
+    expect(g.platformNameOfMainlineSwitch('in', 'L')).toBe('P');
+    expect(g.isMainlineBypassSegment('in', 'out', 'L')).toBe(true);
+    expect(g.isMainlineBypassSegment('in', 'platform', 'L')).toBe(false);
+  });
+});

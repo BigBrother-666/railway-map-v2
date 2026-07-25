@@ -7,6 +7,7 @@ import maplibregl from 'maplibre-gl';
 import type { FeatureCollection, LineStringProps, PointProps, Train } from '../types';
 import { gameToLngLat, gameLineToLngLat } from './coords';
 import { getConfig, CONTACT_SYSTEM_ID } from '../config';
+import { RouteGraph } from '../routing/graph';
 
 const SRC_LINES = 'lines';
 const SRC_STATIONS = 'stations';
@@ -20,6 +21,7 @@ const BG_COLOR: [number, number, number] = [0x0f, 0x11, 0x15];
 export class MapController {
   private map: maplibregl.Map;
   private fc: FeatureCollection | null = null;
+  private graph: RouteGraph | null = null;
   private world = '';
   private hidden: Set<string> = new Set();
   private highlightEdges: Set<string> = new Set();
@@ -95,6 +97,7 @@ export class MapController {
   /** 加载（或切换世界后重载）数据并建图层。 */
   setData(fc: FeatureCollection, world: string) {
     this.fc = fc;
+    this.graph = RouteGraph.fromFeatureCollection(fc);
     this.world = world;
     this.applyWorldZoomLimits();
     this.ensureSources();
@@ -335,6 +338,7 @@ export class MapController {
       if (f.geometry?.type !== 'LineString') continue;
       const l = f.properties as LineStringProps;
       if (l.lineId !== lineId || l.world !== this.world || !l.id) continue;
+      if (this.graph?.isMainlineBypassSegment(l.from, l.to, l.lineId)) continue;
       edgeIds.add(l.id);
       if (stationNodeIds.has(l.from)) stationIds.add(l.from);
       if (stationNodeIds.has(l.to)) stationIds.add(l.to);
@@ -818,6 +822,7 @@ export class MapController {
       if (f.geometry?.type !== 'LineString') continue;
       const l = f.properties as LineStringProps;
       if (l.lineId !== lineId || l.world !== this.world) continue;
+      if (this.graph?.isMainlineBypassSegment(l.from, l.to, l.lineId)) continue;
       for (const c of (f.geometry as GeoJSON.LineString).coordinates) {
         bounds.extend(gameToLngLat(c[0], c[1], this.world));
         has = true;
