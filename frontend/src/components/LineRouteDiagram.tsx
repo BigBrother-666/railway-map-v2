@@ -112,14 +112,15 @@ function StraightDiagram({
   onTrainClick,
 }: DiagramProps) {
   const topPad = 18;
-  const xTrack = 134;
+  const straightWidth = 260;
+  const xTrack = straightWidth / 2;
   const trackLength = Math.max(1, axis.intervalCount) * stationGap;
   const height = trackLength + topPad * 2;
   const yOf = (progress: number) => topPad + clamp(progress, 0, 1) * trackLength;
 
   return (
-    <div className="route-diagram route-diagram-straight" style={{ height }}>
-      <svg className="route-diagram-path-svg" viewBox={`0 0 268 ${height}`} aria-hidden="true">
+    <div className="route-diagram route-diagram-straight" style={{ width: straightWidth, height }}>
+      <svg className="route-diagram-path-svg" viewBox={`0 0 ${straightWidth} ${height}`} aria-hidden="true">
         <line
           x1={xTrack}
           y1={topPad}
@@ -153,7 +154,7 @@ function StraightDiagram({
           src={marker.train.express ? icons.express : icons.normal}
           scale={trainIconScale}
           onClick={onTrainClick}
-          style={{ left: xTrack + marker.lane * TRAIN_LANE_OFFSET_PX, top: yOf(marker.progress) }}
+          style={{ left: xTrack, top: yOf(marker.progress) }}
         />
       ))}
     </div>
