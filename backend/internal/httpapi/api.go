@@ -4,6 +4,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -12,12 +13,15 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"railway-map-backend/internal/auth"
 	"railway-map-backend/internal/config"
 	"railway-map-backend/internal/geo"
 	"railway-map-backend/internal/model"
 	"railway-map-backend/internal/purchase"
 	"railway-map-backend/internal/realtime"
+	"railway-map-backend/internal/routing"
 )
 
 // PluginStatus 暴露插件连通状态（由 pluginlink.Server 实现）。
@@ -38,10 +42,25 @@ type API struct {
 	frontendBaseURL string
 	logger          *slog.Logger
 
-	// 购票频率限制：同一玩家两次购票的最小间隔，及各玩家最近一次购票时间。
+	// 购票频率限制：每玩家一个 token bucket（burst=1），同一玩家两次购票的最小间隔由此换算。
 	purchaseMinInterval time.Duration
-	purchaseMu          sync.Mutex
-	lastPurchaseAt      map[string]time.Time
+	purchaseLimMu       sync.Mutex
+	purchaseLimiters    map[string]*rate.Limiter
+
+	// 路线/车票查询：每玩家限流（token bucket）+ 取消同一玩家尚未完成的旧查询。
+	routing        *routing.Service
+	routeRateLimit float64 // 每玩家每秒最多请求数
+	routeLimMu     sync.Mutex
+	routeLimiters  map[string]*rate.Limiter
+	routeQueryMu   sync.Mutex
+	routeQueries   map[string]*routeQueryHandle // uuid → 该玩家当前进行中的查询
+}
+
+// routeQueryHandle 标识一次进行中的路线查询：seq 用于让「查询结束时的清理」只清理自己登记的那一份，
+// 避免误删已被新查询覆盖的登记。
+type routeQueryHandle struct {
+	seq    uint64
+	cancel context.CancelFunc
 }
 
 // DataStore records purchases and ride history (implemented by store.Store).
@@ -64,7 +83,11 @@ type Options struct {
 	TestAuthUUIDs   []string
 	// PurchaseMinInterval 是同一玩家两次购票的最小间隔（<=0 时购票不限频）。
 	PurchaseMinInterval time.Duration
-	Logger              *slog.Logger
+	// Routing 是路线/车票查询服务（nil 时 RouteQuery 返回 503）。
+	Routing *routing.Service
+	// RouteQueryRateLimitPerSecond 是单个登录玩家每秒最多发起的路线查询请求数。
+	RouteQueryRateLimitPerSecond float64
+	Logger                       *slog.Logger
 }
 
 // New 创建 API。
@@ -84,7 +107,11 @@ func New(o Options) *API {
 		frontendBaseURL:     o.FrontendBaseURL,
 		logger:              o.Logger,
 		purchaseMinInterval: o.PurchaseMinInterval,
-		lastPurchaseAt:      make(map[string]time.Time),
+		purchaseLimiters:    make(map[string]*rate.Limiter),
+		routing:             o.Routing,
+		routeRateLimit:      o.RouteQueryRateLimitPerSecond,
+		routeLimiters:       make(map[string]*rate.Limiter),
+		routeQueries:        make(map[string]*routeQueryHandle),
 	}
 }
 
@@ -328,23 +355,124 @@ func (a *API) Purchase(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// allowPurchase 判断该玩家此刻是否允许购票（距上次购票已超过最小间隔）。
-// 允许时记录本次时间并返回 true；间隔内返回 false。minInterval<=0 时不限频。
-// continuation=true（联程票续段）跳过间隔检查，但仍刷新时间戳，使整程结束后正常计冷却。
+// allowPurchase 判断该玩家此刻是否允许购票（距上次购票已超过最小间隔）。用每玩家一个
+// burst=1 的 token bucket 实现「最小间隔」：每 purchaseMinInterval 恢复 1 个令牌。
+// continuation=true（联程票续段）跳过间隔检查，但仍消耗令牌，使整程结束后正常计冷却。
+// minInterval<=0 时不限频。
 func (a *API) allowPurchase(uuid string, continuation bool) bool {
 	if a.purchaseMinInterval <= 0 {
 		return true
 	}
-	now := time.Now()
-	a.purchaseMu.Lock()
-	defer a.purchaseMu.Unlock()
-	if !continuation {
-		if last, ok := a.lastPurchaseAt[uuid]; ok && now.Sub(last) < a.purchaseMinInterval {
-			return false
-		}
+	lim := a.purchaseLimiterFor(uuid)
+	if continuation {
+		_ = lim.Allow() // 消耗令牌但不判定结果，避免续段被自己的冷却拦下
+		return true
 	}
-	a.lastPurchaseAt[uuid] = now
-	return true
+	return lim.Allow()
+}
+
+func (a *API) purchaseLimiterFor(uuid string) *rate.Limiter {
+	a.purchaseLimMu.Lock()
+	defer a.purchaseLimMu.Unlock()
+	if lim, ok := a.purchaseLimiters[uuid]; ok {
+		return lim
+	}
+	lim := rate.NewLimiter(rate.Every(a.purchaseMinInterval), 1)
+	a.purchaseLimiters[uuid] = lim
+	return lim
+}
+
+// --- 路线 / 车票查询 ---
+
+// RouteQuery 处理路线/车票查询（需登录，按玩家限流；同一玩家发起新查询会取消其尚未完成的旧查询，
+// 保证客户端最终只看到最新一次查询的结果）。
+func (a *API) RouteQuery(w http.ResponseWriter, r *http.Request) {
+	player := a.requirePlayer(w, r)
+	if player == nil {
+		return
+	}
+	if a.routing == nil {
+		writeError(w, http.StatusServiceUnavailable, "route-query-disabled", "路线查询暂不可用")
+		return
+	}
+	if !a.routeLimiterFor(player.UUID).Allow() {
+		writeError(w, http.StatusTooManyRequests, "rate-limited", "查询过于频繁，请稍后再试")
+		return
+	}
+
+	var req struct {
+		StartStation string `json:"startStation"`
+		EndStation   string `json:"endStation"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.StartStation == "" || req.EndStation == "" {
+		writeError(w, http.StatusBadRequest, "bad-request", "请求体无效")
+		return
+	}
+
+	ctx, seq := a.beginRouteQuery(player.UUID, r.Context())
+	defer a.endRouteQuery(player.UUID, seq)
+
+	candidates, err := a.routing.Query(ctx, req.StartStation, req.EndStation)
+	if err != nil {
+		if errors.Is(err, routing.ErrComputeTimeout) {
+			// 单次计算超过 route.computeTimeoutMs 仍未算出任何结果（与下面的"被取代"是不同语义：
+			// 这里是计算本身太贵，不是被同玩家的新查询取消）。未写入缓存，客户端可直接重试。
+			writeError(w, http.StatusGatewayTimeout, "compute-timeout", "路线计算超时，请稍后重试或更换起终点")
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// 已被同一玩家的下一次查询取消（或客户端/服务端超时），对端已经在等待更新的响应，
+			// 无需再写结果。routing.Service.Query 内部计算不会因此中断，仍会跑完并写入缓存。
+			writeError(w, http.StatusConflict, "superseded", "已有更新的查询")
+			return
+		}
+		if errors.Is(err, routing.ErrNoData) {
+			writeError(w, http.StatusServiceUnavailable, "no-geo", "地图数据尚未就绪")
+			return
+		}
+		a.logger.Warn("Route query failed", "err", err, "player", player.UUID)
+		writeError(w, http.StatusInternalServerError, "route-query-failed", "路线查询失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, candidates)
+}
+
+func (a *API) routeLimiterFor(uuid string) *rate.Limiter {
+	a.routeLimMu.Lock()
+	defer a.routeLimMu.Unlock()
+	if lim, ok := a.routeLimiters[uuid]; ok {
+		return lim
+	}
+	limit := a.routeRateLimit
+	if limit <= 0 {
+		limit = 3
+	}
+	lim := rate.NewLimiter(rate.Limit(limit), int(limit)+1)
+	a.routeLimiters[uuid] = lim
+	return lim
+}
+
+// beginRouteQuery 取消该玩家尚未完成的旧查询，登记本次查询，返回可取消的 context 及本次查询的序号。
+func (a *API) beginRouteQuery(uuid string, parent context.Context) (context.Context, uint64) {
+	ctx, cancel := context.WithCancel(parent)
+	a.routeQueryMu.Lock()
+	defer a.routeQueryMu.Unlock()
+	seq := uint64(1)
+	if prev, ok := a.routeQueries[uuid]; ok {
+		prev.cancel() // 取消该玩家尚未完成的旧查询
+		seq = prev.seq + 1
+	}
+	a.routeQueries[uuid] = &routeQueryHandle{seq: seq, cancel: cancel}
+	return ctx, seq
+}
+
+// endRouteQuery 查询结束后清理登记（仅当登记的还是本次查询——seq 未被更新的查询覆盖——才清理）。
+func (a *API) endRouteQuery(uuid string, seq uint64) {
+	a.routeQueryMu.Lock()
+	defer a.routeQueryMu.Unlock()
+	if cur, ok := a.routeQueries[uuid]; ok && cur.seq == seq {
+		delete(a.routeQueries, uuid)
+	}
 }
 
 // requirePlayer 从会话取玩家，未登录写 401 并返回 nil。

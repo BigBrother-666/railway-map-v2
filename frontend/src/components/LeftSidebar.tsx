@@ -48,6 +48,7 @@ function StationPanel() {
   const highlightLine = useStore((s) => s.highlightLine);
   const highlightLineId = useStore((s) => s.highlightLineId);
   const close = useStore((s) => s.closeSidebar);
+  const player = useStore((s) => s.player);
   if (!name) return null;
 
   // 收集该站所属线路 / 系统（排除联络线 contact：它是特殊 systemId，不作为车站的所属线路/系统展示）
@@ -116,7 +117,12 @@ function StationPanel() {
           </div>
         </div>
       </div>
-      <button className="btn primary" onClick={() => openRoutePanel(name)}>
+      <button
+        className="btn primary"
+        disabled={!player}
+        title={player ? undefined : '请先登录后查询路线'}
+        onClick={() => openRoutePanel(name)}
+      >
         路线
       </button>
     </div>

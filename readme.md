@@ -65,81 +65,90 @@ web-link:
 
 ### 后端配置
 
-| 配置项                             | 类型          | 默认值                                               | 说明                                                              |
-|---------------------------------|-------------|---------------------------------------------------|-----------------------------------------------------------------|
-| `server.addr`                   | string      | `:8080`                                           | HTTP 和 WebSocket 监听地址。                                          |
-| `server.publicBaseUrl`          | string      | 空                                                 | 后端对外基础 URL，用于拼接微软 OAuth 回调地址，也用于 CORS 允许来源。                     |
-| `server.frontendBaseUrl`        | string      | `server.publicBaseUrl`                            | 微软登录回调完成后跳转回此处并弹出登录成功/失败提示。                                     |
-| `log.level`                     | string      | `info`                                            | 日志级别，可用 `debug`、`info`、`warn`、`error`。                          |
-| `log.dir`                       | string      | `data/logs`                                       | 日志文件目录。相对路径按后端进程工作目录解析，默认即 `backend/data/logs`。                 |
-| `plugin.sharedToken`            | string      | 空                                                 | 插件连接 `/internal/plugin` 的 Bearer token。                         |
-| `plugin.heartbeatSeconds`       | int         | `15`                                              | 后端向插件发送 ping 的间隔秒数。                                             |
-| `plugin.purchaseTimeoutSeconds` | int         | `10`                                              | 在线购票等待插件扣款/出票回执的超时秒数。                                           |
-| `plugin.purchaseMinIntervalSeconds` | int     | `3`                                               | 同一玩家两次购票的最小间隔秒数，防止频繁购票压垮服务器；`<=0` 表示不限频。                        |
-| `realtime.trainTimeoutSeconds`  | int         | `30`                                              | 列车多久未更新就视为消失，并向前端广播移除矿车图标。                                      |
-| `realtime.clientSendBuffer`     | int         | `64`                                              | 每个前端实时 WebSocket 连接的发送缓冲帧数，满时丢弃最旧帧。                             |
-| `auth.microsoft.clientId`       | string      | 空                                                 | Azure 应用 Client ID，为空时微软登录不可用。                                  |
-| `auth.microsoft.clientSecret`   | string      | 空                                                 | Azure 应用 Client Secret。                                         |
-| `auth.microsoft.redirectPath`   | string      | `/api/v1/auth/callback`                           | OAuth 回调路径，会与 `server.publicBaseUrl` 拼成完整回调 URL。                |
-| `auth.jwtSecret`                | string      | 空                                                 | JWT 会话签名密钥。                                                     |
-| `auth.testAuthEnabled`          | bool        | `false`                                           | 是否启用测试登录接口，仅测试环境使用。                                             |
-| `auth.testAuthUUIDs`            | string list | `[]`                                              | 允许测试登录的玩家 UUID 列表。                                              |
-| `db.driver`                     | string      | `mysql`                                           | 数据库类型，可选 `mysql` 或 `sqlite`。                                    |
-| `db.dsn`                        | string      | `bcts:change-me@tcp(127.0.0.1:3306)/bcts_web?...` | MySQL DSN，仅 `db.driver=mysql` 时使用，建议用 `${BCTS_DB_DSN}` 从环境变量注入。 |
-| `db.path`                       | string      | `data/bcts-web.db`                                | SQLite 数据库文件路径，仅 `db.driver=sqlite` 时使用。后端启动时会自动创建目录和表。         |
+| 配置项                                 | 类型          | 默认值                                               | 说明                                                              |
+|-------------------------------------|-------------|---------------------------------------------------|-----------------------------------------------------------------|
+| `server.addr`                       | string      | `:8080`                                           | HTTP 和 WebSocket 监听地址。                                          |
+| `server.publicBaseUrl`              | string      | 空                                                 | 后端对外基础 URL，用于拼接微软 OAuth 回调地址，也用于 CORS 允许来源。                     |
+| `server.frontendBaseUrl`            | string      | `server.publicBaseUrl`                            | 微软登录回调完成后跳转回此处并弹出登录成功/失败提示。                                     |
+| `log.level`                         | string      | `info`                                            | 日志级别，可用 `debug`、`info`、`warn`、`error`。                          |
+| `log.dir`                           | string      | `data/logs`                                       | 日志文件目录。相对路径按后端进程工作目录解析，默认即 `backend/data/logs`。                 |
+| `plugin.sharedToken`                | string      | 空                                                 | 插件连接 `/internal/plugin` 的 Bearer token。                         |
+| `plugin.heartbeatSeconds`           | int         | `15`                                              | 后端向插件发送 ping 的间隔秒数。                                             |
+| `plugin.purchaseTimeoutSeconds`     | int         | `10`                                              | 在线购票等待插件扣款/出票回执的超时秒数。                                           |
+| `plugin.purchaseMinIntervalSeconds` | int         | `3`                                               | 同一玩家两次购票的最小间隔秒数，防止频繁购票压垮服务器；`<=0` 表示不限频。                        |
+| `realtime.trainTimeoutSeconds`      | int         | `30`                                              | 列车多久未更新就视为消失，并向前端广播移除矿车图标。                                      |
+| `realtime.clientSendBuffer`         | int         | `64`                                              | 每个前端实时 WebSocket 连接的发送缓冲帧数，满时丢弃最旧帧。                             |
+| `auth.microsoft.clientId`           | string      | 空                                                 | Azure 应用 Client ID，为空时微软登录不可用。                                  |
+| `auth.microsoft.clientSecret`       | string      | 空                                                 | Azure 应用 Client Secret。                                         |
+| `auth.microsoft.redirectPath`       | string      | `/api/v1/auth/callback`                           | OAuth 回调路径，会与 `server.publicBaseUrl` 拼成完整回调 URL。                |
+| `auth.jwtSecret`                    | string      | 空                                                 | JWT 会话签名密钥。                                                     |
+| `auth.testAuthEnabled`              | bool        | `false`                                           | 是否启用测试登录接口，仅测试环境使用。                                             |
+| `auth.testAuthUUIDs`                | string list | `[]`                                              | 允许测试登录的玩家 UUID 列表。                                              |
+| `db.driver`                         | string      | `mysql`                                           | 数据库类型，可选 `mysql` 或 `sqlite`。                                    |
+| `db.dsn`                            | string      | `bcts:change-me@tcp(127.0.0.1:3306)/bcts_web?...` | MySQL DSN，仅 `db.driver=mysql` 时使用，建议用 `${BCTS_DB_DSN}` 从环境变量注入。 |
+| `db.path`                           | string      | `data/bcts-web.db`                                | SQLite 数据库文件路径，仅 `db.driver=sqlite` 时使用。后端启动时会自动创建目录和表。         |
 
-未配置 `auth.microsoft.clientId` 且未启用测试登录时，地图、线路和实时公开数据仍可用，登录与购票不可用。
+未配置 `auth.microsoft.clientId` 且未启用测试登录时，地图、线路和实时公开数据仍可用，登录、购票与路线/车票查询不可用。
+
+### 路线 / 车票查询配置
+
+`route:` 段是路线/车票查询（`POST /api/v1/route/query`，需登录）的后端内部参数，不通过 `GET /api/v1/config` 下发给前端。
+
+| 配置项                             | 类型     | 默认值     | 说明                                                                                                          |
+|---------------------------------|--------|---------|-------------------------------------------------------------------------------------------------------------|
+| `route.queryRateLimitPerSecond` | number | `3`     | 单个登录玩家每秒最多发起的路线查询请求数（token bucket），超出返回 `429`。`<=0` 用默认值。                                                   |
+| `route.maxDistanceResults`      | int    | `5`     | 展示「距离最近」的路线条数（`<=0` 不限制）。与插件 `search.max-distance-results` 对齐。                                              |
+| `route.maxPriceResults`         | int    | `5`     | 展示「票价最低」的路线条数（`<=0` 不限制）。                                                                                   |
+| `route.searchWeightDistance`    | number | `0.5`   | 混合排序距离权重：候选集内距离归一化后 ×此值，权重越小越靠前。                                                                            |
+| `route.searchWeightPrice`       | number | `0.5`   | 混合排序票价权重：候选集内票价归一化后 ×此值。                                                                                    |
+| `route.minDirectResults`        | int    | `1`     | 兜底：混排结果全是联程票时至少补最优的这么多条直达（`<=0` 不兜底）。                                                                       |
+| `route.maxTransferResults`      | int    | `3`     | 最多展示的联程票（一次换乘）方案条数（`<=0` 不限制，仍受候选上限约束）。                                                                     |
+| `route.transferMinImprovement`  | number | `0.2`   | 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。`0` 表示只要严格更短即显示。                                                   |
+| `route.computeTimeoutMs`        | int    | `15000` | 单次寻路计算（直达 + 联程票枚举）最长耗时；超时返回 `504`。已算出的部分结果仍会缓存并正常返回，只有超时且什么都没算出来时才不缓存（避免把「算到一半被掐断」误当成「无路线」永久缓存）。`<=0` 用默认值。 |
 
 ### 前端运行时配置
 
 `frontend:` 下的配置由后端通过 `GET /api/v1/config` 下发，前端无需重新构建即可调整样式、瓦片、世界和部分业务参数。
 
-| 配置项                                           | 类型      | 默认值                                 | 说明                                                             |
-|-----------------------------------------------|---------|-------------------------------------|----------------------------------------------------------------|
-| `frontend.realtimeWsPath`                     | string  | `/api/v1/realtime`                  | 前端实时列车 WebSocket 路径。                                           |
-| `frontend.defaultWorld`                       | string  | `world1`                            | 默认显示的世界名。                                                      |
-| `frontend.defaultPricePerKm`                  | number  | `0.2`                               | 前端估算票价时使用的默认每公里价格。                                             |
-| `frontend.currencyName`                       | string  | `帕元`                                | 票价展示使用的货币名称。                                                   |
-| `frontend.themeColor`                         | string  | `#ffd400`                           | 主题色（强调色），16 进制 `#RRGGBB`；应用于按钮、高亮等 `--accent`。非法值忽略并保留默认黄色。    |
-| `frontend.maxDistanceResults`                 | int     | `5`                                 | 展示「距离最近」的路线条数（`<=0` 不限制）。与插件 `search.max-distance-results` 对齐。 |
-| `frontend.maxPriceResults`                    | int     | `5`                                 | 展示「票价最低」的路线条数（`<=0` 不限制）。                                      |
-| `frontend.searchWeightDistance`               | number  | `0.5`                               | 混合排序距离权重：候选集内距离归一化后 ×此值，权重越小越靠前。                               |
-| `frontend.searchWeightPrice`                  | number  | `0.5`                               | 混合排序票价权重：候选集内票价归一化后 ×此值。                                       |
-| `frontend.minDirectResults`                   | int     | `1`                                 | 兜底：混排结果全是联程票时至少补最优的这么多条直达（`<=0` 不兜底）。                          |
-| `frontend.maxTransferResults`                 | int     | `3`                                 | 最多展示的联程票（一次换乘）方案条数（`<=0` 不限制，仍受候选上限约束）。                        |
-| `frontend.transferMinImprovement`             | number  | `0.2`                               | 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。`0` 表示只要严格更短即显示。      |
-| `frontend.routeSearchTimeoutMs`               | int     | `10000`                             | 路线查询超时毫秒数（前端 Web Worker 寻路）。查询期间界面显示查询中动画不卡死；超时则终止计算并提示失败。     |
-| `frontend.routeDiagram.projectionThresholdBlocks` | number  | `25`                                | 线路详情路线图中，列车坐标投影到线路的最大允许距离（游戏方块）；超过则不显示，避免吸附到相邻线路。             |
-| `frontend.routeDiagram.stationGapPx`          | number  | `45`                                | 路线图中相邻车站的固定显示间距（px），不按真实里程比例拉伸。                                |
-| `frontend.routeDiagram.foldMinStations`       | int     | `8`                                | 非环线站数达到该值后，路线图折叠为 n 形以节省高度。                                    |
-| `frontend.routeDiagram.trainClusterProgress`  | number  | `0.035`                             | 路线图中列车显示进度差低于该值时，认为位置接近并错开显示。                                |
-| `frontend.routeDiagram.trainIconScale`        | number  | `0.8`                                 | 线路路线图中列车图标缩放倍率，例如 `0.5` 表示缩小为一半。                              |
-| `frontend.avatarUrlTemplate`                  | string  | `https://mineskin.eu/helm/{player}` | 玩家头像 URL 模板，`{player}` 会替换为玩家名或 UUID。                          |
-| `frontend.worldTiles.<world>.tileUrl`         | string  | 空                                   | 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。                 |
-| `frontend.worldTiles.<world>.zoom`            | number  | 空                                   | 进入该世界时的初始地图缩放级别。配置后以 `center`（或数据范围中心）为镜头中心定位；不配则按数据范围自动框选缩放。  |
-| `frontend.worldTiles.<world>.tileSize`        | number  | `256`                               | 单张瓦片图片像素尺寸。                                                    |
-| `frontend.worldTiles.<world>.opacity`         | number  | `1`                                 | 瓦片图层透明度，范围 `0` 到 `1`；值越低线路越突出。                                 |
-| `frontend.worldTiles.<world>.minNativeZoom`   | number  | `0`                                 | 瓦片源最低实际请求层级。                                                   |
-| `frontend.worldTiles.<world>.maxNativeZoom`   | number  | 空                                   | 瓦片源最高实际请求层级；地图继续放大时会放大该层级瓦片，不会请求更高层级。                          |
-| `frontend.worldTiles.<world>.minZoom`         | number  | `0`                                 | 该世界地图最低显示/交互缩放级别，同时也是瓦片图层最低显示级别。                               |
-| `frontend.worldTiles.<world>.maxZoom`         | number  | `20`                                | 该世界地图最高显示/交互缩放级别，同时也是瓦片图层最高显示级别。                               |
-| `frontend.worldTiles.<world>.scheme`          | string  | `xyz`                               | 瓦片 Y 轴编号方案，可选 `xyz` 或 `tms`。                                   |
-| `frontend.worldTiles.<world>.mapScale`        | number  | `1`                                 | 1 个游戏方块对应多少「原生瓦片像素」。geojson 按游戏比例等比铺图，用它整体缩放对准瓦片。              |
-| `frontend.worldTiles.<world>.mapOffset`       | `[x,z]` | `[0,0]`                             | 游戏坐标整体平移（游戏单位），用它把线路挪到与瓦片底图对齐。                                 |
-| `frontend.worldTiles.<world>.center`          | `[x,z]` | 空                                   | 进入该世界时的初始镜头中心（游戏坐标 `[x,z]`）。不配则回退到数据范围中心。                      |
-| `frontend.mapStyle.lineWidth`                 | number  | `3`                                 | 普通线路宽度，单位为屏幕像素。                                                |
-| `frontend.mapStyle.highlightWidth`            | number  | `7`                                 | 高亮路线宽度，单位为屏幕像素。                                                |
-| `frontend.mapStyle.dimOpacity`                | number  | `0.2`                               | 有高亮路线时非高亮线路透明度。                                                |
-| `frontend.mapStyle.lineOpacity`               | number  | `0.9`                               | 普通线路透明度。                                                       |
-| `frontend.mapStyle.stationRadius`             | number  | `6`                                 | 车站圆点半径。                                                        |
-| `frontend.mapStyle.stationStrokeWidth`        | number  | `2`                                 | 车站圆点描边宽度。                                                      |
-| `frontend.mapStyle.stationTextSize`           | number  | `12`                                | 车站名称字号。                                                        |
-| `frontend.mapStyle.stationMergePixelDistance` | number  | `28`                                | 同名站点在屏幕距离小于该值时合并显示；寻路仍使用原始节点。                                  |
-| `frontend.mapStyle.trainIconSize`             | number  | `0.6`                               | MapLibre symbol 图标缩放。                                          |
-| `frontend.mapStyle.trainFocusZoom`            | number  | `16`                                | 点击实时列车卡片或线路路线图列车图标时，地图居中列车后使用的缩放级别。                            |
-| `frontend.trainIcons.express`                 | string  | 内置 SVG data URL                     | 快速车图标，可配置为 `data:`、`http(s):` 或前端可访问的静态资源 URL。                 |
-| `frontend.trainIcons.normal`                  | string  | 内置 SVG data URL                     | 普通车图标。                                                         |
-| `frontend.defaultSystemLogo`                  | string  | 内置 SVG data URL                     | 铁路系统没有 logo 时使用的默认图标。                                          |
+| 配置项                                               | 类型      | 默认值                                 | 说明                                                                          |
+|---------------------------------------------------|---------|-------------------------------------|-----------------------------------------------------------------------------|
+| `frontend.realtimeWsPath`                         | string  | `/api/v1/realtime`                  | 前端实时列车 WebSocket 路径。                                                        |
+| `frontend.defaultWorld`                           | string  | `world1`                            | 默认显示的世界名。                                                                   |
+| `frontend.defaultPricePerKm`                      | number  | `0.2`                               | 前端估算票价时使用的默认每公里价格。                                                          |
+| `frontend.currencyName`                           | string  | `帕元`                                | 票价展示使用的货币名称。                                                                |
+| `frontend.themeColor`                             | string  | `#ffd400`                           | 主题色（强调色），16 进制 `#RRGGBB`；应用于按钮、高亮等 `--accent`。非法值忽略并保留默认黄色。                 |
+| `frontend.routeSearchTimeoutMs`                   | int     | `10000`                             | 路线查询请求超时毫秒数（前端调用 `POST /api/v1/route/query`）。查询期间界面显示查询中动画不卡死；超时则中止请求并提示失败。 |
+| `frontend.routeDiagram.projectionThresholdBlocks` | number  | `25`                                | 线路详情路线图中，列车坐标投影到线路的最大允许距离（游戏方块）；超过则不显示，避免吸附到相邻线路。                           |
+| `frontend.routeDiagram.stationGapPx`              | number  | `45`                                | 路线图中相邻车站的固定显示间距（px），不按真实里程比例拉伸。                                             |
+| `frontend.routeDiagram.foldMinStations`           | int     | `8`                                 | 非环线站数达到该值后，路线图折叠为 n 形以节省高度。                                                 |
+| `frontend.routeDiagram.trainClusterProgress`      | number  | `0.035`                             | 路线图中列车显示进度差低于该值时，认为位置接近并错开显示。                                               |
+| `frontend.routeDiagram.trainIconScale`            | number  | `0.8`                               | 线路路线图中列车图标缩放倍率，例如 `0.5` 表示缩小为一半。                                            |
+| `frontend.avatarUrlTemplate`                      | string  | `https://mineskin.eu/helm/{player}` | 玩家头像 URL 模板，`{player}` 会替换为玩家名或 UUID。                                       |
+| `frontend.worldTiles.<world>.tileUrl`             | string  | 空                                   | 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。                              |
+| `frontend.worldTiles.<world>.zoom`                | number  | 空                                   | 进入该世界时的初始地图缩放级别。配置后以 `center`（或数据范围中心）为镜头中心定位；不配则按数据范围自动框选缩放。               |
+| `frontend.worldTiles.<world>.tileSize`            | number  | `256`                               | 单张瓦片图片像素尺寸。                                                                 |
+| `frontend.worldTiles.<world>.opacity`             | number  | `1`                                 | 瓦片图层透明度，范围 `0` 到 `1`；值越低线路越突出。                                              |
+| `frontend.worldTiles.<world>.minNativeZoom`       | number  | `0`                                 | 瓦片源最低实际请求层级。                                                                |
+| `frontend.worldTiles.<world>.maxNativeZoom`       | number  | 空                                   | 瓦片源最高实际请求层级；地图继续放大时会放大该层级瓦片，不会请求更高层级。                                       |
+| `frontend.worldTiles.<world>.minZoom`             | number  | `0`                                 | 该世界地图最低显示/交互缩放级别，同时也是瓦片图层最低显示级别。                                            |
+| `frontend.worldTiles.<world>.maxZoom`             | number  | `20`                                | 该世界地图最高显示/交互缩放级别，同时也是瓦片图层最高显示级别。                                            |
+| `frontend.worldTiles.<world>.scheme`              | string  | `xyz`                               | 瓦片 Y 轴编号方案，可选 `xyz` 或 `tms`。                                                |
+| `frontend.worldTiles.<world>.mapScale`            | number  | `1`                                 | 1 个游戏方块对应多少「原生瓦片像素」。geojson 按游戏比例等比铺图，用它整体缩放对准瓦片。                           |
+| `frontend.worldTiles.<world>.mapOffset`           | `[x,z]` | `[0,0]`                             | 游戏坐标整体平移（游戏单位），用它把线路挪到与瓦片底图对齐。                                              |
+| `frontend.worldTiles.<world>.center`              | `[x,z]` | 空                                   | 进入该世界时的初始镜头中心（游戏坐标 `[x,z]`）。不配则回退到数据范围中心。                                   |
+| `frontend.mapStyle.lineWidth`                     | number  | `3`                                 | 普通线路宽度，单位为屏幕像素。                                                             |
+| `frontend.mapStyle.highlightWidth`                | number  | `7`                                 | 高亮路线宽度，单位为屏幕像素。                                                             |
+| `frontend.mapStyle.dimOpacity`                    | number  | `0.2`                               | 有高亮路线时非高亮线路透明度。                                                             |
+| `frontend.mapStyle.lineOpacity`                   | number  | `0.9`                               | 普通线路透明度。                                                                    |
+| `frontend.mapStyle.stationRadius`                 | number  | `6`                                 | 车站圆点半径。                                                                     |
+| `frontend.mapStyle.stationStrokeWidth`            | number  | `2`                                 | 车站圆点描边宽度。                                                                   |
+| `frontend.mapStyle.stationTextSize`               | number  | `12`                                | 车站名称字号。                                                                     |
+| `frontend.mapStyle.stationMergePixelDistance`     | number  | `28`                                | 同名站点在屏幕距离小于该值时合并显示；寻路仍使用原始节点。                                               |
+| `frontend.mapStyle.trainIconSize`                 | number  | `0.6`                               | MapLibre symbol 图标缩放。                                                       |
+| `frontend.mapStyle.trainFocusZoom`                | number  | `16`                                | 点击实时列车卡片或线路路线图列车图标时，地图居中列车后使用的缩放级别。                                         |
+| `frontend.trainIcons.express`                     | string  | 内置 SVG data URL                     | 快速车图标，可配置为 `data:`、`http(s):` 或前端可访问的静态资源 URL。                              |
+| `frontend.trainIcons.normal`                      | string  | 内置 SVG data URL                     | 普通车图标。                                                                      |
+| `frontend.defaultSystemLogo`                      | string  | 内置 SVG data URL                     | 铁路系统没有 logo 时使用的默认图标。                                                       |
 
 ## 主要接口
 
@@ -150,6 +159,7 @@ web-link:
 - `GET /api/v1/trains`：当前列车快照。
 - `GET /api/v1/auth/login`、`/auth/callback`、`/auth/me`、`POST /auth/logout`：网页登录。
 - `POST /api/v1/auth/test-login`：测试登录，仅在 `auth.testAuthEnabled` 开启时可用。
+- `POST /api/v1/route/query`：路线/车票查询（需登录，按玩家限流，见 `route.queryRateLimitPerSecond`；同一玩家发起新查询会取消其尚未完成的旧查询；单次计算超过 `route.computeTimeoutMs` 返回 `504`）。
 - `POST /api/v1/purchase`：在线购票（单段直达一次调用；联程票由前端对每段各调用一次）。
 - `GET /api/v1/me/history?page=1&pageSize=10`：当前登录玩家的乘车历史。
 - `GET /api/v1/realtime`：前端实时列车 WebSocket。
@@ -157,7 +167,7 @@ web-link:
 
 ## 降级行为
 
-插件断连时，REST 继续使用数据库里的最近快照提供 `geojson`、线路和铁路系统数据；本地寻路仍可用。实时列车与购票不可用。
+插件断连时，REST 继续使用数据库里的最近快照提供 `geojson`、线路和铁路系统数据；路线/车票查询基于该快照仍可用。实时列车与购票不可用。
 
 ## Docker Compose 部署
 

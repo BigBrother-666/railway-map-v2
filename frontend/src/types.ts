@@ -29,11 +29,6 @@ export interface LineStringProps {
   color: string;
   length: number;
   layer?: number;
-  departDir?: string;
-  /** 入向面门控：到达起点道岔的允许到达面集合（与插件 GeoLink.enterFacesFrom 同源）。空/缺失不门控。 */
-  enterFrom?: string[];
-  /** 沿本段到达终点节点的到达面 key（与插件 GeoLink.enterFaceTo 同源）。 */
-  enterTo?: string;
 }
 
 export type Feature = GeoJSON.Feature<GeoJSON.Geometry, PointProps | LineStringProps>;
@@ -91,7 +86,6 @@ export interface RoutePath {
   stationSteps?: StationStep[];
   nodeIds: string[];
   lineIdSequence: string[];
-  departDirectionSequence?: string[];
   distance: number;
   segments: RouteSegment[];
   fareDetails?: FareDetail[];
@@ -216,17 +210,7 @@ export interface FrontendConfig {
   testAuthEnabled: boolean;
   testAuthUUIDs?: string[];
 
-  // 搜索结果排序（复刻插件 search.*）
-  maxDistanceResults: number;
-  maxPriceResults: number;
-  searchWeightDistance: number;
-  searchWeightPrice: number;
-  minDirectResults: number;
-
-  // 联程票寻路参数
-  maxTransferResults: number;
-  transferMinImprovement: number;
-  /** 路线查询（Web Worker 寻路）超时毫秒数；超时终止并提示失败。 */
+  /** 路线查询请求（POST /api/v1/route/query）超时毫秒数；超时中止请求并提示失败。 */
   routeSearchTimeoutMs: number;
 }
 

@@ -56,14 +56,35 @@ type FareDetail struct {
 
 // RoutePath 是路径查询结果（见 docs/FRONTEND_PROMPT.md §4.6）。
 type RoutePath struct {
-	Stations       []string       `json:"stations"`
-	StationSteps   []StationStep  `json:"stationSteps,omitempty"`
-	NodeIDs        []string       `json:"nodeIds"`
-	LineIDSequence []string       `json:"lineIdSequence"`
-	Distance       float64        `json:"distance"`
-	Segments       []RouteSegment `json:"segments"`
-	FareDetails    []FareDetail   `json:"fareDetails,omitempty"`
-	EstimatedFare  float64        `json:"estimatedFare"`
+	Stations                []string       `json:"stations"`
+	StationSteps            []StationStep  `json:"stationSteps,omitempty"`
+	NodeIDs                 []string       `json:"nodeIds"`
+	LineIDSequence          []string       `json:"lineIdSequence"`
+	DepartDirectionSequence []string       `json:"departDirectionSequence,omitempty"`
+	Distance                float64        `json:"distance"`
+	Segments                []RouteSegment `json:"segments"`
+	FareDetails             []FareDetail   `json:"fareDetails,omitempty"`
+	EstimatedFare           float64        `json:"estimatedFare"`
+	// Kind 区分直达（"direct"，默认）与联程票（"through"）。
+	Kind string `json:"kind,omitempty"`
+	// Journey 是 Kind=="through" 时的联程票方案（两段直达 + 换乘站）。
+	Journey *JourneyPlan `json:"journey,omitempty"`
+	// ExpressRoute 标记是否为快速车路线；查询结果统一为 true。
+	ExpressRoute bool `json:"expressRoute,omitempty"`
+}
+
+// JourneyPlan 是联程票（一次换乘 / 两段直达）方案，复刻插件 JourneyPlan + ThroughTicket 的展示语义。
+type JourneyPlan struct {
+	// Legs 是各段直达路径，按乘车顺序排列（首段起点=行程起点，末段终点=行程终点）。
+	Legs []RoutePath `json:"legs"`
+	// TransferStations 是各换乘站名（len = len(Legs)-1）。
+	TransferStations []string `json:"transferStations"`
+	// TotalDistance 是全程总距离（各段之和，km）。
+	TotalDistance float64 `json:"totalDistance"`
+	// TotalFare 是全程估算总价（各段之和）。
+	TotalFare float64 `json:"totalFare"`
+	// FareDetails 是合并各段各系统的收费详情（用于底部票价明细展示）。
+	FareDetails []FareDetail `json:"fareDetails,omitempty"`
 }
 
 // Meta 是 GET /api/v1/meta 的响应。

@@ -51,13 +51,6 @@ const DEFAULT_CONFIG: FrontendConfig = {
   defaultPricePerKm: 0.2,
   testAuthEnabled: false,
   testAuthUUIDs: [],
-  maxDistanceResults: 5,
-  maxPriceResults: 5,
-  searchWeightDistance: 0.5,
-  searchWeightPrice: 0.5,
-  minDirectResults: 1,
-  maxTransferResults: 3,
-  transferMinImprovement: 0.2,
   routeSearchTimeoutMs: 10000,
 };
 

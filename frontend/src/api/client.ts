@@ -12,11 +12,26 @@ import type {
   PurchaseResult,
   RailwaySystem,
   RideHistoryResponse,
+  RoutePath,
   Train,
 } from '../types';
 
 async function getJSON<T>(path: string): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, { credentials: 'include' });
+  if (!resp.ok) {
+    throw new ApiError(resp.status, await safeText(resp));
+  }
+  return resp.json() as Promise<T>;
+}
+
+async function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
   if (!resp.ok) {
     throw new ApiError(resp.status, await safeText(resp));
   }
@@ -69,6 +84,10 @@ export const api = {
   },
 
   rideHistory: (page = 1, pageSize = 10) => getJSON<RideHistoryResponse>(`/me/history?page=${page}&pageSize=${pageSize}`),
+
+  /** 路线/车票查询（需登录）。后端计算直达 + 联程票候选，已含票价明细。 */
+  routeQuery: (startStation: string, endStation: string, signal?: AbortSignal) =>
+    postJSON<RoutePath[]>('/route/query', { startStation, endStation }, signal),
 
   async purchase(req: PurchaseRequest): Promise<PurchaseResult> {
     const resp = await fetch(`${API_BASE}/purchase`, {

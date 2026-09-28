@@ -25,6 +25,7 @@ import (
 	"railway-map-backend/internal/pluginlink"
 	"railway-map-backend/internal/purchase"
 	"railway-map-backend/internal/realtime"
+	"railway-map-backend/internal/routing"
 	"railway-map-backend/internal/store"
 	"railway-map-backend/internal/ws"
 )
@@ -97,12 +98,16 @@ func main() {
 		logger.Warn("Authentication is not configured; auth routes and purchases are disabled")
 	}
 
+	routingSvc := routing.NewService(cache, func() config.RouteConfig { return cfg.Route }, cfg.Frontend.DefaultPricePerKm)
+
 	api := httpapi.New(httpapi.Options{
 		Cache: cache, Agg: agg, Plugin: pluginServer,
 		Purchase: orchestrator, Auth: authSvc, Store: st, Logger: logger,
 		Frontend: cfg.Frontend, FrontendBaseURL: cfg.Server.FrontendBaseURL,
 		TestAuthEnabled: cfg.Auth.TestAuthEnabled, TestAuthUUIDs: cfg.Auth.TestAuthUUIDs,
-		PurchaseMinInterval: time.Duration(cfg.Plugin.PurchaseMinIntervalSeconds) * time.Second,
+		PurchaseMinInterval:          time.Duration(cfg.Plugin.PurchaseMinIntervalSeconds) * time.Second,
+		Routing:                      routingSvc,
+		RouteQueryRateLimitPerSecond: cfg.Route.QueryRateLimitPerSecond,
 	})
 
 	r := buildRouter(cfg, api, pluginServer, hub, logger)
@@ -154,6 +159,7 @@ func buildRouter(cfg *config.Config, api *httpapi.API, plugin *pluginlink.Server
 		r.Get("/me/history", api.MyRideHistory)
 		r.Post("/auth/logout", api.Logout)
 
+		r.Post("/route/query", api.RouteQuery)
 		r.Post("/purchase", api.Purchase)
 		r.Get("/realtime", hub.HandleWS)
 	})

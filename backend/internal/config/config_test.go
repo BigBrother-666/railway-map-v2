@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// 写一个最小 yaml，验证 frontend 搜索/联程票默认值与 currencyName 都被填充（修复此前 currencyName 漏配）。
+// 写一个最小 yaml，验证 frontend currencyName 与 route 搜索/联程票默认值都被填充（修复此前 currencyName 漏配）。
 func TestFrontendDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
@@ -21,20 +21,24 @@ func TestFrontendDefaults(t *testing.T) {
 	if f.CurrencyName != "帕元" {
 		t.Errorf("CurrencyName = %q, want 帕元", f.CurrencyName)
 	}
-	if f.MaxDistanceResults != 5 || f.MaxPriceResults != 5 {
-		t.Errorf("max results = %d/%d, want 5/5", f.MaxDistanceResults, f.MaxPriceResults)
+	rt := cfg.Route
+	if rt.QueryRateLimitPerSecond != 3 {
+		t.Errorf("QueryRateLimitPerSecond = %v, want 3", rt.QueryRateLimitPerSecond)
 	}
-	if f.SearchWeightDistance != 0.5 || f.SearchWeightPrice != 0.5 {
-		t.Errorf("weights = %v/%v, want 0.5/0.5", f.SearchWeightDistance, f.SearchWeightPrice)
+	if rt.MaxDistanceResults != 5 || rt.MaxPriceResults != 5 {
+		t.Errorf("max results = %d/%d, want 5/5", rt.MaxDistanceResults, rt.MaxPriceResults)
 	}
-	if f.MinDirectResults != 1 {
-		t.Errorf("MinDirectResults = %d, want 1", f.MinDirectResults)
+	if rt.SearchWeightDistance != 0.5 || rt.SearchWeightPrice != 0.5 {
+		t.Errorf("weights = %v/%v, want 0.5/0.5", rt.SearchWeightDistance, rt.SearchWeightPrice)
 	}
-	if f.MaxTransferResults != 3 {
-		t.Errorf("MaxTransferResults = %d, want 3", f.MaxTransferResults)
+	if rt.MinDirectResults != 1 {
+		t.Errorf("MinDirectResults = %d, want 1", rt.MinDirectResults)
 	}
-	if f.TransferMinImprovement != 0.2 {
-		t.Errorf("TransferMinImprovement = %v, want 0.2", f.TransferMinImprovement)
+	if rt.MaxTransferResults != 3 {
+		t.Errorf("MaxTransferResults = %d, want 3", rt.MaxTransferResults)
+	}
+	if rt.TransferMinImprovement != 0.2 {
+		t.Errorf("TransferMinImprovement = %v, want 0.2", rt.TransferMinImprovement)
 	}
 }
 
@@ -44,6 +48,7 @@ func TestFrontendExplicitValuesKept(t *testing.T) {
 	path := filepath.Join(dir, "config.yml")
 	yaml := "frontend:\n" +
 		"  currencyName: \"Gold\"\n" +
+		"route:\n" +
 		"  maxDistanceResults: 8\n" +
 		"  searchWeightDistance: 1.0\n" +
 		"  searchWeightPrice: 0.0\n" +
@@ -59,10 +64,11 @@ func TestFrontendExplicitValuesKept(t *testing.T) {
 	if f.CurrencyName != "Gold" {
 		t.Errorf("CurrencyName = %q, want Gold", f.CurrencyName)
 	}
-	if f.MaxDistanceResults != 8 {
-		t.Errorf("MaxDistanceResults = %d, want 8", f.MaxDistanceResults)
+	rt := cfg.Route
+	if rt.MaxDistanceResults != 8 {
+		t.Errorf("MaxDistanceResults = %d, want 8", rt.MaxDistanceResults)
 	}
-	if f.SearchWeightDistance != 1.0 || f.SearchWeightPrice != 0.0 {
-		t.Errorf("weights = %v/%v, want 1.0/0.0 (显式配置保留)", f.SearchWeightDistance, f.SearchWeightPrice)
+	if rt.SearchWeightDistance != 1.0 || rt.SearchWeightPrice != 0.0 {
+		t.Errorf("weights = %v/%v, want 1.0/0.0 (显式配置保留)", rt.SearchWeightDistance, rt.SearchWeightPrice)
 	}
 }

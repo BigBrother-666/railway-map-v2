@@ -35,21 +35,7 @@ frontend:
   avatarUrlTemplate: "https://mineskin.eu/helm/{player}"
   currencyName: "帕元"
   themeColor: "#ffd400"   # 主题色（强调色），16 进制 #RRGGBB；留空用默认黄色 #ffd400
-  # 搜索结果排序（复刻插件 search.*，与游戏内购票菜单一致）
-  # 显示「距离最近」的路线条数（<=0 不限制）
-  maxDistanceResults: 10
-  # 显示「票价最低」的路线条数（<=0 不限制）
-  maxPriceResults: 10
-  # 混合排序权重：候选集内距离、票价各归一化到 [0,1] 后加权，权重越小越靠前
-  searchWeightDistance: 0.5
-  searchWeightPrice: 0.5
-  # 兜底：混排结果里一条直达都没有（全是联程票）时，至少补最优的这么多条直达（<=0 不兜底）
-  minDirectResults: 1
-  # 联程票（一次换乘 / 两段直达）方案条数（<=0 不限制，仍受候选上限约束）
-  maxTransferResults: 2
-  # 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1 - 此值) 时才显示联程票。0 表示只要严格更短即显示
-  transferMinImprovement: 0.2
-  # 路线查询超时毫秒数（前端 Web Worker 寻路）；超时终止计算并提示失败。<=0 用默认 10000
+  # 路线查询超时毫秒数（前端请求 /api/v1/route/query）；超时中止请求并提示失败。<=0 用默认 10000
   routeSearchTimeoutMs: 10000
   worldTiles:
     world1:
@@ -86,3 +72,25 @@ frontend:
     express: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
     normal: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%2342a5f5'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
   defaultSystemLogo: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='20'%20height='20'%20viewBox='0%200%2020%2020'%3E%3Crect%20width='20'%20height='20'%20rx='4'%20fill='%233a3f4b'/%3E%3Cpath%20d='M6%205h8v7a3%203%200%200%201-3%203H9a3%203%200%200%201-3-3z'%20fill='%238a90a0'/%3E%3Ccircle%20cx='8'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3Ccircle%20cx='12'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3C/svg%3E"
+
+# 路线 / 车票查询（后端计算，登录后才可用，见 POST /api/v1/route/query）
+route:
+  # 单个登录玩家每秒最多发起的路线查询请求数，超出返回 429。<=0 用默认 3
+  queryRateLimitPerSecond: 3
+  # 搜索结果排序（复刻插件 search.*，与游戏内购票菜单一致）
+  # 显示「距离最近」的路线条数（<=0 不限制）
+  maxDistanceResults: 10
+  # 显示「票价最低」的路线条数（<=0 不限制）
+  maxPriceResults: 10
+  # 混合排序权重：候选集内距离、票价各归一化到 [0,1] 后加权，权重越小越靠前
+  searchWeightDistance: 0.5
+  searchWeightPrice: 0.5
+  # 兜底：混排结果里一条直达都没有（全是联程票）时，至少补最优的这么多条直达（<=0 不兜底）
+  minDirectResults: 1
+  # 联程票（一次换乘 / 两段直达）方案条数（<=0 不限制，仍受候选上限约束）
+  maxTransferResults: 2
+  # 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1 - 此值) 时才显示联程票。0 表示只要严格更短即显示
+  transferMinImprovement: 0.2
+  # 单次寻路计算（直达 + 联程票枚举）最长耗时毫秒数，超时中止并返回 504；已算出的部分结果仍会缓存/
+  # 返回，只有超时且什么都没算出来时才不缓存。<=0 用默认 15000
+  computeTimeoutMs: 15000

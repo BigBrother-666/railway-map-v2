@@ -18,6 +18,7 @@ type Config struct {
 	Auth     AuthConfig     `yaml:"auth"`
 	DB       DBConfig       `yaml:"db"`
 	Frontend FrontendConfig `yaml:"frontend"`
+	Route    RouteConfig    `yaml:"route"`
 }
 
 type ServerConfig struct {
@@ -79,19 +80,32 @@ type FrontendConfig struct {
 	DefaultSystemLogo string                     `yaml:"defaultSystemLogo" json:"defaultSystemLogo"`
 	AvatarURLTemplate string                     `yaml:"avatarUrlTemplate" json:"avatarUrlTemplate"`
 	DefaultPricePerKm float64                    `yaml:"defaultPricePerKm" json:"defaultPricePerKm"`
+	// 路线查询（前端请求 /api/v1/route/query）超时毫秒数，超时则中止请求并提示失败。<=0 用默认 10000。
+	RouteSearchTimeoutMs int `yaml:"routeSearchTimeoutMs" json:"routeSearchTimeoutMs"`
+}
+
+// RouteConfig 是路线/车票查询相关的后端内部参数（不下发到前端，见 GET /api/v1/config 只返回 FrontendConfig）。
+type RouteConfig struct {
+	// QueryRateLimitPerSecond 是单个登录玩家每秒最多发起的路线查询请求数。<=0 用默认 3。
+	QueryRateLimitPerSecond float64 `yaml:"queryRateLimitPerSecond"`
 
 	// 搜索结果排序（复刻插件 search.*，与菜单购票一致）
-	MaxDistanceResults   int     `yaml:"maxDistanceResults" json:"maxDistanceResults"`
-	MaxPriceResults      int     `yaml:"maxPriceResults" json:"maxPriceResults"`
-	SearchWeightDistance float64 `yaml:"searchWeightDistance" json:"searchWeightDistance"`
-	SearchWeightPrice    float64 `yaml:"searchWeightPrice" json:"searchWeightPrice"`
-	MinDirectResults     int     `yaml:"minDirectResults" json:"minDirectResults"`
+	MaxDistanceResults   int     `yaml:"maxDistanceResults"`
+	MaxPriceResults      int     `yaml:"maxPriceResults"`
+	SearchWeightDistance float64 `yaml:"searchWeightDistance"`
+	SearchWeightPrice    float64 `yaml:"searchWeightPrice"`
+	MinDirectResults     int     `yaml:"minDirectResults"`
 
 	// 联程票（一次换乘 / 两段直达）寻路参数（复刻插件 search.max-transfer-* / transfer-min-improvement）
-	MaxTransferResults     int     `yaml:"maxTransferResults" json:"maxTransferResults"`
-	TransferMinImprovement float64 `yaml:"transferMinImprovement" json:"transferMinImprovement"`
-	// 路线查询（前端 Web Worker 寻路）超时毫秒数，超时则终止计算并提示失败。<=0 用默认 10000。
-	RouteSearchTimeoutMs int `yaml:"routeSearchTimeoutMs" json:"routeSearchTimeoutMs"`
+	MaxTransferResults     int     `yaml:"maxTransferResults"`
+	TransferMinImprovement float64 `yaml:"transferMinImprovement"`
+
+	// ComputeTimeoutMs 是单次寻路计算（含直达 + 联程票枚举）的最长耗时，超时则中止该计算并返回
+	// 错误、不写入结果缓存（避免把「算到一半被掐断」的不完整结果误当成「无路线」永久缓存）。这是
+	// 后端自身的计算耗时上限，独立于前端 frontend.routeSearchTimeoutMs（那个只控制单个浏览器请求
+	// 等待多久）：同一份计算可能被多个玩家的请求共享（见 singleflight 折叠），不能用某一个请求的
+	// 耐心去卡它。<=0 用默认 15000。
+	ComputeTimeoutMs int `yaml:"computeTimeoutMs"`
 }
 
 type WorldTileConfig struct {
@@ -125,10 +139,10 @@ type MapStyleConfig struct {
 
 type RouteDiagramConfig struct {
 	ProjectionThresholdBlocks float64 `yaml:"projectionThresholdBlocks" json:"projectionThresholdBlocks"`
-	StationGapPx             float64 `yaml:"stationGapPx" json:"stationGapPx"`
-	FoldMinStations          int     `yaml:"foldMinStations" json:"foldMinStations"`
-	TrainClusterProgress     float64 `yaml:"trainClusterProgress" json:"trainClusterProgress"`
-	TrainIconScale           float64 `yaml:"trainIconScale" json:"trainIconScale"`
+	StationGapPx              float64 `yaml:"stationGapPx" json:"stationGapPx"`
+	FoldMinStations           int     `yaml:"foldMinStations" json:"foldMinStations"`
+	TrainClusterProgress      float64 `yaml:"trainClusterProgress" json:"trainClusterProgress"`
+	TrainIconScale            float64 `yaml:"trainIconScale" json:"trainIconScale"`
 }
 
 type TrainIconsConfig struct {
@@ -278,27 +292,33 @@ func (c *Config) applyDefaults() {
 	if c.Frontend.CurrencyName == "" {
 		c.Frontend.CurrencyName = "帕元"
 	}
+	if c.Route.QueryRateLimitPerSecond <= 0 {
+		c.Route.QueryRateLimitPerSecond = 3
+	}
 	// 搜索排序默认值（与插件 config.yml search.* 对齐）。
 	// max-*-results 允许配 <=0 表示不限制，故用「负数才纠正」而非 <=0；未配置时 yaml 零值 0 恰是「不限制」，
 	// 但插件默认给 5，这里对「未出现即 0」统一给 5：区分不了「显式 0」与「缺省」，与插件一致按缺省处理。
-	if c.Frontend.MaxDistanceResults == 0 {
-		c.Frontend.MaxDistanceResults = 5
+	if c.Route.MaxDistanceResults == 0 {
+		c.Route.MaxDistanceResults = 5
 	}
-	if c.Frontend.MaxPriceResults == 0 {
-		c.Frontend.MaxPriceResults = 5
+	if c.Route.MaxPriceResults == 0 {
+		c.Route.MaxPriceResults = 5
 	}
 	// 权重：两者都为 0（未配置）时给 0.5/0.5；显式配置其一即保留。
-	if c.Frontend.SearchWeightDistance == 0 && c.Frontend.SearchWeightPrice == 0 {
-		c.Frontend.SearchWeightDistance = 0.5
-		c.Frontend.SearchWeightPrice = 0.5
+	if c.Route.SearchWeightDistance == 0 && c.Route.SearchWeightPrice == 0 {
+		c.Route.SearchWeightDistance = 0.5
+		c.Route.SearchWeightPrice = 0.5
 	}
-	if c.Frontend.MinDirectResults == 0 {
-		c.Frontend.MinDirectResults = 1
+	if c.Route.MinDirectResults == 0 {
+		c.Route.MinDirectResults = 1
 	}
-	if c.Frontend.MaxTransferResults == 0 {
-		c.Frontend.MaxTransferResults = 3
+	if c.Route.MaxTransferResults == 0 {
+		c.Route.MaxTransferResults = 3
 	}
-	if c.Frontend.TransferMinImprovement == 0 {
-		c.Frontend.TransferMinImprovement = 0.2
+	if c.Route.TransferMinImprovement == 0 {
+		c.Route.TransferMinImprovement = 0.2
+	}
+	if c.Route.ComputeTimeoutMs <= 0 {
+		c.Route.ComputeTimeoutMs = 15000
 	}
 }

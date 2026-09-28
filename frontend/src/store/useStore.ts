@@ -4,12 +4,6 @@
 import { create } from 'zustand';
 import { api, ApiError } from '../api/client';
 import { RouteGraph } from '../routing/graph';
-import { routeClient, RouteSearchTimeoutError } from '../routing/routeClient';
-
-// 路线查询请求序号：仅应用最新一次查询结果，避免快速改动起终点时旧结果覆盖新结果。
-let searchSeq = 0;
-// Toast 自增 id：即使连续弹出相同内容，id 变化也能让提示组件重新计时。
-let toastSeq = 0;
 import { getConfig, setRuntimeConfig } from '../config';
 import type {
   FeatureCollection,
@@ -24,6 +18,11 @@ import type {
   RoutePath,
   Train,
 } from '../types';
+
+// 路线查询请求的 AbortController：新查询发起前先中止上一个，配合后端「取消同玩家旧查询」双重保证只应用最新结果。
+let routeQueryAbort: AbortController | null = null;
+// Toast 自增 id：即使连续弹出相同内容，id 变化也能让提示组件重新计时。
+let toastSeq = 0;
 
 /** 侧栏模式：车站信息 / 路线查询 / 列车信息 / 实时列车列表 / 乘车历史 / 空。 */
 export type SidebarMode = 'idle' | 'station' | 'line' | 'route' | 'train' | 'trains' | 'history';
@@ -183,7 +182,6 @@ export const useStore = create<AppState>((set, get) => ({
         api.systems(),
       ]);
       const graph = RouteGraph.fromFeatureCollection(geojson);
-      routeClient.init(geojson); // 后台线程用同一份数据建图，供寻路使用
       const systemMap = new Map(systems.map((s) => [s.id, s]));
       const reverseSet = new Set<string>();
       for (const line of lines) {
@@ -313,31 +311,46 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async computeRoutes() {
-    const { graph, startStation, endStation, systems, reverseSet } = get();
-    if (!graph || !startStation || !endStation) {
+    const { startStation, endStation, player } = get();
+    if (!startStation || !endStation) {
       set({ candidates: [], selectedRouteIndex: null, searching: false, searchError: null });
       return;
     }
+    if (!player) {
+      set({ candidates: [], selectedRouteIndex: null, searching: false, searchError: '请先登录后查询路线' });
+      return;
+    }
     const cfg = getConfig();
-    const seq = ++searchSeq; // 本次查询序号，用于丢弃过期结果
+    // 中止上一次尚未完成的查询（配合后端「取消同玩家旧查询」双重保证只应用最新结果）。
+    routeQueryAbort?.abort();
+    const controller = new AbortController();
+    routeQueryAbort = controller;
+    // 区分「被下一次查询取代」（该静默）与「自己超时」（该提示，否则界面查询中动画会卡死不消失）：
+    // 前者的判据是 routeQueryAbort 已指向别的 controller；后者用独立标记记录。
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, cfg.routeSearchTimeoutMs);
     set({ searching: true, searchError: null, candidates: [], selectedRouteIndex: null });
     try {
-      // 后台 Worker 寻路，主线程界面不卡死；超时由 routeClient 终止并 reject。
-      const candidates = await routeClient.query(
-        { startStation, endStation, systems, reverseKeys: [...reverseSet], cfg },
-        cfg.routeSearchTimeoutMs,
-      );
-      if (seq !== searchSeq) return; // 已有更新的查询，丢弃本次结果
-      // 车票查询结果均为快速车路线：高亮时中途站淡化，仅起终点 / 换乘站不透明。
-      const marked = candidates.map((c) => ({ ...c, expressRoute: true }));
-      set({ candidates: marked, selectedRouteIndex: marked.length > 0 ? 0 : null, searching: false, searchError: null });
+      const candidates = await api.routeQuery(startStation, endStation, controller.signal);
+      if (routeQueryAbort !== controller) return; // 已被更新的查询取代，丢弃本次结果
+      set({ candidates, selectedRouteIndex: candidates.length > 0 ? 0 : null, searching: false, searchError: null });
     } catch (e) {
-      if (seq !== searchSeq) return; // 过期查询的错误也一并忽略
-      const searchError =
-        e instanceof RouteSearchTimeoutError
-          ? `路线查询超时（超过 ${(cfg.routeSearchTimeoutMs / 1000).toFixed(0)} 秒），请稍后重试或更换起终点`
-          : '路线查询失败，请重试';
+      if (routeQueryAbort !== controller) return; // 已被更新的查询取代，静默忽略
+      let searchError = '路线查询失败，请重试';
+      if (timedOut) {
+        searchError = `路线查询超时（超过 ${(cfg.routeSearchTimeoutMs / 1000).toFixed(0)} 秒），请稍后重试或更换起终点`;
+      } else if (e instanceof ApiError) {
+        if (e.status === 401) searchError = '请重新登录后查询路线';
+        else if (e.status === 429) searchError = '查询过于频繁，请稍后重试';
+        else if (e.status === 504) searchError = '路线计算超时，请稍后重试或更换起终点';
+      }
       set({ candidates: [], selectedRouteIndex: null, searching: false, searchError });
+    } finally {
+      clearTimeout(timer);
+      if (routeQueryAbort === controller) routeQueryAbort = null;
     }
   },
 
