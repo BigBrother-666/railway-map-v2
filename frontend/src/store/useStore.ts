@@ -50,6 +50,10 @@ interface AppState {
   systemMap: Map<string, RailwaySystem>;
   /** 折返站集合，key = `${lineId}|${stationName}`，寻路时跳过。 */
   reverseSet: Set<string>;
+  /** 中文站名 → 英文站名（来自 /stations，页面加载时取一次）。 */
+  stationAliases: Record<string, string>;
+  /** 组名 → 组内站名列表（来自 /stations）。 */
+  stationGroups: Record<string, string[]>;
   loading: boolean;
   loadError: string | null;
 
@@ -136,6 +140,8 @@ export const useStore = create<AppState>((set, get) => ({
   systems: [],
   systemMap: new Map(),
   reverseSet: new Set(),
+  stationAliases: {},
+  stationGroups: {},
   loading: false,
   loadError: null,
 
@@ -175,12 +181,17 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const frontendConfig = await api.config();
       setRuntimeConfig(frontendConfig);
-      const [meta, geojson, lines, systems] = await Promise.all([
+      const [meta, geojson, lines, systems, stations] = await Promise.all([
         api.meta(),
         api.geojson(),
         api.lines(),
         api.systems(),
+        // 英文名 / 站组非必需：拉取失败时按无数据处理，不影响地图加载
+        api.stations().catch(() => ({ aliases: {}, groups: {} })),
       ]);
+      const stationAliases = stations.aliases ?? {};
+      const stationGroups = stations.groups ?? {};
+      attachStationNameEn(geojson, stationAliases);
       const graph = RouteGraph.fromFeatureCollection(geojson);
       const systemMap = new Map(systems.map((s) => [s.id, s]));
       const reverseSet = new Set<string>();
@@ -199,6 +210,8 @@ export const useStore = create<AppState>((set, get) => ({
         systems,
         systemMap,
         reverseSet,
+        stationAliases,
+        stationGroups,
         worlds,
         lineWorlds,
         currentWorld: worlds.includes(get().currentWorld)
@@ -518,6 +531,17 @@ export const useStore = create<AppState>((set, get) => ({
     set({ toast: null });
   },
 }));
+
+/** 按站名给 geojson 中每个车站 Point 要素写入英文名属性 nameEn（原地修改；无对应英文名则不写）。 */
+function attachStationNameEn(fc: FeatureCollection, aliases: Record<string, string>): void {
+  for (const f of fc.features) {
+    if (f.geometry?.type !== 'Point') continue;
+    const p = f.properties as PointProps | null;
+    if (!p || p.type !== 'station' || !p.name) continue;
+    const en = aliases[p.name];
+    if (en) p.nameEn = en;
+  }
+}
 
 /** 从 geojson 提取所有出现过的世界名（按首次出现顺序，首个即默认世界兜底）。 */
 function extractWorlds(fc: FeatureCollection): string[] {

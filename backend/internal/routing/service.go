@@ -20,6 +20,8 @@ type GeoSource interface {
 	Geojson() ([]byte, string)
 	Lines() []byte
 	Systems() []byte
+	// Stations 返回车站英文名 / 站组原始 JSON（{"aliases":{...},"groups":{...}}，可能为 nil）及其版本号。
+	Stations() ([]byte, string)
 }
 
 // Service 持有懒重建的寻路图：geo 版本变化时重建，用互斥锁防并发重复建图。
@@ -36,6 +38,10 @@ type Service struct {
 	reverseSet  map[string]struct{}
 	systems     map[string]System
 	globalPrice float64
+	// stationsVer 是当前 groupOf 对应的站组数据版本；站组变化时结果缓存整体作废（图本身不必重建）。
+	stationsVer string
+	// groupOf 是 站名 → 所在站组全部成员（含自身），只用于联程票换乘。
+	groupOf map[string][]string
 
 	// resultCache 缓存 (startStation, endStation) → []model.RoutePath，随图版本整体替换。
 	resultCache atomic.Pointer[sync.Map]
@@ -68,18 +74,49 @@ type graphSnapshot struct {
 	graph      *Graph
 	reverseSet map[string]struct{}
 	systems    map[string]System
-	cache      *sync.Map // (version+startStation+endStation) → []model.RoutePath
+	groupOf    map[string][]string // 站名 → 所在站组成员（含自身）
+	cache      *sync.Map           // (version+startStation+endStation) → []model.RoutePath
+}
+
+// stationsPayload 是 snapshot.stations 中寻路关心的部分（只用站组，英文名仅供前端展示）。
+type stationsPayload struct {
+	Groups map[string][]string `json:"groups"`
+}
+
+// parseStationGroups 把站组 JSON 解析为 站名 → 所在站组全部成员 的映射；解析失败或为空时返回空映射。
+func parseStationGroups(b []byte) map[string][]string {
+	groupOf := make(map[string][]string)
+	if len(b) == 0 {
+		return groupOf
+	}
+	var p stationsPayload
+	if err := json.Unmarshal(b, &p); err != nil {
+		return groupOf
+	}
+	for _, members := range p.Groups {
+		if len(members) == 0 {
+			continue
+		}
+		cp := append([]string(nil), members...)
+		for _, m := range cp {
+			groupOf[m] = cp
+		}
+	}
+	return groupOf
 }
 
 // ensureGraph 确保图与派生数据（折返站集合、系统票价表）与当前 geo 版本一致；返回是否有可用数据。
 func (s *Service) ensureGraph() (*graphSnapshot, bool, error) {
-	payload, version := s.source.Geojson()
+	payload, geoVersion := s.source.Geojson()
 	if payload == nil {
 		return nil, false, nil
 	}
+	stationsPayloadBytes, stationsVersion := s.source.Stations()
+	// 结果缓存版本 = geo 版本 + 站组版本：任一变化都要让旧的站点对结果作废
+	version := geoVersion + "|" + stationsVersion
 
 	s.mu.RLock()
-	if s.graph != nil && s.graphVer == version {
+	if s.graph != nil && s.graphVer == geoVersion && s.stationsVer == stationsVersion {
 		snap := s.snapshotLocked(version)
 		s.mu.RUnlock()
 		return snap, true, nil
@@ -89,7 +126,14 @@ func (s *Service) ensureGraph() (*graphSnapshot, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// 双重检查：等锁期间可能已被其它请求重建
-	if s.graph != nil && s.graphVer == version {
+	if s.graph != nil && s.graphVer == geoVersion && s.stationsVer == stationsVersion {
+		return s.snapshotLocked(version), true, nil
+	}
+	// 只有站组变了：无需重建图，换新站组并作废结果缓存即可
+	if s.graph != nil && s.graphVer == geoVersion {
+		s.groupOf = parseStationGroups(stationsPayloadBytes)
+		s.stationsVer = stationsVersion
+		s.resultCache.Store(&sync.Map{})
 		return s.snapshotLocked(version), true, nil
 	}
 
@@ -128,20 +172,24 @@ func (s *Service) ensureGraph() (*graphSnapshot, bool, error) {
 	}
 
 	s.graph = g
-	s.graphVer = version
+	s.graphVer = geoVersion
 	s.reverseSet = reverseSet
 	s.systems = systems
+	s.groupOf = parseStationGroups(stationsPayloadBytes)
+	s.stationsVer = stationsVersion
 	s.resultCache.Store(&sync.Map{}) // 地图数据变了，旧站点对结果全部作废
 	return s.snapshotLocked(version), true, nil
 }
 
-// snapshotLocked 在持有 s.mu（读或写锁均可）期间打包当前图状态。调用方必须已确认 s.graphVer == version。
+// snapshotLocked 在持有 s.mu（读或写锁均可）期间打包当前图状态。version 为 geo 版本 + 站组版本，
+// 调用方必须已确认 s.graphVer / s.stationsVer 与之一致。
 func (s *Service) snapshotLocked(version string) *graphSnapshot {
 	return &graphSnapshot{
 		version:    version,
 		graph:      s.graph,
 		reverseSet: s.reverseSet,
 		systems:    s.systems,
+		groupOf:    s.groupOf,
 		cache:      s.resultCache.Load(),
 	}
 }
@@ -163,7 +211,7 @@ var testComputeHook func()
 var testComputeDoneHook func()
 
 // Query 按起终点站名查询候选路线（直达 + 联程票），已附带票价明细，按配置排序。结果按
-// (geo 版本, 起点站名, 终点站名) 缓存：命中直接返回；未命中用 singleflight 折叠并发重复计算，
+// (geo 版本 + 站组版本, 起点站名, 终点站名) 缓存：命中直接返回；未命中用 singleflight 折叠并发重复计算，
 // 计算体内部用独立于调用者的 context.Background() 跑到底并写入缓存（不因某个调用者取消而中断，
 // 让"注定要花的计算成本"全服务生命周期只花一次），但调用者本身仍按自己的 ctx 决定等多久——
 // ctx 被取消（超时或被同玩家下一次查询取代）时立刻返回 ctx.Err()，不会陪着后台那份计算傻等。
@@ -207,6 +255,7 @@ func (s *Service) Query(ctx context.Context, startStation, endStation string) ([
 			EndStation:       endStation,
 			Systems:          snap.systems,
 			IsReverse:        isReverse,
+			GroupMembers:     func(name string) []string { return snap.groupOf[name] },
 			Cfg:              cfg,
 			GlobalPricePerKm: s.globalPrice,
 		}

@@ -601,9 +601,10 @@ export class MapController {
       type: 'symbol',
       source: SRC_STATIONS,
       layout: {
-        'text-field': ['get', 'name'],
+        'text-field': stationLabelField(),
         'text-size': getConfig().mapStyle.stationTextSize,
-        'text-offset': [0, 1.2],
+        'text-justify': 'center',
+        'text-offset': [0, 0.6],
         'text-anchor': 'top',
         // 碰撞优先级：sort-key 小者优先占位。非淡化（高亮线路上）站名给 0，淡化站名给 1，
         // 使同名的高亮 label 抢占、透明 label 让位，避免高亮站名被透明副本盖成透明。
@@ -993,6 +994,32 @@ export class MapController {
  * 把颜色 hex 按 alpha 混向底图背景色，返回不透明 #rrggbb。
  * out = color*alpha + bg*(1-alpha)。用不透明淡化色替代半透明，重叠处不再叠加变实。
  */
+/** 车站图层 symbol layout 的类型（maplibre 未单独导出 SymbolLayerSpecification）。 */
+type SymbolLayout = NonNullable<Extract<maplibregl.LayerSpecification, { type: 'symbol' }>['layout']>;
+
+/**
+ * 车站名 text-field 表达式：有英文名时第一行中文、第二行英文（按 stationEnTextSize / stationTextSize 缩放）；
+ * 无英文名（缺失或空串）时只显示中文名，避免多出一行空白。
+ */
+function stationLabelField(): SymbolLayout['text-field'] {
+  const { stationTextSize, stationEnTextSize } = getConfig().mapStyle;
+  const enScale = stationTextSize > 0 ? stationEnTextSize / stationTextSize : 1;
+  return [
+    'case',
+    ['all', ['has', 'nameEn'], ['!=', ['to-string', ['get', 'nameEn']], '']],
+    [
+      'format',
+      ['to-string', ['get', 'name']],
+      {},
+      '\n',
+      {},
+      ['to-string', ['get', 'nameEn']],
+      { 'font-scale': enScale },
+    ],
+    ['get', 'name'],
+  ] as SymbolLayout['text-field'];
+}
+
 function lerpAngle(from: number, to: number, alpha: number): number {
   return from + angleDelta(from, to) * alpha;
 }

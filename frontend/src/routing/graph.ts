@@ -119,17 +119,20 @@ export class RouteGraph {
     return [...this.stationIndex.keys()];
   }
 
-  private isEnterSwitcher(nodeId: string, lineId: string | undefined): boolean {
+  /**
+   * 取道岔节点上属于 lineId 的出边（复刻插件 GeoRouteGraph.lineLinksOfSwitch）。
+   * 只看本线自己的出边：共线车站的进站道岔上还挂着别的线路的正线 / 停靠线出边，
+   * 若要求全部出边同属一条线，共线车站就认不出是进站道岔（高亮线路时正线不会被隐藏）。
+   */
+  private lineLinksOfSwitch(nodeId: string, lineId: string | undefined): GraphLink[] {
     const node = this.nodes.get(nodeId);
-    if (!node || node.type === 'station' || !lineId) return false;
-    const links = this.links(nodeId);
-    if (links.length === 0) return false;
-    return links.every((link) => link.lineId === lineId);
+    if (!node || node.type === 'station' || !lineId) return [];
+    return this.links(nodeId).filter((link) => link.lineId === lineId);
   }
 
   platformNameOfMainlineSwitch(nodeId: string, lineId: string | undefined): string | null {
-    if (!this.isEnterSwitcher(nodeId, lineId)) return null;
-    const links = this.links(nodeId);
+    const links = this.lineLinksOfSwitch(nodeId, lineId);
+    if (links.length === 0) return null;
     let toSwitch = false;
     let platformName: string | null = null;
     for (const link of links) {

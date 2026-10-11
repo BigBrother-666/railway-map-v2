@@ -186,7 +186,18 @@ function StationSteps({
   );
 }
 
-/** 联程票：分段展示各段站序，段间插入「在 X 换乘」分隔行。 */
+/**
+ * 联程票换乘提示文案：首段终点站与次段起点站同名时为「在 X 换乘」；
+ * 不同名（站组内换乘）时为「在 X 换乘 Y」，X 为下车站、Y 为上车站。
+ */
+function transferText(journey: NonNullable<RoutePath['journey']>, i: number): string {
+  const arriveStations = journey.legs[i]?.stations ?? [];
+  const arrive = arriveStations[arriveStations.length - 1] ?? journey.transferStations[i];
+  const depart = journey.legs[i + 1]?.stations[0] ?? arrive;
+  return arrive === depart ? `在 ${arrive} 换乘` : `在 ${arrive} 前往 ${depart} 换乘 `;
+}
+
+/** 联程票：分段展示各段站序，段间插入「在 X 换乘」（站组换乘时「在 X 换乘 Y」）分隔行。 */
 function ThroughSteps({
   journey,
   expanded,
@@ -207,7 +218,7 @@ function ThroughSteps({
           </div>
           <StationSteps path={leg} expanded={expanded} onToggle={onToggle} lineColor={lineColor} />
           {i < journey.transferStations.length && (
-            <div className="through-transfer">↧ 在 {journey.transferStations[i]} 换乘</div>
+            <div className="through-transfer">↧ {transferText(journey, i)}</div>
           )}
         </div>
       ))}

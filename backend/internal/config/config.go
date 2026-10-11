@@ -132,6 +132,7 @@ type MapStyleConfig struct {
 	StationRadius             float64 `yaml:"stationRadius" json:"stationRadius"`
 	StationStrokeWidth        float64 `yaml:"stationStrokeWidth" json:"stationStrokeWidth"`
 	StationTextSize           float64 `yaml:"stationTextSize" json:"stationTextSize"`
+	StationEnTextSize         float64 `yaml:"stationEnTextSize" json:"stationEnTextSize"` // 车站英文名（显示在中文名下方）的字号
 	StationMergePixelDistance float64 `yaml:"stationMergePixelDistance" json:"stationMergePixelDistance"`
 	TrainIconSize             float64 `yaml:"trainIconSize" json:"trainIconSize"`
 	TrainFocusZoom            float64 `yaml:"trainFocusZoom" json:"trainFocusZoom"`
@@ -246,6 +247,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Frontend.MapStyle.StationTextSize <= 0 {
 		c.Frontend.MapStyle.StationTextSize = 12
+	}
+	if c.Frontend.MapStyle.StationEnTextSize <= 0 {
+		c.Frontend.MapStyle.StationEnTextSize = 10
 	}
 	if c.Frontend.MapStyle.StationMergePixelDistance <= 0 {
 		c.Frontend.MapStyle.StationMergePixelDistance = 28

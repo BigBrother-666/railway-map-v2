@@ -8,6 +8,8 @@ export interface PointProps {
   type: 'station' | 'switch';
   world: string;
   name?: string;
+  /** 车站英文名（前端按 /stations 的 aliases 以 name 匹配写入，非 geojson 原生字段）。 */
+  nameEn?: string;
   lineIds?: string[];
   railwaySystemIds?: string[];
   prev?: string[];
@@ -47,6 +49,14 @@ export interface Line {
 }
 
 /** 铁路系统（GET /api/v1/systems）。 */
+/** 车站英文名映射与站组（GET /stations）。 */
+export interface StationsInfo {
+  /** 中文站名 → 英文站名。 */
+  aliases: Record<string, string>;
+  /** 组名 → 组内站名列表（站组内可换乘）。 */
+  groups: Record<string, string[]>;
+}
+
 export interface RailwaySystem {
   id: string;
   name: string;
@@ -184,6 +194,8 @@ export interface FrontendConfig {
     stationRadius: number;
     stationStrokeWidth: number;
     stationTextSize: number;
+    /** 车站英文名字号（显示在中文站名下方）。 */
+    stationEnTextSize: number;
     stationMergePixelDistance: number;
     trainIconSize: number;
     trainFocusZoom: number;

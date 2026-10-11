@@ -19,6 +19,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
     stationRadius: 6,
     stationStrokeWidth: 2,
     stationTextSize: 12,
+    stationEnTextSize: 10,
     stationMergePixelDistance: 28,
     trainIconSize: 0.6,
     trainFocusZoom: 6,

@@ -13,6 +13,7 @@ import type {
   RailwaySystem,
   RideHistoryResponse,
   RoutePath,
+  StationsInfo,
   Train,
 } from '../types';
 
@@ -58,6 +59,8 @@ export const api = {
   geojson: () => getJSON<FeatureCollection>('/geojson'),
   lines: () => getJSON<Line[]>('/lines'),
   systems: () => getJSON<RailwaySystem[]>('/systems'),
+  /** 车站英文名映射与站组。 */
+  stations: () => getJSON<StationsInfo>('/stations'),
   trains: () => getJSON<Train[]>('/trains'),
 
   /** 当前登录玩家；未登录抛 ApiError(401)。 */

@@ -150,6 +150,7 @@ func buildRouter(cfg *config.Config, api *httpapi.API, plugin *pluginlink.Server
 		r.Get("/geojson", api.Geojson)
 		r.Get("/lines", api.Lines)
 		r.Get("/systems", api.Systems)
+		r.Get("/stations", api.Stations)
 		r.Get("/trains", api.Trains)
 
 		r.Get("/auth/login", api.Login)

@@ -1,4 +1,4 @@
-// Package geo 持有 geojson / 线路 / 系统的内存缓存，并落库以便插件断连时降级供数
+// Package geo 持有 geojson / 线路 / 系统 / 车站别名与站组的内存缓存，并落库以便插件断连时降级供数
 // （见 docs/BACKEND_PROMPT.md §6、§12）。
 package geo
 
@@ -18,6 +18,9 @@ type Cache struct {
 	geoVersion string
 	lines      []byte // 线路数组 JSON
 	systems    []byte // 系统数组 JSON
+	// stations 是车站英文名映射与站组的原始 JSON（形如 {"aliases":{...},"groups":{...}}）
+	stations        []byte
+	stationsVersion string
 
 	store *store.Store
 }
@@ -42,6 +45,10 @@ func (c *Cache) restore() {
 	}
 	if snap, err := c.store.LoadSnapshot("systems"); err == nil && snap != nil {
 		c.systems = snap.Payload
+	}
+	if snap, err := c.store.LoadSnapshot("stations"); err == nil && snap != nil {
+		c.stations = snap.Payload
+		c.stationsVersion = snap.Version
 	}
 }
 
@@ -68,6 +75,23 @@ func (c *Cache) SetSystems(systems []byte) {
 	c.systems = systems
 	c.mu.Unlock()
 	c.persist("systems", "", systems)
+}
+
+// SetStations 整体替换车站英文名 / 站组缓存并落库，版本号取内容的 sha1 前缀（供寻路结果缓存失效判断）。
+func (c *Cache) SetStations(stations []byte) {
+	version := shortHash(stations)
+	c.mu.Lock()
+	c.stations = stations
+	c.stationsVersion = version
+	c.mu.Unlock()
+	c.persist("stations", version, stations)
+}
+
+// Stations 返回车站英文名 / 站组的原始 JSON（可能为 nil）及其版本号。
+func (c *Cache) Stations() ([]byte, string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.stations, c.stationsVersion
 }
 
 func (c *Cache) persist(key, version string, payload []byte) {

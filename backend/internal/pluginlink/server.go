@@ -104,7 +104,7 @@ func (s *Server) Send(env model.Envelope) bool {
 	return true
 }
 
-// RequestSync 请求插件补推快照（what: geo|systems|lines|all）。
+// RequestSync 请求插件补推快照（what: geo|systems|lines|stations|all）。
 func (s *Server) RequestSync(what string) {
 	data, _ := json.Marshal(model.SyncRequestData{What: what})
 	s.logger.Info("Requesting plugin sync", "what", what)

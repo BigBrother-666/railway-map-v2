@@ -49,7 +49,9 @@ function StationPanel() {
   const highlightLineId = useStore((s) => s.highlightLineId);
   const close = useStore((s) => s.closeSidebar);
   const player = useStore((s) => s.player);
+  const stationAliases = useStore((s) => s.stationAliases);
   if (!name) return null;
+  const nameEn = stationAliases[name];
 
   // 收集该站所属线路 / 系统（排除联络线 contact：它是特殊 systemId，不作为车站的所属线路/系统展示）
   const lineIds = new Set<string>();
@@ -69,6 +71,11 @@ function StationPanel() {
         <div className="station-title-block">
           <div className="station-eyebrow">车站</div>
           <h2>{name}</h2>
+          {nameEn && (
+            <div className="station-name-en" lang="en">
+              {nameEn}
+            </div>
+          )}
           <div className="station-sub">
             {lineList.length} 条线路 · {systemIds.size} 个铁路系统
           </div>

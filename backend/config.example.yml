@@ -59,6 +59,8 @@ frontend:
     stationRadius: 6
     stationStrokeWidth: 2
     stationTextSize: 12
+    # 车站英文名字号（显示在中文站名下方，通常比中文小）
+    stationEnTextSize: 10
     stationMergePixelDistance: 28
     trainIconSize: 0.6
     trainFocusZoom: 9

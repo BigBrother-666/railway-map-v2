@@ -13,15 +13,19 @@ import (
 	"railway-map-backend/internal/model"
 )
 
-// fakeGeoSource 是测试用的 GeoSource：geojson 固定不变（版本号固定），lines/systems 为空。
+// fakeGeoSource 是测试用的 GeoSource：geojson 固定不变（版本号固定），lines/systems/stations 为空。
 type fakeGeoSource struct {
 	geojson []byte
 	version string
+	// stations / stationsVer 模拟站组快照，测试可中途替换
+	stations    []byte
+	stationsVer string
 }
 
-func (f *fakeGeoSource) Geojson() ([]byte, string) { return f.geojson, f.version }
-func (f *fakeGeoSource) Lines() []byte             { return nil }
-func (f *fakeGeoSource) Systems() []byte           { return nil }
+func (f *fakeGeoSource) Geojson() ([]byte, string)  { return f.geojson, f.version }
+func (f *fakeGeoSource) Lines() []byte              { return nil }
+func (f *fakeGeoSource) Systems() []byte            { return nil }
+func (f *fakeGeoSource) Stations() ([]byte, string) { return f.stations, f.stationsVer }
 
 func newTestService(t *testing.T, geojsonBytes []byte, version string) *Service {
 	t.Helper()
@@ -262,5 +266,51 @@ func TestService_QueryTimesOutWithPartialResultCachesIt(t *testing.T) {
 	cachedJSON, _ := json.Marshal(cached)
 	if string(cachedJSON) != string(firstJSON) {
 		t.Errorf("cached result differs from the timed-out-but-cached result:\nfirst:  %s\ncached: %s", firstJSON, cachedJSON)
+	}
+}
+
+// TestServiceQuery_StationGroupChangeInvalidatesCache 验证站组变化后结果缓存作废：
+// 先无站组查询 甲→丁 无结果（并被缓存），推送 乙/丙 同组后再查应得到联程票。
+func TestServiceQuery_StationGroupChangeInvalidatesCache(t *testing.T) {
+	fcVal := fc([]model.Feature{
+		point("n甲", "station", "甲", 0, 0),
+		point("n乙", "station", "乙", 10, 0),
+		point("n丙", "station", "丙", 12, 0),
+		point("n丁", "station", "丁", 30, 0),
+		line("e.line1.n甲__n乙", "n甲", "n乙", "line1", 10, map[string]any{"departDir": "e"}),
+		line("e.line2.n丙__n丁", "n丙", "n丁", "line2", 18, map[string]any{"departDir": "e"}),
+	})
+	b, err := json.Marshal(fcVal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &fakeGeoSource{geojson: b, version: "v1"}
+	cfg := config.RouteConfig{
+		MaxDistanceResults: 5, MaxPriceResults: 5,
+		SearchWeightDistance: 0.5, SearchWeightPrice: 0.5,
+		MinDirectResults: 1, MaxTransferResults: 3,
+	}
+	svc := NewService(source, func() config.RouteConfig { return cfg }, 0.2)
+
+	got, err := svc.Query(context.Background(), "甲", "丁")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("without group expected 0 routes, got %d", len(got))
+	}
+
+	source.stations = []byte(`{"aliases":{},"groups":{"g":["乙","丙"]}}`)
+	source.stationsVer = "s1"
+	got, err = svc.Query(context.Background(), "甲", "丁")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Kind != "through" || got[0].Journey == nil {
+		t.Fatalf("with group expected 1 through route, got %+v", got)
+	}
+	legs := got[0].Journey.Legs
+	if legs[0].Stations[len(legs[0].Stations)-1] != "乙" || legs[1].Stations[0] != "丙" {
+		t.Errorf("unexpected legs: %v / %v", legs[0].Stations, legs[1].Stations)
 	}
 }

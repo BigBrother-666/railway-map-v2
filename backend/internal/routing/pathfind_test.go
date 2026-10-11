@@ -102,7 +102,7 @@ func TestFindTransferJourneys_FindsCheaperTransfer(t *testing.T) {
 	}
 	closeTo(t, direct[0].Distance, 100.0/1000, 1e-9)
 
-	plans := FindTransferJourneys(ctx, g, "A", "E", 0, 0, noReverse)
+	plans := FindTransferJourneys(ctx, g, "A", "E", 0, 0, noReverse, nil)
 	if len(plans) == 0 {
 		t.Fatal("expected transfer plan")
 	}
@@ -121,7 +121,7 @@ func TestFindTransferJourneys_FindsCheaperTransfer(t *testing.T) {
 
 func TestFindTransferJourneys_SameStationReturnsEmpty(t *testing.T) {
 	g := transferScenario(t)
-	if plans := FindTransferJourneys(context.Background(), g, "A", "A", 0, 0, noReverse); len(plans) != 0 {
+	if plans := FindTransferJourneys(context.Background(), g, "A", "A", 0, 0, noReverse, nil); len(plans) != 0 {
 		t.Errorf("expected empty, got %d", len(plans))
 	}
 }
@@ -130,11 +130,11 @@ func TestFindTransferJourneys_MinImprovementFilters(t *testing.T) {
 	g := transferScenario(t)
 	ctx := context.Background()
 	// 阈值 = 100 * (1-0.9) = 10km；换乘总距 20km 不满足，被过滤
-	if plans := FindTransferJourneys(ctx, g, "A", "E", 3, 0.9, noReverse); len(plans) != 0 {
+	if plans := FindTransferJourneys(ctx, g, "A", "E", 3, 0.9, noReverse, nil); len(plans) != 0 {
 		t.Errorf("expected filtered out, got %d", len(plans))
 	}
 	// 0.2 时阈值 80km，20km 满足
-	if plans := FindTransferJourneys(ctx, g, "A", "E", 3, 0.2, noReverse); len(plans) == 0 {
+	if plans := FindTransferJourneys(ctx, g, "A", "E", 3, 0.2, noReverse, nil); len(plans) == 0 {
 		t.Error("expected plan to pass threshold 0.2")
 	}
 }
@@ -246,4 +246,76 @@ func TestGraph_PlatformNameOfMainlineSwitch(t *testing.T) {
 	if name := g.platformNameOfMainlineSwitch("in", "L"); name != "P" {
 		t.Errorf("platformNameOfMainlineSwitch = %q, want P", name)
 	}
+}
+
+// 共线车站：进站道岔上同时挂着两条线各自的正线与停靠线出边，每条线都应各自识别为进站道岔。
+// 回归：旧实现要求全部出边同属一条线，共线车站永远认不出。
+func TestGraph_PlatformNameOfMainlineSwitch_SharedStation(t *testing.T) {
+	g := buildGraph(t, []model.Feature{
+		point("in", "switch", "", 0, 0),
+		point("platform", "station", "P", 10, 10),
+		point("out", "switch", "", 20, 0),
+		line("e.L1.in__platform", "in", "platform", "L1", 5, map[string]any{"departDir": "s"}),
+		line("e.L1.in__out", "in", "out", "L1", 5, map[string]any{"departDir": "e"}),
+		line("e.L2.in__platform", "in", "platform", "L2", 5, map[string]any{"departDir": "s"}),
+		line("e.L2.in__out", "in", "out", "L2", 5, map[string]any{"departDir": "e"}),
+	})
+	for _, lineID := range []string{"L1", "L2"} {
+		if name := g.platformNameOfMainlineSwitch("in", lineID); name != "P" {
+			t.Errorf("[%s] platformNameOfMainlineSwitch = %q, want P", lineID, name)
+		}
+	}
+	// 本线在此只有一条出边（两线分叉道岔）时不是进站道岔
+	if name := g.platformNameOfMainlineSwitch("in", "L3"); name != "" {
+		t.Errorf("[L3] platformNameOfMainlineSwitch = %q, want empty", name)
+	}
+}
+
+// groupScenario 构造两条互不相连的线路：line1 甲→乙，line2 丙→丁。乙、丙之间没有任何轨道。
+func groupScenario(t *testing.T) *Graph {
+	return buildGraph(t, []model.Feature{
+		point("n甲", "station", "甲", 0, 0),
+		point("n乙", "station", "乙", 10, 0),
+		point("n丙", "station", "丙", 12, 0),
+		point("n丁", "station", "丁", 30, 0),
+		line("e.line1.n甲__n乙", "n甲", "n乙", "line1", 10, map[string]any{"departDir": "e"}),
+		line("e.line2.n丙__n丁", "n丙", "n丁", "line2", 18, map[string]any{"departDir": "e"}),
+	})
+}
+
+// TestFindTransferJourneys_StationGroup 验证站组换乘：乙、丙同组时可在乙下车、丙上车组成联程票；无站组时找不到方案。
+func TestFindTransferJourneys_StationGroup(t *testing.T) {
+	g := groupScenario(t)
+	ctx := context.Background()
+
+	if plans := FindTransferJourneys(ctx, g, "甲", "丁", 0, 0, noReverse, nil); len(plans) != 0 {
+		t.Fatalf("without group expected no plan, got %d", len(plans))
+	}
+
+	group := []string{"乙", "丙"}
+	members := func(name string) []string {
+		if name == "乙" || name == "丙" {
+			return group
+		}
+		return nil
+	}
+	plans := FindTransferJourneys(ctx, g, "甲", "丁", 0, 0, noReverse, members)
+	if len(plans) != 1 {
+		t.Fatalf("with group expected 1 plan, got %d", len(plans))
+	}
+	p := plans[0]
+	if len(p.Legs) != 2 {
+		t.Fatalf("legs = %d, want 2", len(p.Legs))
+	}
+	leg1, leg2 := p.Legs[0].Stations, p.Legs[1].Stations
+	if leg1[0] != "甲" || leg1[len(leg1)-1] != "乙" {
+		t.Errorf("leg1 stations = %v, want 甲…乙", leg1)
+	}
+	if leg2[0] != "丙" || leg2[len(leg2)-1] != "丁" {
+		t.Errorf("leg2 stations = %v, want 丙…丁", leg2)
+	}
+	if len(p.TransferStations) != 1 || p.TransferStations[0] != "乙" {
+		t.Errorf("transferStations = %v, want [乙]", p.TransferStations)
+	}
+	closeTo(t, p.TotalDistance, 28.0/1000, 1e-9)
 }

@@ -26,6 +26,8 @@ func (s *Server) handleMessage(data []byte) {
 	case model.TypeSnapshotLines:
 		s.cache.SetLines(s.extractArray(env.Data, "lines"))
 		s.logger.Info("Received lines snapshot")
+	case model.TypeSnapshotStations:
+		s.onSnapshotStations(env)
 	case model.TypeRealtimeTrains:
 		s.onRealtimeTrains(env)
 	case model.TypeRealtimeRemoved:
@@ -101,6 +103,28 @@ func (s *Server) onSnapshotGeo(env model.Envelope) {
 	}
 	s.cache.SetGeojson(d.FeatureCollection)
 	s.logger.Info("Received geo snapshot", "version", s.cache.GeoVersion())
+}
+
+// onSnapshotStations 整体替换车站英文名 / 站组缓存。data 形如 { "aliases": {...}, "groups": {...} }。
+// 缺失的字段规范化为空对象后再落库，保证 REST 输出稳定。
+func (s *Server) onSnapshotStations(env model.Envelope) {
+	var d model.SnapshotStationsData
+	if err := json.Unmarshal(env.Data, &d); err != nil {
+		s.logger.Warn("Invalid snapshot.stations payload", "err", err)
+		return
+	}
+	if d.Aliases == nil {
+		d.Aliases = map[string]string{}
+	}
+	if d.Groups == nil {
+		d.Groups = map[string][]string{}
+	}
+	b, err := json.Marshal(d)
+	if err != nil {
+		return
+	}
+	s.cache.SetStations(b)
+	s.logger.Info("Received stations snapshot", "aliases", len(d.Aliases), "groups", len(d.Groups))
 }
 
 // onRealtimeTrains 把列车遥测交给聚合器（广播给前端）。

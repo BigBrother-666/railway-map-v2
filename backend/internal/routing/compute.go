@@ -15,6 +15,8 @@ type ComputeInput struct {
 	// IsReverse 判断 (lineId, stationName) 是否为折返站，寻路时跳过。
 	IsReverse ReversePredicate
 	Cfg       config.RouteConfig
+	// GroupMembers 查询车站所在站组成员，仅用于联程票换乘（站组内可步行换乘）；nil 表示无站组。
+	GroupMembers GroupMembersFunc
 	// GlobalPricePerKm 是系统未显式配置票价时的默认每公里价格（对齐 frontend.defaultPricePerKm）。
 	GlobalPricePerKm float64
 }
@@ -46,7 +48,7 @@ func ComputeCandidates(ctx context.Context, g *Graph, input ComputeInput) []mode
 	}
 
 	// 联程票候选：限方案数（换乘站用站名级缩合矩阵枚举全部，不再截断候选）
-	journeys := FindTransferJourneys(ctx, g, input.StartStation, input.EndStation, cfg.MaxTransferResults, cfg.TransferMinImprovement, input.IsReverse)
+	journeys := FindTransferJourneys(ctx, g, input.StartStation, input.EndStation, cfg.MaxTransferResults, cfg.TransferMinImprovement, input.IsReverse, input.GroupMembers)
 	throughCandidates := make([]model.RoutePath, 0, len(journeys))
 	for _, j := range journeys {
 		legs := make([]model.RoutePath, len(j.Legs))

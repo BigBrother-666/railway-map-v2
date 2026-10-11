@@ -418,18 +418,25 @@ func reverseStrings(s []string) {
 
 // RawJourney 是一次换乘行程的原始寻路结果（票价在上层计算）。
 type RawJourney struct {
-	Legs             []model.RoutePath
+	Legs []model.RoutePath
+	// TransferStations[i] 是 Legs[i] 的终点站名；Legs[i+1] 的起点站可能是与之同站组的另一个车站
+	// （站组内步行换乘），其站名以 Legs[i+1] 自身为准。
 	TransferStations []string
 	TotalDistance    float64
 }
 
+// GroupMembersFunc 返回某车站所在站组的全部站名（含自身）；不属于任何站组时返回 nil 或仅含自身。
+type GroupMembersFunc func(stationName string) []string
+
 // FindTransferJourneys 启发式寻找「一次换乘」的行程方案（两段直达）：起点站 → 换乘站 → 终点站。
 // 复刻插件 GeoRouteEngine.findTransferJourneys。用站名级缩合距离矩阵（Graph.stationDirectDistances）
 // 枚举全部换乘站按估计总距离（下界）预筛排序，只对最有潜力的前若干个做两段真实寻路实体化。
+// 支持站组换乘：首段到达 mid1 后，可从与 mid1 同站组的任一车站 mid2 出发乘第二段（mid2 可等于 mid1）。
 //
 // maxResults：最多返回方案数（<=0 不限制）。
 // minImprovement：最低改善比例 [0,1)：换乘总距离须 < 最短直达 ×(1-此值)；两站无直达时门槛不生效。
-func FindTransferJourneys(ctx context.Context, g *Graph, startStation, endStation string, maxResults int, minImprovement float64, isReverse ReversePredicate) []RawJourney {
+// groupMembers：站组查询函数，为 nil 时视为没有任何站组（只能同站换乘）。
+func FindTransferJourneys(ctx context.Context, g *Graph, startStation, endStation string, maxResults int, minImprovement float64, isReverse ReversePredicate, groupMembers GroupMembersFunc) []RawJourney {
 	if startStation == "" || endStation == "" || startStation == endStation {
 		return nil
 	}
@@ -450,27 +457,34 @@ func FindTransferJourneys(ctx context.Context, g *Graph, startStation, endStatio
 		threshold = bestDirect * (1 - minImprovement)
 	}
 
-	// 站名级缩合矩阵：枚举全部换乘站，按「start 直达 mid + mid 直达 end」估计总距离（下界）预筛 + 排序。
+	// 站名级缩合矩阵：枚举全部 (下车站 mid1, 上车站 mid2) 组合，按「start 直达 mid1 + mid2 直达 end」
+	// 估计总距离（下界）预筛 + 排序。mid2 取 mid1 所在站组的成员（含 mid1 自身）。
 	matrix := g.stationDirectDistances()
 	fromStart := matrix[startStation]
 	type ranked struct {
-		mid string
-		est float64
+		mid1 string
+		mid2 string
+		est  float64
 	}
 	var rankedList []ranked
-	for mid, d1 := range fromStart {
-		if mid == startStation || mid == endStation {
+	for mid1, d1 := range fromStart {
+		if mid1 == startStation || mid1 == endStation {
 			continue
 		}
-		d2, ok := matrix[mid][endStation]
-		if !ok {
-			continue // mid 到不了终点
+		for _, mid2 := range transferBoardStations(mid1, groupMembers) {
+			if mid2 == startStation || mid2 == endStation {
+				continue
+			}
+			d2, ok := matrix[mid2][endStation]
+			if !ok {
+				continue // mid2 到不了终点
+			}
+			est := d1 + d2
+			if est >= threshold {
+				continue // 下界都不比阈值近
+			}
+			rankedList = append(rankedList, ranked{mid1: mid1, mid2: mid2, est: est})
 		}
-		est := d1 + d2
-		if est >= threshold {
-			continue // 下界都不比阈值近
-		}
-		rankedList = append(rankedList, ranked{mid: mid, est: est})
 	}
 	sort.Slice(rankedList, func(i, j int) bool { return rankedList[i].est < rankedList[j].est })
 
@@ -485,7 +499,9 @@ func FindTransferJourneys(ctx context.Context, g *Graph, startStation, endStatio
 		}
 	}
 
-	// 逐候选站实体化两段真实路径，按换乘站去重（留总距离最短者）
+	// 逐候选实体化两段真实路径，按 (mid1, mid2) 去重（留总距离最短者）。
+	// 首段只取决于 mid1，按 mid1 记忆化，避免同一下车站搭配多个组内上车站时重复寻路。
+	leg1Memo := make(map[string][]model.RoutePath)
 	byTransfer := make(map[string]RawJourney)
 	materialized := 0
 	for _, r := range rankedList {
@@ -497,11 +513,15 @@ func FindTransferJourneys(ctx context.Context, g *Graph, startStation, endStatio
 			// 真实完整的方案，继续走下面的排序/截断逻辑返回它们，而不是一并丢弃。
 			break
 		}
-		leg1 := FindByStation(ctx, g, startStation, r.mid, 1, isReverse)
+		leg1, ok := leg1Memo[r.mid1]
+		if !ok {
+			leg1 = FindByStation(ctx, g, startStation, r.mid1, 1, isReverse)
+			leg1Memo[r.mid1] = leg1
+		}
 		if len(leg1) == 0 {
 			continue
 		}
-		leg2 := FindByStation(ctx, g, r.mid, endStation, 1, isReverse)
+		leg2 := FindByStation(ctx, g, r.mid2, endStation, 1, isReverse)
 		if len(leg2) == 0 {
 			continue
 		}
@@ -510,8 +530,9 @@ func FindTransferJourneys(ctx context.Context, g *Graph, startStation, endStatio
 		if total >= threshold {
 			continue
 		}
-		if old, ok := byTransfer[r.mid]; !ok || total < old.TotalDistance {
-			byTransfer[r.mid] = RawJourney{Legs: []model.RoutePath{leg1[0], leg2[0]}, TransferStations: []string{r.mid}, TotalDistance: total}
+		key := r.mid1 + "\x00" + r.mid2
+		if old, ok := byTransfer[key]; !ok || total < old.TotalDistance {
+			byTransfer[key] = RawJourney{Legs: []model.RoutePath{leg1[0], leg2[0]}, TransferStations: []string{r.mid1}, TotalDistance: total}
 		}
 	}
 
@@ -524,6 +545,24 @@ func FindTransferJourneys(ctx context.Context, g *Graph, startStation, endStatio
 		ret = ret[:maxResults]
 	}
 	return ret
+}
+
+// transferBoardStations 返回在 mid1 下车后可以上车的车站列表：mid1 所在站组的全部成员（保证含 mid1 自身）；
+// 无站组时仅返回 [mid1]。
+func transferBoardStations(mid1 string, groupMembers GroupMembersFunc) []string {
+	if groupMembers == nil {
+		return []string{mid1}
+	}
+	members := groupMembers(mid1)
+	if len(members) == 0 {
+		return []string{mid1}
+	}
+	for _, m := range members {
+		if m == mid1 {
+			return members
+		}
+	}
+	return append([]string{mid1}, members...)
 }
 
 const infinity = 1e18

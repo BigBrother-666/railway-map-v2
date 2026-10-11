@@ -168,6 +168,16 @@ func (a *API) Systems(w http.ResponseWriter, r *http.Request) {
 	writeRaw(w, http.StatusOK, []byte("[]"))
 }
 
+// Stations 返回车站英文名映射与站组：{ "aliases": {中文站名: 英文名}, "groups": {组名: [站名...]} }；
+// 插件从未推送过时返回两个空对象。
+func (a *API) Stations(w http.ResponseWriter, r *http.Request) {
+	if b, _ := a.cache.Stations(); b != nil {
+		writeRaw(w, http.StatusOK, b)
+		return
+	}
+	writeRaw(w, http.StatusOK, []byte(`{"aliases":{},"groups":{}}`))
+}
+
 // Trains 返回当前所有列车快照（WS 之外的一次性拉取）。
 func (a *API) Trains(w http.ResponseWriter, r *http.Request) {
 	snapshot := a.agg.Snapshot()

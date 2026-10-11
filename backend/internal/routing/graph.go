@@ -185,31 +185,30 @@ func (g *Graph) AllStationNames() []string {
 	return names
 }
 
-// isEnterSwitcher 判断 nodeId 是否为「仅通向单一线路」的进站道岔（复刻 RouteGraph.isEnterSwitcher）。
-func (g *Graph) isEnterSwitcher(nodeID, lineID string) bool {
+// lineLinksOfSwitch 取道岔节点上属于 lineID 的出边（复刻插件 GeoRouteGraph.lineLinksOfSwitch）。
+// 只看本线自己的出边：共线车站的进站道岔上还挂着别的线路的正线 / 停靠线出边，若要求全部出边同属一条线，
+// 共线车站就永远认不出是进站道岔。
+func (g *Graph) lineLinksOfSwitch(nodeID, lineID string) []Link {
 	node := g.Nodes[nodeID]
 	if node == nil || node.Type == "station" || lineID == "" {
-		return false
+		return nil
 	}
-	links := g.Links(nodeID)
-	if len(links) == 0 {
-		return false
-	}
-	for _, l := range links {
-		if l.LineID != lineID {
-			return false
+	var result []Link
+	for _, l := range g.Links(nodeID) {
+		if l.LineID == lineID {
+			result = append(result, l)
 		}
 	}
-	return true
+	return result
 }
 
 // platformNameOfMainlineSwitch 复刻 RouteGraph.platformNameOfMainlineSwitch：
-// 若 nodeId 是进站道岔，返回其通向的站台名（仅当它同时还通向另一个道岔，即存在正线绕行时）。
+// 若 nodeId 是 lineID 的进站道岔，返回其通向的站台名（仅当本线出边同时还通向另一个道岔，即存在正线绕行时）。
 func (g *Graph) platformNameOfMainlineSwitch(nodeID, lineID string) string {
-	if !g.isEnterSwitcher(nodeID, lineID) {
+	links := g.lineLinksOfSwitch(nodeID, lineID)
+	if len(links) == 0 {
 		return ""
 	}
-	links := g.Links(nodeID)
 	toSwitch := false
 	platformName := ""
 	for _, l := range links {
