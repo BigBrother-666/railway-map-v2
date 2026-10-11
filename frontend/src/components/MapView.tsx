@@ -95,12 +95,18 @@ export function MapView() {
       ctrlRef.current.highlightRoute(null);
       return;
     }
+    ctrlRef.current.setLeftInset(sidebar !== 'idle' ? LEFT_SIDEBAR_WIDTH : 0);
+    // 乘车历史：当前 geojson 已无法还原路线时，改用结算时的坐标快照渲染
+    if (route.historyGeometry) {
+      ctrlRef.current.highlightHistoryGeometry(route.historyGeometry, route.nodeIds, route.expressRoute ?? false);
+      ctrlRef.current.fitToGeometry(route.historyGeometry);
+      return;
+    }
     const legs =
       route.kind === 'through' && route.journey ? route.journey.legs.map((l) => l.nodeIds) : [route.nodeIds];
     ctrlRef.current.highlightRoute(legs, route.expressRoute ?? false);
     // 镜头联动：缩放并移动到选中线路（路线卡片 / 乘车历史通用）；
     // 左侧留出侧边栏宽度，避免线路落在侧边栏下方被遮挡。
-    ctrlRef.current.setLeftInset(sidebar !== 'idle' ? LEFT_SIDEBAR_WIDTH : 0);
     // 列车列表点击（center 模式）：镜头由专门的居中 effect 处理，这里不框选整条路线。
     if (!(sidebar === 'train' && trainFocusMode === 'center')) {
       ctrlRef.current.fitToNodes(legs);

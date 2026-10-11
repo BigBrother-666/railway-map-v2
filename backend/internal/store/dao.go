@@ -443,12 +443,13 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 		return nil
 	}
 	nodeJSON, _ := json.Marshal(h.nodeIDs)
+	geomJSON, distance := s.snapshotGeometry(h)
 	var query string
 	if s.dialect == dialectMySQL {
 		query = `INSERT INTO ride_history
 			(player_uuid, player_name, train_id, train_type, express, started_at, ended_at, distance,
-			 start_station, end_station, paid_fare, node_ids)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 start_station, end_station, paid_fare, node_ids, geometry)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON DUPLICATE KEY UPDATE
 			player_name = VALUES(player_name),
 			train_type = VALUES(train_type),
@@ -458,12 +459,13 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 			start_station = VALUES(start_station),
 			end_station = VALUES(end_station),
 			paid_fare = VALUES(paid_fare),
-			node_ids = VALUES(node_ids)`
+			node_ids = VALUES(node_ids),
+			geometry = COALESCE(geometry, VALUES(geometry))`
 	} else {
 		query = `INSERT INTO ride_history
 			(player_uuid, player_name, train_id, train_type, express, started_at, ended_at, distance,
-			 start_station, end_station, paid_fare, node_ids)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 start_station, end_station, paid_fare, node_ids, geometry)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(player_uuid, train_id, started_at) DO UPDATE SET
 			player_name = excluded.player_name,
 			train_type = excluded.train_type,
@@ -473,15 +475,40 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 			start_station = excluded.start_station,
 			end_station = excluded.end_station,
 			paid_fare = excluded.paid_fare,
-			node_ids = excluded.node_ids`
+			node_ids = excluded.node_ids,
+			geometry = COALESCE(ride_history.geometry, excluded.geometry)`
 	}
 	_, err := s.db.Exec(
 		query,
 		h.playerUUID, h.playerName, h.trainID, h.trainType, boolToInt(h.express),
-		h.startedAt, h.endedAt, round2(h.distance), h.startStation, h.endStation,
-		round2(h.paidFare), string(nodeJSON),
+		h.startedAt, h.endedAt, round2(distance), h.startStation, h.endStation,
+		round2(h.paidFare), string(nodeJSON), geomJSON,
 	)
 	return err
+}
+
+// snapshotGeometry 结算时截取线路坐标快照（序列化为 JSON），保证之后 geojson 更新 / 线路删除时历史仍可显示。
+// 记录未带距离（普通车）时，顺带用当时 geojson 的轨道段长度填充距离（km），避免前端按新图估算出错。
+//
+// @param h 待写入的历史行
+// @return geomJSON 快照 JSON（无快照为 nil，写入 NULL）；distance 最终距离（km）
+func (s *Store) snapshotGeometry(h rideHistoryRow) (geomJSON any, distance float64) {
+	distance = h.distance
+	if s.geometry == nil {
+		return nil, distance
+	}
+	geom, meters, complete := s.geometry.RouteGeometry(h.nodeIDs)
+	if distance <= 0 && complete {
+		distance = meters / 1000
+	}
+	if geom == nil {
+		return nil, distance
+	}
+	b, err := json.Marshal(geom)
+	if err != nil {
+		return nil, distance
+	}
+	return string(b), distance
 }
 
 // ridePlayerName resolves a player's display name from ride_players; "" if unknown.
@@ -523,7 +550,7 @@ func (s *Store) ListRideHistory(playerUUID string, page, pageSize int) (model.Ri
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
 		`SELECT id, train_id, train_type, express, started_at, ended_at, distance,
-			start_station, end_station, paid_fare, node_ids
+			start_station, end_station, paid_fare, node_ids, geometry
 		 FROM ride_history WHERE player_uuid = ?
 		 ORDER BY ended_at DESC, id DESC LIMIT ? OFFSET ?`,
 		playerUUID, pageSize, offset,
@@ -538,12 +565,19 @@ func (s *Store) ListRideHistory(playerUUID string, page, pageSize int) (model.Ri
 		var item model.RideHistoryItem
 		var express int
 		var nodeJSON string
+		var geomJSON sql.NullString
 		if err := rows.Scan(&item.ID, &item.TrainID, &item.TrainType, &express, &item.StartedAt, &item.EndedAt,
-			&item.Distance, &item.StartStation, &item.EndStation, &item.PaidFare, &nodeJSON); err != nil {
+			&item.Distance, &item.StartStation, &item.EndStation, &item.PaidFare, &nodeJSON, &geomJSON); err != nil {
 			return model.RideHistoryResponse{}, err
 		}
 		item.Express = intToBool(express)
 		_ = json.Unmarshal([]byte(nodeJSON), &item.NodeIDs)
+		if geomJSON.Valid && geomJSON.String != "" {
+			var geom model.RouteGeometry
+			if json.Unmarshal([]byte(geomJSON.String), &geom) == nil {
+				item.Geometry = &geom
+			}
+		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {

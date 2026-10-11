@@ -63,6 +63,7 @@ func main() {
 	logger.Info("Database opened", "driver", cfg.DB.Driver)
 
 	cache := geo.NewCache(st)
+	st.SetGeometryProvider(cache)
 	hub := ws.NewHub(cfg.Realtime.ClientSendBuffer, nil, logger)
 	agg := realtime.NewAggregator(time.Duration(cfg.Realtime.TrainTimeoutSeconds)*time.Second, hub)
 	agg.SetRideFinalizer(st, logger)

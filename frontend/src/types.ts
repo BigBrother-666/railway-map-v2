@@ -109,6 +109,11 @@ export interface RoutePath {
    * 联程票换乘站保持不透明，中途车站淡化（任务：快速车路线中途站透明）。
    */
   expressRoute?: boolean;
+  /**
+   * 乘车历史坐标快照：当前 geojson 已无法还原该路线（节点 / 线路被删或改动）时由 selectHistory 写入，
+   * 地图改用快照折线高亮。
+   */
+  historyGeometry?: RouteGeometry;
 }
 
 /**
@@ -238,6 +243,24 @@ export interface RideHistoryItem {
   endStation: string;
   paidFare?: number;
   nodeIds: string[];
+  /** 结算时截取的线路坐标快照；旧记录无此字段。geojson 更新后节点对不上时用它渲染。 */
+  geometry?: RouteGeometry;
+}
+
+/** 乘车历史线路坐标快照（游戏坐标），不随之后的 geojson 更新 / 线路删除而变化。 */
+export interface RouteGeometry {
+  world: string;
+  segments: RouteGeometrySegment[];
+  /** 起终点坐标 [x, z]（可能缺失）。 */
+  start?: number[];
+  end?: number[];
+}
+
+/** 快照中同一线路、同一颜色的连续折线。 */
+export interface RouteGeometrySegment {
+  lineId: string;
+  color: string;
+  coords: number[][];
 }
 
 export interface RideHistoryResponse {

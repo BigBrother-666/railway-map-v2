@@ -505,13 +505,20 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   selectHistory(item) {
+    // geojson 更新后历史节点序列可能对不上当前图（中间增删节点 / 线路被删）：
+    // 有坐标快照则改用快照渲染；旧记录无快照时用当前图最短路修补节点序列兜底。
+    const graph = get().graph;
+    const intact = !graph || graph.hasAllEdges(item.nodeIds);
+    const historyGeometry = !intact ? item.geometry : undefined;
+    const nodeIds = intact || historyGeometry ? item.nodeIds : graph.repairPath(item.nodeIds);
     set({
       selectedHistoryId: item.id,
       trackingTrainId: null,
       candidates: [{
         stations: [item.startStation, item.endStation],
         stationSteps: [{ stationName: item.startStation }, { stationName: item.endStation }],
-        nodeIds: item.nodeIds,
+        nodeIds,
+        historyGeometry,
         lineIdSequence: [],
         distance: item.distance,
         segments: [],

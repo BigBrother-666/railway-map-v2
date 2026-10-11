@@ -11,6 +11,8 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "modernc.org/sqlite"
+
+	"railway-map-backend/internal/model"
 )
 
 type dialect string
@@ -24,6 +26,18 @@ const (
 type Store struct {
 	db      *sql.DB
 	dialect dialect
+	// geometry 在乘车历史结算时截取线路坐标快照（可为 nil，此时不存快照）
+	geometry RouteGeometryProvider
+}
+
+// RouteGeometryProvider 按节点序列截取线路坐标快照（由 geo.Cache 实现，接口注入避免 store→geo 循环依赖）。
+type RouteGeometryProvider interface {
+	RouteGeometry(nodeIDs []string) (geom *model.RouteGeometry, meters float64, complete bool)
+}
+
+// SetGeometryProvider 注入线路坐标快照提供者。
+func (s *Store) SetGeometryProvider(p RouteGeometryProvider) {
+	s.geometry = p
 }
 
 // Open connects to the configured database and runs migrations.
@@ -159,6 +173,7 @@ func (s *Store) migrateMySQL() error {
 			end_station   VARCHAR(255),
 			paid_fare     DOUBLE,
 			node_ids      TEXT,
+			geometry      MEDIUMTEXT,
 			UNIQUE KEY uniq_ride_history (player_uuid, train_id, started_at),
 			INDEX idx_ride_history_player_time (player_uuid, ended_at DESC)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
@@ -168,7 +183,7 @@ func (s *Store) migrateMySQL() error {
 			return err
 		}
 	}
-	return nil
+	return s.ensureColumn("ride_history", "geometry", "MEDIUMTEXT")
 }
 
 func (s *Store) migrateSQLite() error {
@@ -238,6 +253,7 @@ func (s *Store) migrateSQLite() error {
 			end_station   TEXT,
 			paid_fare     REAL,
 			node_ids      TEXT,
+			geometry      TEXT,
 			UNIQUE (player_uuid, train_id, started_at)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_ride_history_player_time
@@ -248,5 +264,49 @@ func (s *Store) migrateSQLite() error {
 			return err
 		}
 	}
-	return nil
+	return s.ensureColumn("ride_history", "geometry", "TEXT")
+}
+
+// ensureColumn 为已存在的旧表补加列（CREATE TABLE IF NOT EXISTS 不会给旧表加新列）。
+//
+// @param table  表名
+// @param column 列名
+// @param typ    列类型
+func (s *Store) ensureColumn(table, column, typ string) error {
+	exists, err := s.columnExists(table, column)
+	if err != nil || exists {
+		return err
+	}
+	_, err = s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, typ))
+	return err
+}
+
+// columnExists 判断表中是否已有某列。
+func (s *Store) columnExists(table, column string) (bool, error) {
+	if s.dialect == dialectMySQL {
+		var n int
+		err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM information_schema.COLUMNS
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+			table, column,
+		).Scan(&n)
+		return n > 0, err
+	}
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }

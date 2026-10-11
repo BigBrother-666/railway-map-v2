@@ -115,6 +115,86 @@ export class RouteGraph {
     return null;
   }
 
+  /**
+   * 判断节点序列的每对相邻节点在当前图中是否都有直连边。
+   * 乘车历史用：geojson 更新（中间增删节点 / 删线路）后旧序列可能对不上。
+   * @param nodeIds 路线节点序列
+   * @returns 全部相邻节点对都有边时为 true
+   */
+  hasAllEdges(nodeIds: string[]): boolean {
+    for (let i = 0; i < nodeIds.length - 1; i++) {
+      if (!this.links(nodeIds[i]).some((l) => l.to === nodeIds[i + 1])) return false;
+    }
+    return true;
+  }
+
+  /**
+   * 修补节点序列：相邻节点间没有直连边时，用当前图上的最短路（按距离）补齐中间节点；
+   * 找不到路径（节点已被删除等）则保持原样。用于无坐标快照的旧乘车历史的兜底显示。
+   * @param nodeIds 路线节点序列
+   * @returns 修补后的节点序列
+   */
+  repairPath(nodeIds: string[]): string[] {
+    if (nodeIds.length === 0) return [];
+    const out = [nodeIds[0]];
+    for (let i = 0; i < nodeIds.length - 1; i++) {
+      const from = nodeIds[i];
+      const to = nodeIds[i + 1];
+      if (this.links(from).some((l) => l.to === to)) {
+        out.push(to);
+        continue;
+      }
+      const path = this.shortestPath(from, to);
+      // path 含首尾；首节点已在 out 中
+      if (path) out.push(...path.slice(1));
+      else out.push(to);
+    }
+    return out;
+  }
+
+  /**
+   * 两节点间按距离的最短路径（Dijkstra，线性取最小，节点规模下足够快）。
+   * @returns 含首尾的节点序列；不可达或节点不存在时为 null
+   */
+  private shortestPath(from: string, to: string): string[] | null {
+    if (!this.nodes.has(from) || !this.nodes.has(to)) return null;
+    const dist = new Map<string, number>([[from, 0]]);
+    const prev = new Map<string, string>();
+    const open = new Set<string>([from]);
+    const done = new Set<string>();
+    while (open.size > 0) {
+      let cur = '';
+      let best = Infinity;
+      for (const id of open) {
+        const d = dist.get(id) ?? Infinity;
+        if (d < best) {
+          best = d;
+          cur = id;
+        }
+      }
+      open.delete(cur);
+      if (cur === to) break;
+      done.add(cur);
+      for (const link of this.links(cur)) {
+        if (done.has(link.to)) continue;
+        const nd = best + (link.distance > 0 ? link.distance : 1);
+        if (nd < (dist.get(link.to) ?? Infinity)) {
+          dist.set(link.to, nd);
+          prev.set(link.to, cur);
+          open.add(link.to);
+        }
+      }
+    }
+    if (!dist.has(to)) return null;
+    const path = [to];
+    while (path[0] !== from) {
+      const p = prev.get(path[0]);
+      if (!p) return null;
+      path.unshift(p);
+    }
+    return path;
+  }
+
   allStationNames(): string[] {
     return [...this.stationIndex.keys()];
   }

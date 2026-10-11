@@ -22,6 +22,10 @@ type Cache struct {
 	stations        []byte
 	stationsVersion string
 
+	// geoIdx 是 geojson 的轨道段 / 节点坐标索引（乘车历史坐标快照用），按 geoIdxVersion 惰性重建
+	geoIdx        *geoIndex
+	geoIdxVersion string
+
 	store *store.Store
 }
 

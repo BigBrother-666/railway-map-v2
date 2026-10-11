@@ -4,7 +4,7 @@
  * 渲染与寻路分离——这里用完整几何渲染，寻路图在 routing/ 内单独构建。
  */
 import maplibregl from 'maplibre-gl';
-import type { FeatureCollection, LineStringProps, PointProps, Train } from '../types';
+import type { FeatureCollection, LineStringProps, PointProps, RouteGeometry, Train } from '../types';
 import { gameToLngLat, gameLineToLngLat } from './coords';
 import { getConfig, CONTACT_SYSTEM_ID } from '../config';
 import { RouteGraph } from '../routing/graph';
@@ -13,6 +13,7 @@ const SRC_LINES = 'lines';
 const SRC_STATIONS = 'stations';
 const SRC_TRAINS = 'trains';
 const SRC_ENDPOINTS = 'route-endpoints';
+const SRC_HISTORY = 'history-route';
 const SRC_WORLD_TILES = 'world-tiles';
 const LAYER_WORLD_TILES = 'world-tiles-layer';
 /** 底图背景色（与 style 的 bg 图层一致）；淡化时把颜色混向它而非降透明度，避免重叠处 alpha 累加变实。 */
@@ -44,6 +45,8 @@ export class MapController {
   private highlightActive = false;
   /** 当前高亮边集合覆盖到的车站节点 id（这些车站保持不透明，其余淡化）。 */
   private highlightStationIds: Set<string> = new Set();
+  /** 乘车历史坐标快照（geojson 已无法还原该路线时用它独立渲染高亮折线）；null 表示未使用快照。 */
+  private historyGeometry: RouteGeometry | null = null;
   private onStationClick?: (name: string) => void;
   private onTrainClick?: (id: string) => void;
   private onLineClick?: (lineId: string) => void;
@@ -301,6 +304,7 @@ export class MapController {
    */
   highlightRoute(legs: string[][] | null, expressRoute = false) {
     if (!this.fc || !this.map.getLayer('lines-highlight')) return;
+    this.setHistoryGeometry(null);
     const validLegs = (legs ?? []).filter((leg) => leg.length >= 2);
     if (validLegs.length === 0) {
       // 清除高亮：highlight 边集合清空（filter 变空集，不渲染），base 恢复本色与正常透明度，车站恢复不透明
@@ -354,6 +358,7 @@ export class MapController {
       this.highlightRoute(null);
       return;
     }
+    this.setHistoryGeometry(null);
     const edgeIds = new Set<string>();
     const stationIds = new Set<string>();
     const stationNodeIds = new Set<string>();
@@ -382,6 +387,94 @@ export class MapController {
     this.setBaseLineDimmed(true);
     this.updateStationSource();
     this.setRouteEndpoints(null);
+  }
+
+  /**
+   * 用乘车历史的坐标快照高亮路线：当前 geojson 已无法还原历史节点序列（中间增删节点 / 线路被删）时调用。
+   * 快照折线画在独立图层上（线路本色、高亮线宽），其余线路淡化；仍存在于当前 geojson 的路线节点保持不透明。
+   *
+   * @param geom 坐标快照
+   * @param nodeIds 历史节点序列（用于决定哪些车站不透明）
+   * @param expressRoute 快速车路线：仅起终点不透明
+   */
+  highlightHistoryGeometry(geom: RouteGeometry, nodeIds: string[], expressRoute = false) {
+    if (!this.fc || !this.map.getLayer('lines-highlight')) return;
+    this.highlightEdges = new Set();
+    this.highlightActive = true;
+    this.highlightStationIds = new Set(
+      expressRoute && nodeIds.length > 0 ? [nodeIds[0], nodeIds[nodeIds.length - 1]] : nodeIds,
+    );
+    this.applyLineFilters();
+    this.setBaseLineDimmed(true);
+    this.updateStationSource();
+    this.setHistoryGeometry(geom);
+  }
+
+  /** 平滑缩放并移动到坐标快照的范围（仅快照属于当前世界时生效）。 */
+  fitToGeometry(geom: RouteGeometry) {
+    if (geom.world !== this.world) return;
+    const bounds = new maplibregl.LngLatBounds();
+    let has = false;
+    for (const seg of geom.segments) {
+      for (const c of seg.coords) {
+        bounds.extend(gameToLngLat(c[0], c[1], this.world));
+        has = true;
+      }
+    }
+    if (!has) return;
+    const tile = getConfig().worldTiles[this.world];
+    this.map.fitBounds(bounds, {
+      padding: { top: 80, bottom: 80, right: 80, left: 80 + this.leftInset },
+      maxZoom: tile?.maxZoom ?? 18,
+      duration: 600,
+    });
+  }
+
+  /** 记录并渲染（或清除）坐标快照；切换世界时由 refreshWorldData 重新渲染。 */
+  private setHistoryGeometry(geom: RouteGeometry | null) {
+    this.historyGeometry = geom;
+    this.renderHistoryGeometry();
+  }
+
+  /** 把坐标快照写入 history 图层，并按快照起终点坐标打端点标记；快照不属于当前世界时清空。 */
+  private renderHistoryGeometry() {
+    const src = this.map.getSource(SRC_HISTORY) as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    const geom = this.historyGeometry;
+    if (!geom || geom.world !== this.world) {
+      src.setData({ type: 'FeatureCollection', features: [] });
+      if (geom) this.setEndpointCoords(null, null);
+      return;
+    }
+    src.setData({
+      type: 'FeatureCollection',
+      features: geom.segments
+        .filter((seg) => seg.coords.length >= 2)
+        .map((seg) => ({
+          type: 'Feature',
+          properties: { lineId: seg.lineId, color: seg.color },
+          geometry: { type: 'LineString', coordinates: gameLineToLngLat(seg.coords, this.world) },
+        })),
+    });
+    this.setEndpointCoords(geom.start ?? null, geom.end ?? null);
+  }
+
+  /** 按游戏坐标 [x, z] 设置起终点标记（缺失的一端不画）。 */
+  private setEndpointCoords(start: number[] | null, end: number[] | null) {
+    const src = this.map.getSource(SRC_ENDPOINTS) as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+    const push = (c: number[] | null, role: string) => {
+      if (!c || c.length < 2) return;
+      features.push({
+        type: 'Feature',
+        properties: { role },
+        geometry: { type: 'Point', coordinates: gameToLngLat(c[0], c[1], this.world) },
+      });
+    };
+    push(start, 'start');
+    push(end, 'end');
+    src.setData({ type: 'FeatureCollection', features });
   }
 
   /**
@@ -549,6 +642,7 @@ export class MapController {
     this.map.addSource(SRC_STATIONS, { type: 'geojson', data: empty, maxzoom: 24, buffer: 512 });
     this.map.addSource(SRC_TRAINS, { type: 'geojson', data: empty });
     this.map.addSource(SRC_ENDPOINTS, { type: 'geojson', data: empty });
+    this.map.addSource(SRC_HISTORY, { type: 'geojson', data: empty, tolerance: 0, maxzoom: 24, buffer: 512 });
 
     // 线路（按 layer 排序叠层；color 来自属性；固定像素线宽，不随 zoom / 坐标缩放变）
     this.map.addLayer({
@@ -573,6 +667,17 @@ export class MapController {
         'line-width': getConfig().mapStyle.highlightWidth,
       },
       filter: ['==', ['get', 'id'], '__none__'],
+    });
+    // 乘车历史坐标快照（geojson 已无法还原历史路线时使用），样式与 lines-highlight 一致
+    this.map.addLayer({
+      id: 'history-route-layer',
+      type: 'line',
+      source: SRC_HISTORY,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['coalesce', ['get', 'color'], '#888888'],
+        'line-width': getConfig().mapStyle.highlightWidth,
+      },
     });
     // 车站圆点（固定像素半径）；高亮线路时非高亮车站按 dim 标记淡化（透明度取 config.dimOpacity）。
     const dim = getConfig().mapStyle.dimOpacity;
@@ -711,6 +816,7 @@ export class MapController {
     (this.map.getSource(SRC_LINES) as maplibregl.GeoJSONSource)?.setData(this.toLngLatFC(lineFeats));
     this.updateStationSource();
     this.setHiddenLines(this.hidden);
+    this.renderHistoryGeometry();
   }
 
   private updateWorldTiles() {

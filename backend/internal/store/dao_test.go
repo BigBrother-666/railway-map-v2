@@ -357,3 +357,65 @@ func payment(trainID string, player model.Player, route []string) model.RidePaym
 		PaidAt:       900,
 	}
 }
+
+// fakeGeometry 是固定返回快照的 RouteGeometryProvider（测试用）。
+type fakeGeometry struct {
+	geom   *model.RouteGeometry
+	meters float64
+}
+
+func (f fakeGeometry) RouteGeometry([]string) (*model.RouteGeometry, float64, bool) {
+	return f.geom, f.meters, true
+}
+
+// TestRideHistoryStoresGeometrySnapshot 校验结算时写入线路坐标快照，普通车距离由快照长度填充。
+func TestRideHistoryStoresGeometrySnapshot(t *testing.T) {
+	s := openTestStore(t)
+	geom := &model.RouteGeometry{
+		World: "w",
+		Segments: []model.RouteGeometrySegment{
+			{LineID: "L1", Color: "#f00", Coords: [][]float64{{0, 0}, {10, 0}}},
+		},
+		Start: []float64{0, 0},
+		End:   []float64{10, 0},
+	}
+	s.SetGeometryProvider(fakeGeometry{geom: geom, meters: 1500})
+	player := model.Player{UUID: "uuid-1", Name: "Steve"}
+	for _, ev := range []model.RideEventData{
+		commonEvent("train-geo", "node-a", "A", 1000, player),
+		commonEvent("train-geo", "node-b", "B", 2000, player),
+	} {
+		if err := s.RecordRideEvent(ev); err != nil {
+			t.Fatalf("record event: %v", err)
+		}
+	}
+	if err := s.FinalizeRide("train-geo"); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+	history, err := s.ListRideHistory(player.UUID, 1, 10)
+	if err != nil || len(history.Items) != 1 {
+		t.Fatalf("list history: err=%v items=%d", err, len(history.Items))
+	}
+	item := history.Items[0]
+	if !reflect.DeepEqual(item.Geometry, geom) {
+		t.Fatalf("unexpected geometry: got %+v want %+v", item.Geometry, geom)
+	}
+	if item.Distance != 1.5 {
+		t.Fatalf("expected distance 1.5km from snapshot, got %v", item.Distance)
+	}
+}
+
+// TestEnsureColumnAddsGeometryToLegacyTable 校验旧表（无 geometry 列）迁移后补上该列。
+func TestEnsureColumnAddsGeometryToLegacyTable(t *testing.T) {
+	s := openTestStore(t)
+	if _, err := s.db.Exec(`ALTER TABLE ride_history DROP COLUMN geometry`); err != nil {
+		t.Fatalf("drop column: %v", err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	ok, err := s.columnExists("ride_history", "geometry")
+	if err != nil || !ok {
+		t.Fatalf("expected geometry column after migrate, ok=%v err=%v", ok, err)
+	}
+}

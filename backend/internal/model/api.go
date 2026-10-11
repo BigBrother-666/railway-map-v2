@@ -151,6 +151,24 @@ type RideHistoryItem struct {
 	EndStation   string   `json:"endStation"`
 	PaidFare     float64  `json:"paidFare,omitempty"`
 	NodeIDs      []string `json:"nodeIds"`
+	// Geometry 是结算时截取的线路坐标快照；旧记录或结算时缺少 geojson 时为 nil。
+	Geometry *RouteGeometry `json:"geometry,omitempty"`
+}
+
+// RouteGeometry 是乘车历史的线路坐标快照（游戏坐标），使历史不受之后 geojson 更新 / 线路删除影响。
+type RouteGeometry struct {
+	World    string                 `json:"world"`
+	Segments []RouteGeometrySegment `json:"segments"`
+	// Start / End 是起终点节点坐标 [x, z]（可能缺失）
+	Start []float64 `json:"start,omitempty"`
+	End   []float64 `json:"end,omitempty"`
+}
+
+// RouteGeometrySegment 是快照中同一线路、同一颜色的连续折线。
+type RouteGeometrySegment struct {
+	LineID string      `json:"lineId"`
+	Color  string      `json:"color"`
+	Coords [][]float64 `json:"coords"`
 }
 
 type RideHistoryResponse struct {

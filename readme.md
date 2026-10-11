@@ -161,7 +161,7 @@ web-link:
 - `POST /api/v1/auth/test-login`：测试登录，仅在 `auth.testAuthEnabled` 开启时可用。
 - `POST /api/v1/route/query`：路线/车票查询（需登录，按玩家限流，见 `route.queryRateLimitPerSecond`；同一玩家发起新查询会取消其尚未完成的旧查询；单次计算超过 `route.computeTimeoutMs` 返回 `504`）。
 - `POST /api/v1/purchase`：在线购票（单段直达一次调用；联程票由前端对每段各调用一次）。
-- `GET /api/v1/me/history?page=1&pageSize=10`：当前登录玩家的乘车历史。
+- `GET /api/v1/me/history?page=1&pageSize=10`：当前登录玩家的乘车历史。每条记录除 `nodeIds` 外还带结算时截取的线路坐标快照 `geometry`（`ride_history.geometry` 列，旧库启动时自动补列）。前端选中历史时，若当前 geojson 已无法还原 `nodeIds`（中间增删节点 / 线路被删），改用快照渲染；无快照的旧记录则按当前图最短路补齐缺失的中间节点。
 - `GET /api/v1/realtime`：前端实时列车 WebSocket。
 - `GET /internal/plugin`：插件内部 WebSocket，需要 `Authorization: Bearer <plugin.sharedToken>`。
 
