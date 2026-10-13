@@ -1,4 +1,4 @@
-﻿import type { CSSProperties } from 'react';
+﻿import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { getConfig } from '../config';
 import { useStore } from '../store/useStore';
 import type { FeatureCollection, Line, LineStringProps, Train } from '../types';
@@ -6,6 +6,9 @@ import type { RouteGraph } from '../routing/graph';
 
 type Point2 = { x: number; z: number };
 const TRAIN_LANE_OFFSET_PX = 14;
+const DIAGRAM_PAD = 18;
+const FOLD_RADIUS_MAX = 26;
+const RING_RADIUS_MAX = 46;
 
 interface AxisSegment {
   from: string;
@@ -43,8 +46,11 @@ export function LineRouteDiagram({ line }: { line: Line }) {
   const graph = useStore((s) => s.graph);
   const trains = useStore((s) => s.trains);
   const focusTrain = useStore((s) => s.focusTrain);
+  const stationAliases = useStore((s) => s.stationAliases);
   const cfg = getConfig().routeDiagram;
   const trainIcons = getConfig().trainIcons;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const availableHeight = useAvailableDiagramHeight(cardRef);
 
   if (!geojson || !graph) return null;
   const axis = buildLineAxis(line, geojson, graph);
@@ -57,20 +63,21 @@ export function LineRouteDiagram({ line }: { line: Line }) {
     cfg.trainClusterProgress,
   );
 
-  const stationGap = clamp(cfg.stationGapPx, 20, 72);
   const trainIconScale = clamp(cfg.trainIconScale, 0.25, 2);
-  const folded = !line.ring && axis.stations.length >= Math.max(3, cfg.foldMinStations);
+  const { folded, stationGap } = chooseLayout(line.ring, axis, availableHeight, cfg.minStationGapPx, cfg.maxStationGapPx);
+  const enOf = (name: string) => stationAliases[name] || undefined;
 
   return (
     <div className="panel-section route-diagram-section">
       <div className="label">线路图</div>
-      <div className={`route-diagram-card ${line.ring ? 'ring' : folded ? 'folded' : 'straight'}`}>
+      <div ref={cardRef} className={`route-diagram-card ${line.ring ? 'ring' : folded ? 'folded' : 'straight'}`}>
         {line.ring ? (
           <RingDiagram
             line={line}
             axis={axis}
             markers={markers}
             stationGap={stationGap}
+            enOf={enOf}
             trainIconScale={trainIconScale}
             icons={trainIcons}
             onTrainClick={focusTrain}
@@ -81,6 +88,7 @@ export function LineRouteDiagram({ line }: { line: Line }) {
             axis={axis}
             markers={markers}
             stationGap={stationGap}
+            enOf={enOf}
             trainIconScale={trainIconScale}
             icons={trainIcons}
             onTrainClick={focusTrain}
@@ -91,6 +99,7 @@ export function LineRouteDiagram({ line }: { line: Line }) {
             axis={axis}
             markers={markers}
             stationGap={stationGap}
+            enOf={enOf}
             trainIconScale={trainIconScale}
             icons={trainIcons}
             onTrainClick={focusTrain}
@@ -110,8 +119,9 @@ function StraightDiagram({
   trainIconScale,
   icons,
   onTrainClick,
+  enOf,
 }: DiagramProps) {
-  const topPad = 18;
+  const topPad = DIAGRAM_PAD;
   const straightWidth = 260;
   const xTrack = straightWidth / 2;
   const trackLength = Math.max(1, axis.intervalCount) * stationGap;
@@ -134,16 +144,14 @@ function StraightDiagram({
         {axis.stations.map((station, i) => {
           const y = yOf(station.progress);
           return (
-            <text
+            <StationLabel
               key={`${station.name}-${i}`}
-              className="route-diagram-station-text"
+              name={station.name}
+              nameEn={enOf(station.name)}
               x={xTrack - 13}
               y={y}
-              textAnchor="end"
-              dominantBaseline="middle"
-            >
-              {station.name}
-            </text>
+              anchor="end"
+            />
           );
         })}
       </svg>
@@ -169,19 +177,18 @@ function FoldedDiagram({
   trainIconScale,
   icons,
   onTrainClick,
+  enOf,
 }: DiagramProps) {
   const stationCount = axis.stations.length;
   const intervals = Math.max(1, axis.intervalCount);
-  const leftCount = Math.ceil(stationCount / 2);
-  const leftIntervals = Math.max(0, leftCount - 1);
-  const rightIntervals = Math.max(0, stationCount - leftCount - 1);
+  const { leftIntervals, rightIntervals } = foldSplit(stationCount);
   const foldedWidth = 260;
-  const topPad = 18;
-  const bottomPad = 18;
+  const topPad = DIAGRAM_PAD;
+  const bottomPad = DIAGRAM_PAD;
   const xLeft = 100;
   const xRight = 160;
   const top = topPad;
-  const radius = Math.min(58, stationGap * 1.6, (xRight - xLeft) / 2 - 4);
+  const radius = foldRadius(stationGap);
   const sideTop = top + radius;
   const leftBottom = sideTop + leftIntervals * stationGap;
   const rightBottom = sideTop + rightIntervals * stationGap;
@@ -204,16 +211,14 @@ function FoldedDiagram({
           const p = pointOf(station.progress);
           const onRight = p.x > (xLeft + xRight) / 2;
           return (
-            <text
+            <StationLabel
               key={`${station.name}-${i}`}
-              className="route-diagram-station-text"
+              name={station.name}
+              nameEn={enOf(station.name)}
               x={p.x + (onRight ? 13 : -13)}
               y={p.z}
-              textAnchor={onRight ? 'start' : 'end'}
-              dominantBaseline="middle"
-            >
-              {station.name}
-            </text>
+              anchor={onRight ? 'start' : 'end'}
+            />
           );
         })}
       </svg>
@@ -242,14 +247,15 @@ function RingDiagram({
   trainIconScale,
   icons,
   onTrainClick,
+  enOf,
 }: DiagramProps) {
   const outerWidth = 276;
-  const pad = 18;
+  const pad = DIAGRAM_PAD;
   const xLeft = 94;
   const xRight = outerWidth - 94;
   const split = ringSplit(axis.stations.length);
   const rows = Math.max(split.leftCount, split.rightCount);
-  const r = Math.min(46, (xRight - xLeft) / 2);
+  const r = Math.min(RING_RADIUS_MAX, (xRight - xLeft) / 2);
   const sideHeight = Math.max(1, (Math.max(2, rows) - 1) * stationGap);
   const trackHeight = sideHeight + r * 2;
   const outerHeight = trackHeight + pad * 2;
@@ -282,16 +288,15 @@ function RingDiagram({
           const p = pointOf(station.progress);
           const onRight = p.x > outerWidth / 2;
           return (
-            <text
+            <StationLabel
               key={`${station.name}-${i}`}
-              className="route-diagram-station-text ring"
+              name={station.name}
+              nameEn={enOf(station.name)}
               x={p.x + (onRight ? 13 : -13)}
               y={p.z}
-              textAnchor={onRight ? 'start' : 'end'}
-              dominantBaseline="middle"
-            >
-              {station.name}
-            </text>
+              anchor={onRight ? 'start' : 'end'}
+              ring
+            />
           );
         })}
       </svg>
@@ -321,6 +326,159 @@ interface DiagramProps {
   trainIconScale: number;
   icons: { express: string; normal: string };
   onTrainClick: (id: string) => void;
+  enOf: (name: string) => string | undefined;
+}
+
+/** 站名标签：中文名一行；有英文名时中文上移、英文名显示在其下方。 */
+function StationLabel({
+  name,
+  nameEn,
+  x,
+  y,
+  anchor,
+  ring = false,
+}: {
+  name: string;
+  nameEn?: string;
+  x: number;
+  y: number;
+  anchor: 'start' | 'end';
+  ring?: boolean;
+}) {
+  const className = `route-diagram-station-text${ring ? ' ring' : ''}`;
+  if (!nameEn) {
+    return (
+      <text className={className} x={x} y={y} textAnchor={anchor} dominantBaseline="middle">
+        {name}
+      </text>
+    );
+  }
+  return (
+    <text className={className} textAnchor={anchor} dominantBaseline="middle">
+      <tspan x={x} y={y - 6}>
+        {name}
+      </tspan>
+      <tspan className="route-diagram-station-text-en" x={x} y={y + 7} lang="en">
+        {nameEn}
+      </tspan>
+    </text>
+  );
+}
+
+/**
+ * 按可用高度选择布局与站间距：
+ * - 环线：站间距按可用高度适配，限制在 [min, max]；
+ * - 非环线：最小站间距直线展示仍放不下（会出现滚动条）则折叠为 n 形，
+ *   折叠后的站间距同样按可用高度求最优值，限制在 [min, max]。
+ * availableHeight 为 null（尚未测量）时按直线 + 最小间距渲染一帧。
+ */
+export function chooseLayout(
+  ring: boolean,
+  axis: LineAxis,
+  availableHeight: number | null,
+  minGapPx: number,
+  maxGapPx: number,
+): { folded: boolean; stationGap: number } {
+  const minGap = clamp(Number.isFinite(minGapPx) ? minGapPx : 30, 20, 120);
+  const maxGap = Math.max(minGap, Number.isFinite(maxGapPx) ? Math.min(maxGapPx, 200) : minGap);
+  const fit = (space: number, intervals: number) =>
+    availableHeight == null ? minGap : clamp(space / Math.max(1, intervals), minGap, maxGap);
+  const avail = availableHeight ?? 0;
+
+  if (ring) {
+    const split = ringSplit(axis.stations.length);
+    const rows = Math.max(2, split.leftCount, split.rightCount);
+    return { folded: false, stationGap: fit(avail - DIAGRAM_PAD * 2 - RING_RADIUS_MAX * 2, rows - 1) };
+  }
+
+  const intervals = Math.max(1, axis.intervalCount);
+  const straightMinHeight = intervals * minGap + DIAGRAM_PAD * 2;
+  const canFold = axis.stations.length >= 3;
+  if (availableHeight == null || straightMinHeight <= availableHeight || !canFold) {
+    return { folded: false, stationGap: fit(avail - DIAGRAM_PAD * 2, intervals) };
+  }
+
+  const { leftIntervals, rightIntervals } = foldSplit(axis.stations.length);
+  const sideIntervals = Math.max(1, leftIntervals, rightIntervals);
+  // 站间距不小于 minGap(>=20) 时折叠圆角恒为 FOLD_RADIUS_MAX
+  return { folded: true, stationGap: fit(avail - DIAGRAM_PAD * 2 - FOLD_RADIUS_MAX, sideIntervals) };
+}
+
+function foldSplit(stationCount: number) {
+  const leftCount = Math.ceil(stationCount / 2);
+  return {
+    leftCount,
+    leftIntervals: Math.max(0, leftCount - 1),
+    rightIntervals: Math.max(0, stationCount - leftCount - 1),
+  };
+}
+
+function foldRadius(stationGap: number): number {
+  return Math.min(FOLD_RADIUS_MAX, stationGap * 1.6);
+}
+
+/**
+ * 测量线路图在不出现滚动条的前提下可占用的高度（px）：
+ * 从图形顶部（按滚动容器未滚动时计算）到滚动容器可视区域底部，扣除卡片内图形下方的内容与容器底部内边距。
+ * 结果只取决于图形上方内容与容器尺寸，与图形自身高度无关，不会形成测量循环。
+ */
+function useAvailableDiagramHeight(cardRef: RefObject<HTMLDivElement>): number | null {
+  const [height, setHeight] = useState<number | null>(null);
+  const observed = useRef<{ el: Element | null; ro: ResizeObserver | null }>({ el: null, ro: null });
+  const measureRef = useRef<() => void>(() => {});
+
+  measureRef.current = () => {
+    const card = cardRef.current;
+    const diagram = card?.firstElementChild as HTMLElement | null;
+    if (!card || !diagram) return;
+    const scroller = findScrollContainer(card);
+    if (!scroller) return;
+    const next = Math.floor(measureAvailable(card, diagram, scroller));
+    setHeight((prev) => (prev != null && Math.abs(prev - next) <= 1 ? prev : next));
+
+    if (observed.current.el !== scroller) {
+      observed.current.ro?.disconnect();
+      const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => measureRef.current()) : null;
+      ro?.observe(scroller);
+      if (scroller.parentElement) ro?.observe(scroller.parentElement);
+      observed.current = { el: scroller, ro };
+    }
+  };
+
+  useLayoutEffect(() => measureRef.current());
+
+  useLayoutEffect(() => {
+    const onResize = () => measureRef.current();
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      observed.current.ro?.disconnect();
+      observed.current = { el: null, ro: null };
+    };
+  }, []);
+
+  return height;
+}
+
+function findScrollContainer(el: HTMLElement): HTMLElement | null {
+  for (let cur = el.parentElement; cur; cur = cur.parentElement) {
+    const overflowY = getComputedStyle(cur).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return cur;
+  }
+  return null;
+}
+
+function measureAvailable(card: HTMLElement, diagram: HTMLElement, scroller: HTMLElement): number {
+  const px = (v: string) => parseFloat(v) || 0;
+  const scrollerStyle = getComputedStyle(scroller);
+  const viewBottom =
+    scroller.getBoundingClientRect().bottom - px(scrollerStyle.borderBottomWidth) - px(scrollerStyle.paddingBottom);
+  const diagramRect = diagram.getBoundingClientRect();
+  const diagramTop = diagramRect.top + scroller.scrollTop;
+  const section = card.parentElement;
+  const sectionMargin = section ? px(getComputedStyle(section).marginBottom) : 0;
+  const trailing = card.getBoundingClientRect().bottom - diagramRect.bottom + sectionMargin;
+  return viewBottom - diagramTop - trailing;
 }
 
 function StationDots({ points }: { points: { point: Point2; key: string }[] }) {

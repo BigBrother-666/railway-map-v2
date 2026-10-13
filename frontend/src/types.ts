@@ -208,12 +208,12 @@ export interface FrontendConfig {
     trainFocusZoom: number;
   };
   routeDiagram: {
-    /** 鍒楄溅鍧愭爣鎶曞奖鍒扮嚎璺殑鏈€澶у厑璁歌窛绂伙紙娓告垙鏂瑰潡锛夈€?*/
+    /** 列车坐标投影到线路的最大允许距离（游戏方块）。 */
     projectionThresholdBlocks: number;
-    /** 绀烘剰鍥句腑鐩搁偦杞︾珯鐨勫浐瀹氶棿璺濓紙px锛夈€?*/
-    stationGapPx: number;
-    /** 闈炵幆绾跨珯鏁拌揪鍒拌鍊煎悗鎶樺彔涓?n 褰€?*/
-    foldMinStations: number;
+    /** 路线图相邻车站的最小间距（px）；非环线以该间距直线展示仍超出可视高度时折叠为 n 形。 */
+    minStationGapPx: number;
+    /** 路线图相邻车站的最大间距（px）；按可视高度自适应的间距不超过该值。 */
+    maxStationGapPx: number;
     /** 列车显示进度差低于该值时错开显示。 */
     trainClusterProgress: number;
     /** 线路路线图内列车图标缩放倍率。 */

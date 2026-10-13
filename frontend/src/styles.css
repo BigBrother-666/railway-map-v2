@@ -608,6 +608,11 @@ body,
 .route-diagram-station-text.ring {
   font-size: 11px;
 }
+.route-diagram-station-text-en {
+  fill: var(--muted);
+  font-size: 9.5px;
+  font-weight: 500;
+}
 .route-diagram-path-svg {
   position: absolute;
   inset: 0;

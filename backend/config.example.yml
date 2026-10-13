@@ -1,98 +1,174 @@
+# 运行配置从 backend/config.yml 读取。字符串值支持 ${ENV} 环境变量展开。
+# 缺失的环境变量展开为空字符串，再由后端填充默认值。
 server:
+  # HTTP 和 WebSocket 监听地址。 默认值：:8080。
   addr: ":8080"
+  # 后端对外基础 URL，用于拼接微软 OAuth 回调地址，也用于 CORS 允许来源。 默认值：空。
   publicBaseUrl: "http://localhost:8080"
-  # 地图页面地址：微软登录回调完成后跳转回此处并弹出登录成功/失败提示。
-  # 留空则回退到 publicBaseUrl（生产同源反代场景）；开发时前端独立端口需填如 http://localhost:5173
+  # 微软登录回调完成后跳转回此处并弹出登录成功/失败提示。 默认值：server.publicBaseUrl。
+  # 留空用于生产同源反代场景；开发时前端使用独立端口，需填写如 http://localhost:5173。
   frontendBaseUrl: ""
+
 log:
+  # 日志级别，可用 debug、info、warn、error。 默认值：info。
   level: "info"
+  # 日志文件目录。相对路径按后端进程工作目录解析，默认即 backend/data/logs。 默认值：data/logs。
   dir: "data/logs"
+
+# 插件 config_map.yml 对接示例：
+# web-link:
+#   enabled: true
+#   backend-url: "ws://localhost:8080/internal/plugin"
+#   shared-token: "change-me"
 plugin:
-  sharedToken: "${BCTS_PLUGIN_TOKEN}"   # 与插件 config_web.yml 的 shared-token 一致
+  # 插件连接 /internal/plugin 的 Bearer token。 默认值：空。
+  # 由 BCTS_PLUGIN_TOKEN 注入；必须与插件的 shared-token 一致。
+  sharedToken: "${BCTS_PLUGIN_TOKEN}"
+  # 后端向插件发送 ping 的间隔秒数。 默认值：15。
   heartbeatSeconds: 15
+  # 在线购票等待插件扣款/出票回执的超时秒数。 默认值：10。
   purchaseTimeoutSeconds: 10
-  purchaseMinIntervalSeconds: 3         # 同一玩家两次购票的最小间隔（秒），防止频繁购票压垮服务器；<=0 不限频
+  # 同一玩家两次购票的最小间隔秒数，防止频繁购票压垮服务器；<=0 使用默认值 3。
+  purchaseMinIntervalSeconds: 3
 realtime:
+  # 列车多久未更新就视为消失，并向前端广播移除矿车图标。 默认值：30。
   trainTimeoutSeconds: 30
+  # 每个前端实时 WebSocket 连接的发送缓冲帧数，满时丢弃最旧帧。 默认值：64。
   clientSendBuffer: 64
+
 auth:
   microsoft:
+    # Azure 应用 Client ID，为空时微软登录不可用。 默认值：空。
+    # 由 MS_CLIENT_ID 注入。未配置且未启用测试登录时，地图、线路和实时公开数据仍可用，登录、购票与路线/车票查询不可用。
     clientId: "${MS_CLIENT_ID}"
+    # Azure 应用 Client Secret。 默认值：空。
+    # 由 MS_CLIENT_SECRET 注入。
     clientSecret: "${MS_CLIENT_SECRET}"
+    # OAuth 回调路径，会与 server.publicBaseUrl 拼成完整回调 URL。 默认值：/api/v1/auth/callback。
     redirectPath: "/api/v1/auth/callback"
+  # JWT 会话签名密钥。 默认值：空。
+  # 由 BCTS_JWT_SECRET 注入。
   jwtSecret: "${BCTS_JWT_SECRET}"
+  # 是否启用测试登录接口，仅测试环境使用。 默认值：false。
   testAuthEnabled: false
-  testAuthUUIDs: []
+  # 允许测试登录的玩家 UUID 列表。 默认值：[]。
+  testAuthUUIDs: [ ]
+
 db:
-  driver: "${BCTS_DB_DRIVER}" # 留空默认 mysql；可填 mysql 或 sqlite
+  # 数据库类型，可选 mysql 或 sqlite。 默认值：mysql。
+  # 由 BCTS_DB_DRIVER 注入，留空默认 mysql。使用 MySQL 时请先创建数据库和用户；也可切换为 SQLite。
+  driver: "${BCTS_DB_DRIVER}"
+  # MySQL DSN，仅 db.driver=mysql 时使用，建议用 ${BCTS_DB_DSN} 从环境变量注入。 默认值：bcts:change-me@tcp(127.0.0.1:3306)/bcts_web?...。
+  # 由 BCTS_DB_DSN 注入，例如 bcts:password@tcp(127.0.0.1:3306)/bcts_web?charset=utf8mb4&parseTime=true&loc=Local。
   dsn: "${BCTS_DB_DSN}"
+  # SQLite 数据库文件路径，仅 db.driver=sqlite 时使用。后端启动时会自动创建目录和表。 默认值：data/bcts-web.db。
+  # 由 BCTS_DB_PATH 注入，例如 data/bcts-web.db。
   path: "${BCTS_DB_PATH}"
 
+# 此段通过 GET /api/v1/config 下发给前端，无需重新构建即可调整样式、瓦片、世界和部分业务参数。
 frontend:
+  # 前端实时列车 WebSocket 路径。 默认值：/api/v1/realtime。
   realtimeWsPath: "/api/v1/realtime"
+  # 默认显示的世界名。 默认值：world1。
   defaultWorld: "world1"
+  # 前端估算票价时使用的默认每公里价格。 默认值：0.2。
   defaultPricePerKm: 0.2
+  # 玩家头像 URL 模板，{player} 会替换为玩家名或 UUID。 默认值：https://mineskin.eu/helm/{player}。
   avatarUrlTemplate: "https://mineskin.eu/helm/{player}"
+  # 票价展示使用的货币名称。 默认值：帕元。
   currencyName: "帕元"
-  themeColor: "#ffd400"   # 主题色（强调色），16 进制 #RRGGBB；留空用默认黄色 #ffd400
-  # 路线查询超时毫秒数（前端请求 /api/v1/route/query）；超时中止请求并提示失败。<=0 用默认 10000
+  # 主题色（强调色），16 进制 #RRGGBB；应用于按钮、高亮等 --accent。非法值忽略并保留默认黄色。 默认值：#ffd400。
+  themeColor: "#ffd400"
+  # 路线查询请求超时毫秒数（前端调用 POST /api/v1/route/query）。查询期间界面显示查询中动画不卡死；超时则中止请求并提示失败。 默认值：10000。
+  # <=0 使用默认值 10000。
   routeSearchTimeoutMs: 10000
   worldTiles:
     world1:
+      # 指定世界的 MapLibre raster 瓦片 URL 模板。为空时只显示纯色底图和线路。 默认值：空。
       tileUrl: ""
+      # 进入该世界时的初始地图缩放级别。配置后以 center（或数据范围中心）为镜头中心定位；不配则按数据范围自动框选缩放。 默认值：空。
       zoom: 4
+      # 单张瓦片图片像素尺寸。 默认值：256。
       tileSize: 256
+      # 瓦片图层透明度，范围 0 到 1；值越低线路越突出。 默认值：1。
       opacity: 0.3
+      # 瓦片源最低实际请求层级。 默认值：0。
       minNativeZoom: 0
+      # 该世界地图最低显示/交互缩放级别，同时也是瓦片图层最低显示级别。 默认值：0。
       minZoom: 12
+      # 瓦片源最高实际请求层级；地图继续放大时会放大该层级瓦片，不会请求更高层级。 默认值：空。
       maxNativeZoom: 12
+      # 该世界地图最高显示/交互缩放级别，同时也是瓦片图层最高显示级别。 默认值：20。
       maxZoom: 12
+      # 瓦片 Y 轴编号方案，可选 xyz 或 tms。 默认值：xyz。
       scheme: "xyz"
-      mapScale: 1        # 1 个游戏方块 = 多少原生瓦片像素（整体缩放）。
-      mapOffset: [0, 0]  # [x, z] 游戏坐标整体平移（游戏单位）。
-      center: [0, 0]   # 进入页面时的初始镜头中心（游戏坐标 [x, z]）；不配则用数据范围中心。
+      # 1 个游戏方块对应多少「原生瓦片像素」。geojson 按游戏比例等比铺图，用它整体缩放对准瓦片。 默认值：1。
+      mapScale: 1
+      # 游戏坐标整体平移（游戏单位），用它把线路挪到与瓦片底图对齐。 默认值：[0,0]。
+      mapOffset: [ 0, 0 ]
+      # 进入该世界时的初始镜头中心（游戏坐标 [x,z]）。不配则回退到数据范围中心。 默认值：空。
+      center: [ 0, 0 ]
   mapStyle:
+    # 普通线路宽度，单位为屏幕像素。 默认值：3。
     lineWidth: 3
+    # 高亮路线宽度，单位为屏幕像素。 默认值：7。
     highlightWidth: 7
+    # 有高亮路线时非高亮线路透明度。 默认值：0.2。
     dimOpacity: 0.2
+    # 普通线路透明度。 默认值：0.9。
     lineOpacity: 0.9
+    # 车站圆点半径。 默认值：6。
     stationRadius: 6
+    # 车站圆点描边宽度。 默认值：2。
     stationStrokeWidth: 2
+    # 车站名称字号。 默认值：12。
     stationTextSize: 12
     # 车站英文名字号（显示在中文站名下方，通常比中文小）
     stationEnTextSize: 10
+    # 同名站点在屏幕距离小于该值时合并显示；寻路仍使用原始节点。 默认值：28。
     stationMergePixelDistance: 28
+    # MapLibre symbol 图标缩放。 默认值：0.6。
     trainIconSize: 0.6
+    # 点击实时列车卡片或线路路线图列车图标时，地图居中列车后使用的缩放级别。 默认值：16。
     trainFocusZoom: 9
   routeDiagram:
-    projectionThresholdBlocks: 25 # 列车坐标到线路投影的最大允许距离（游戏方块）；超过则不显示在示意图上
-    stationGapPx: 45              # 示意图中相邻车站的固定间距（px），不按真实里程比例拉伸
-    foldMinStations: 8           # 非环线站数达到该值后折叠为 n 形
-    trainClusterProgress: 0.035   # 列车显示进度差低于该值时错开显示
-    trainIconScale: 0.8             # 线路路线图中列车图标缩放倍率，例如 0.5 表示缩小为一半
+    # 线路详情路线图中，列车坐标投影到线路的最大允许距离（游戏方块）；超过则不显示，避免吸附到相邻线路。 默认值：25。
+    projectionThresholdBlocks: 25
+    # 路线图相邻车站最小间距（px）。非环线以该间距直线展示仍超出侧栏可视高度（出现滚动条）时折叠为 n 形。 默认值：32。
+    minStationGapPx: 42
+    # 路线图相邻车站最大间距（px）。间距按侧栏可视高度自适应（直线、折叠、环线均是），但不超过该值。 默认值：60。
+    maxStationGapPx: 60
+    # 路线图中列车显示进度差低于该值时，认为位置接近并错开显示。 默认值：0.035。
+    trainClusterProgress: 0.035
+    # 线路路线图中列车图标缩放倍率，例如 0.5 表示缩小为一半。 默认值：0.8。
+    trainIconScale: 0.8
   trainIcons:
+    # 快速车图标，可配置为 data:、http(s): 或前端可访问的静态资源 URL。 默认值：内置 SVG data URL。
     express: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
+    # 普通车图标。 默认值：内置 SVG data URL。
     normal: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%2342a5f5'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
+  # 铁路系统没有 logo 时使用的默认图标。 默认值：内置 SVG data URL。
   defaultSystemLogo: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='20'%20height='20'%20viewBox='0%200%2020%2020'%3E%3Crect%20width='20'%20height='20'%20rx='4'%20fill='%233a3f4b'/%3E%3Cpath%20d='M6%205h8v7a3%203%200%200%201-3%203H9a3%203%200%200%201-3-3z'%20fill='%238a90a0'/%3E%3Ccircle%20cx='8'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3Ccircle%20cx='12'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3C/svg%3E"
 
-# 路线 / 车票查询（后端计算，登录后才可用，见 POST /api/v1/route/query）
+# 路线 / 车票查询（POST /api/v1/route/query，需登录）的后端内部参数，不通过 GET /api/v1/config 下发给前端。
 route:
-  # 单个登录玩家每秒最多发起的路线查询请求数，超出返回 429。<=0 用默认 3
+  # 单个登录玩家每秒最多发起的路线查询请求数（token bucket），超出返回 429。<=0 用默认值。 默认值：3。
   queryRateLimitPerSecond: 3
-  # 搜索结果排序（复刻插件 search.*，与游戏内购票菜单一致）
-  # 显示「距离最近」的路线条数（<=0 不限制）
+  # 展示「距离最近」的路线条数（<=0 不限制）。与插件 search.max-distance-results 对齐。 默认值：5。
   maxDistanceResults: 10
-  # 显示「票价最低」的路线条数（<=0 不限制）
+  # 展示「票价最低」的路线条数（<=0 不限制）。 默认值：5。
   maxPriceResults: 10
-  # 混合排序权重：候选集内距离、票价各归一化到 [0,1] 后加权，权重越小越靠前
+  # 混合排序距离权重：候选集内距离归一化后 ×此值，权重越小越靠前。 默认值：0.5。
+  # 距离和票价各归一化到 [0,1] 后加权，与游戏内购票菜单一致。
   searchWeightDistance: 0.5
+  # 混合排序票价权重：候选集内票价归一化后 ×此值。 默认值：0.5。
   searchWeightPrice: 0.5
-  # 兜底：混排结果里一条直达都没有（全是联程票）时，至少补最优的这么多条直达（<=0 不兜底）
+  # 兜底：混排结果全是联程票时至少补最优的这么多条直达（<=0 不兜底）。 默认值：1。
   minDirectResults: 1
-  # 联程票（一次换乘 / 两段直达）方案条数（<=0 不限制，仍受候选上限约束）
+  # 最多展示的联程票（一次换乘）方案条数（<=0 不限制，仍受候选上限约束）。 默认值：3。
   maxTransferResults: 2
-  # 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1 - 此值) 时才显示联程票。0 表示只要严格更短即显示
+  # 联程票最低改善比例：仅当换乘总距离 < 最短直达 ×(1−此值) 时才显示联程票。0 表示只要严格更短即显示。 默认值：0.2。
   transferMinImprovement: 0.2
-  # 单次寻路计算（直达 + 联程票枚举）最长耗时毫秒数，超时中止并返回 504；已算出的部分结果仍会缓存/
-  # 返回，只有超时且什么都没算出来时才不缓存。<=0 用默认 15000
+  # 单次寻路计算（直达 + 联程票枚举）最长耗时毫秒数；超时返回 504。<=0 使用默认值 15000。
+  # 已算出的部分结果仍会缓存并正常返回，只有超时且什么都没算出来时才不缓存，避免误缓存为「无路线」。
   computeTimeoutMs: 15000

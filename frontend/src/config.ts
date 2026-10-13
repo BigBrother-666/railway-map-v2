@@ -26,8 +26,8 @@ const DEFAULT_CONFIG: FrontendConfig = {
   },
   routeDiagram: {
     projectionThresholdBlocks: 25,
-    stationGapPx: 45,
-    foldMinStations: 8,
+    minStationGapPx: 32,
+    maxStationGapPx: 60,
     trainClusterProgress: 0.035,
     trainIconScale: 0.8,
   },

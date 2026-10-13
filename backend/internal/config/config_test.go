@@ -21,6 +21,9 @@ func TestFrontendDefaults(t *testing.T) {
 	if f.CurrencyName != "帕元" {
 		t.Errorf("CurrencyName = %q, want 帕元", f.CurrencyName)
 	}
+	if rd := f.RouteDiagram; rd.MinStationGapPx != 32 || rd.MaxStationGapPx != 60 {
+		t.Errorf("station gap = %v/%v, want 32/60", rd.MinStationGapPx, rd.MaxStationGapPx)
+	}
 	rt := cfg.Route
 	if rt.QueryRateLimitPerSecond != 3 {
 		t.Errorf("QueryRateLimitPerSecond = %v, want 3", rt.QueryRateLimitPerSecond)

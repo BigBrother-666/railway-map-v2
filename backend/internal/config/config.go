@@ -140,8 +140,8 @@ type MapStyleConfig struct {
 
 type RouteDiagramConfig struct {
 	ProjectionThresholdBlocks float64 `yaml:"projectionThresholdBlocks" json:"projectionThresholdBlocks"`
-	StationGapPx              float64 `yaml:"stationGapPx" json:"stationGapPx"`
-	FoldMinStations           int     `yaml:"foldMinStations" json:"foldMinStations"`
+	MinStationGapPx           float64 `yaml:"minStationGapPx" json:"minStationGapPx"` // 路线图相邻车站最小间距（px）
+	MaxStationGapPx           float64 `yaml:"maxStationGapPx" json:"maxStationGapPx"` // 路线图相邻车站最大间距（px）
 	TrainClusterProgress      float64 `yaml:"trainClusterProgress" json:"trainClusterProgress"`
 	TrainIconScale            float64 `yaml:"trainIconScale" json:"trainIconScale"`
 }
@@ -263,11 +263,11 @@ func (c *Config) applyDefaults() {
 	if c.Frontend.RouteDiagram.ProjectionThresholdBlocks <= 0 {
 		c.Frontend.RouteDiagram.ProjectionThresholdBlocks = 40
 	}
-	if c.Frontend.RouteDiagram.StationGapPx <= 0 {
-		c.Frontend.RouteDiagram.StationGapPx = 34
+	if c.Frontend.RouteDiagram.MinStationGapPx <= 0 {
+		c.Frontend.RouteDiagram.MinStationGapPx = 32
 	}
-	if c.Frontend.RouteDiagram.FoldMinStations <= 0 {
-		c.Frontend.RouteDiagram.FoldMinStations = 10
+	if c.Frontend.RouteDiagram.MaxStationGapPx < c.Frontend.RouteDiagram.MinStationGapPx {
+		c.Frontend.RouteDiagram.MaxStationGapPx = max(60, c.Frontend.RouteDiagram.MinStationGapPx)
 	}
 	if c.Frontend.RouteDiagram.TrainClusterProgress <= 0 {
 		c.Frontend.RouteDiagram.TrainClusterProgress = 0.035
