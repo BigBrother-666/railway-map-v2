@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseLayout } from './LineRouteDiagram';
+import { chooseLayout, truncateText, wrapText } from './LineRouteDiagram';
 
 // chooseLayout 只读取 stations.length 与 intervalCount
 const axisOf = (stationCount: number, ring = false) =>
@@ -34,5 +34,45 @@ describe('chooseLayout', () => {
 
   it('未测量时按直线 + 最小间距', () => {
     expect(chooseLayout(false, axisOf(30), null, 32, 60)).toEqual({ folded: false, stationGap: 32 });
+  });
+});
+
+describe('wrapText', () => {
+  // 每字符宽 10
+  const measure = (text: string) => text.length * 10;
+
+  it('放得下时不换行', () => {
+    expect(wrapText('西直门', 100, measure)).toEqual(['西直门']);
+  });
+
+  it('中文按字断行', () => {
+    expect(wrapText('国家体育场北站', 30, measure)).toEqual(['国家体', '育场北', '站']);
+  });
+
+  it('英文按空格断词，超长单词按字符拆分', () => {
+    expect(wrapText('Olympic Green Station', 80, measure)).toEqual(['Olympic', 'Green', 'Station']);
+    expect(wrapText('Abcdefghij', 40, measure)).toEqual(['Abcd', 'efgh', 'ij']);
+  });
+
+  it('连字符后可断行', () => {
+    expect(wrapText('North-East', 60, measure)).toEqual(['North-', 'East']);
+  });
+});
+
+describe('truncateText', () => {
+  const measure = (text: string) => text.length * 10;
+
+  it('放得下时原样返回', () => {
+    expect(truncateText('Xizhimen', 100, measure)).toBe('Xizhimen');
+  });
+
+  it('超出时截断并以省略号结尾，宽度不超过上限', () => {
+    const r = truncateText('Olympic Green Station', 80, measure);
+    expect(r).toBe('Olympic…');
+    expect(measure(r)).toBeLessThanOrEqual(80);
+  });
+
+  it('截断处的尾随空格会被去掉', () => {
+    expect(truncateText('Olympic Green', 90, measure)).toBe('Olympic…');
   });
 });

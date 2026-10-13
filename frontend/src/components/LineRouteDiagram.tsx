@@ -9,6 +9,8 @@ const TRAIN_LANE_OFFSET_PX = 14;
 const DIAGRAM_PAD = 18;
 const FOLD_RADIUS_MAX = 26;
 const RING_RADIUS_MAX = 46;
+const LABEL_EDGE_MARGIN = 2;
+const LABEL_FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif";
 
 interface AxisSegment {
   from: string;
@@ -151,6 +153,7 @@ function StraightDiagram({
               x={xTrack - 13}
               y={y}
               anchor="end"
+              maxWidth={xTrack - 13 - LABEL_EDGE_MARGIN}
             />
           );
         })}
@@ -218,6 +221,7 @@ function FoldedDiagram({
               x={p.x + (onRight ? 13 : -13)}
               y={p.z}
               anchor={onRight ? 'start' : 'end'}
+              maxWidth={onRight ? foldedWidth - p.x - 13 - LABEL_EDGE_MARGIN : p.x - 13 - LABEL_EDGE_MARGIN}
             />
           );
         })}
@@ -295,6 +299,7 @@ function RingDiagram({
               x={p.x + (onRight ? 13 : -13)}
               y={p.z}
               anchor={onRight ? 'start' : 'end'}
+              maxWidth={onRight ? outerWidth - p.x - 13 - LABEL_EDGE_MARGIN : p.x - 13 - LABEL_EDGE_MARGIN}
               ring
             />
           );
@@ -329,13 +334,14 @@ interface DiagramProps {
   enOf: (name: string) => string | undefined;
 }
 
-/** 站名标签：中文名一行；有英文名时中文上移、英文名显示在其下方。 */
+/** 站名标签：中文名在上（超出 maxWidth 时自动换行）、英文名（如有）在下（仅一行，超出以"…"截断），整体以 y 垂直居中。 */
 function StationLabel({
   name,
   nameEn,
   x,
   y,
   anchor,
+  maxWidth,
   ring = false,
 }: {
   name: string;
@@ -343,26 +349,140 @@ function StationLabel({
   x: number;
   y: number;
   anchor: 'start' | 'end';
+  maxWidth: number;
   ring?: boolean;
 }) {
   const className = `route-diagram-station-text${ring ? ' ring' : ''}`;
-  if (!nameEn) {
-    return (
-      <text className={className} x={x} y={y} textAnchor={anchor} dominantBaseline="middle">
-        {name}
-      </text>
-    );
-  }
+  const nameSize = ring ? 11 : 12;
+  const lines = [
+    ...wrapText(name, maxWidth, measurerFor(`600 ${nameSize}px ${LABEL_FONT_FAMILY}`, nameSize)).map((text) => ({
+      text,
+      en: false,
+      height: nameSize + 2,
+    })),
+    ...(nameEn
+      ? [{ text: truncateText(nameEn, maxWidth, measurerFor(`500 9.5px ${LABEL_FONT_FAMILY}`, 9.5)), en: true, height: 12 }]
+      : []),
+  ];
+  const total = lines.reduce((sum, line) => sum + line.height, 0);
+  let cursor = y - total / 2;
+
   return (
     <text className={className} textAnchor={anchor} dominantBaseline="middle">
-      <tspan x={x} y={y - 6}>
-        {name}
-      </tspan>
-      <tspan className="route-diagram-station-text-en" x={x} y={y + 7} lang="en">
-        {nameEn}
-      </tspan>
+      <title>{nameEn ? `${name}\n${nameEn}` : name}</title>
+      {lines.map((line, i) => {
+        const lineY = cursor + line.height / 2;
+        cursor += line.height;
+        return (
+          <tspan
+            key={i}
+            className={line.en ? 'route-diagram-station-text-en' : undefined}
+            lang={line.en ? 'en' : undefined}
+            x={x}
+            y={lineY}
+          >
+            {line.text}
+          </tspan>
+        );
+      })}
     </text>
   );
+}
+
+type TextMeasurer = (text: string) => number;
+const measurerCache = new Map<string, TextMeasurer>();
+let measureCanvas: CanvasRenderingContext2D | null | undefined;
+
+/** 优先用 canvas 精确测量文本宽度；无 canvas 环境时按字符估算（CJK 1em，其余约 0.6em）。 */
+function measurerFor(font: string, fontSize: number): TextMeasurer {
+  const cached = measurerCache.get(font);
+  if (cached) return cached;
+  if (measureCanvas === undefined) {
+    measureCanvas = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
+  }
+  const ctx = measureCanvas;
+  const widths = new Map<string, number>();
+  const measure: TextMeasurer = (text) => {
+    let w = widths.get(text);
+    if (w == null) {
+      if (ctx) {
+        ctx.font = font;
+        w = ctx.measureText(text).width;
+      } else {
+        w = [...text].reduce((sum, ch) => sum + (isCjk(ch) ? 1 : 0.6) * fontSize, 0);
+      }
+      widths.set(text, w);
+    }
+    return w;
+  };
+  measurerCache.set(font, measure);
+  return measure;
+}
+
+const CJK_RANGE = '\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef';
+const CJK_CHAR = new RegExp(`[${CJK_RANGE}]`);
+// 断行单元：单个 CJK 字符 | 空白 | 非 CJK 单词（可带尾随连字符）| 单独连字符
+const WRAP_TOKEN = new RegExp(`[${CJK_RANGE}]|\\s+|[^\\s${CJK_RANGE}-]+-?|-`, 'g');
+
+function isCjk(ch: string): boolean {
+  return CJK_CHAR.test(ch);
+}
+
+/** 单行截断：超出 maxWidth 时保留尽可能多的前缀并以"…"结尾（去掉截断处的尾随空白）。 */
+export function truncateText(text: string, maxWidth: number, measure: TextMeasurer): string {
+  if (!text || !(maxWidth > 0) || measure(text) <= maxWidth) return text;
+  const chars = [...text];
+  const fits = (n: number) => measure(chars.slice(0, n).join('').trimEnd() + '…') <= maxWidth;
+  // 二分查找能放下的最长前缀
+  let lo = 0;
+  let hi = chars.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return chars.slice(0, lo).join('').trimEnd() + '…';
+}
+
+/**
+ * 贪心换行：CJK 字符可在任意字间断开，其余文字按空格/连字符断词，
+ * 单词本身超宽时再按字符拆分。每行至少保留一个字符。
+ */
+export function wrapText(text: string, maxWidth: number, measure: TextMeasurer): string[] {
+  if (!text) return [];
+  if (!(maxWidth > 0) || measure(text) <= maxWidth) return [text];
+
+  const tokens = text.match(WRAP_TOKEN) ?? [text];
+  const lines: string[] = [];
+  let current = '';
+  const push = () => {
+    const trimmed = current.trim();
+    if (trimmed) lines.push(trimmed);
+    current = '';
+  };
+
+  for (const token of tokens) {
+    if (/^\s+$/.test(token)) {
+      if (current) current += token;
+      continue;
+    }
+    if (measure(current + token) <= maxWidth) {
+      current += token;
+      continue;
+    }
+    if (current.trim()) push();
+    if (measure(token) <= maxWidth) {
+      current = token;
+      continue;
+    }
+    // 超长单词按字符拆分
+    for (const ch of token) {
+      if (current && measure(current + ch) > maxWidth) push();
+      current += ch;
+    }
+  }
+  push();
+  return lines.length > 0 ? lines : [text];
 }
 
 /**

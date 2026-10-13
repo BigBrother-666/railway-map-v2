@@ -603,7 +603,9 @@ body,
   paint-order: stroke fill;
   stroke: rgba(0, 0, 0, 0.72);
   stroke-width: 3px;
-  pointer-events: none;
+  /* 父级 svg 禁用了指针事件，这里单独开启以便悬停显示完整站名（<title>） */
+  pointer-events: auto;
+  cursor: default;
 }
 .route-diagram-station-text.ring {
   font-size: 11px;
