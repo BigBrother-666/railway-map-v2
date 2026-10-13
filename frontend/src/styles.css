@@ -49,6 +49,8 @@ body,
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* 手机浏览器地址栏伸缩时保持可视高度 */
+  height: 100dvh;
 }
 
 .app-body {
@@ -1479,5 +1481,124 @@ body,
 @media (prefers-reduced-motion: reduce) {
   .toast {
     animation: none;
+  }
+}
+
+/* ===== 手机适配（竖屏 / 窄屏） ===== */
+.show-mobile {
+  display: none;
+}
+.sidebar-collapse-icon {
+  display: inline-block;
+  transition: transform 0.25s ease;
+}
+
+@media (max-width: 640px) {
+  .hide-mobile {
+    display: none;
+  }
+  .show-mobile {
+    display: inline;
+  }
+
+  /* 顶栏：三段改为正常流式布局，标题可压缩截断，避免与世界切换重叠 */
+  .topbar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+  .topbar-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 8px;
+  }
+  .topbar-right {
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  .brand {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 14px;
+  }
+  .topbar-trains-btn {
+    flex-shrink: 0;
+    gap: 2px;
+    padding: 4px 8px;
+  }
+  .topbar-trains-btn .status-dot {
+    margin-right: 4px;
+  }
+  .topbar-center {
+    position: static;
+    transform: none;
+    flex-shrink: 0;
+  }
+  .topbar select {
+    max-width: 110px;
+    text-overflow: ellipsis;
+  }
+  .login-actions {
+    gap: 6px;
+  }
+  .login-actions .btn {
+    padding: 5px 10px;
+    font-size: 13px;
+  }
+
+  /* 左侧栏 → 底部抽屉 */
+  .sidebar-left {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 55%;
+  }
+  .sidebar-left.collapsed {
+    transform: translateY(100%);
+  }
+  .sidebar-left .panel {
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* 折叠按钮移到抽屉顶部中间，折叠后仍露出在屏幕底部 */
+  .sidebar-collapse-btn {
+    top: auto;
+    bottom: 100%;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 64px;
+    height: 24px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.2);
+  }
+  .sidebar-left.collapsed .sidebar-collapse-btn {
+    /* 折叠时抽屉移出屏幕，按钮留在底部安全区之上 */
+    bottom: calc(100% + env(safe-area-inset-bottom));
+  }
+  /* ‹ 旋转为 ⌄（折叠），› 旋转为 ⌃（展开） */
+  .sidebar-collapse-icon {
+    transform: rotate(-90deg);
+  }
+
+  /* 右侧线路显示面板：占用上方区域，不与底部抽屉重叠 */
+  .sidebar-right {
+    top: 8px;
+    right: 8px;
+    bottom: auto;
+    width: min(280px, calc(100% - 16px));
+    max-height: calc(45% - 16px);
+  }
+  .sidebar-right-toggle {
+    top: 8px;
+    right: 8px;
   }
 }

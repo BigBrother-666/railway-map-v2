@@ -30,9 +30,15 @@ export function TopBar() {
     <div className="topbar">
       <div className="topbar-left">
         <span className="brand">帕拉伦铁路线路图</span>
-        <button className="btn ghost topbar-trains-btn" onClick={openTrainList} title="实时列车列表">
+        <button
+          className="btn ghost topbar-trains-btn"
+          onClick={openTrainList}
+          title="实时列车列表"
+          aria-label={`实时列车列表，共 ${trainCount} 列`}
+        >
           <span className={`status-dot ${meta?.online ? 'online' : 'offline'}`} />
-             🚆 实时列车（{trainCount}）
+          🚆<span className="hide-mobile"> 实时列车（{trainCount}）</span>
+          <span className="show-mobile">{trainCount}</span>
         </button>
       </div>
       {worlds.length > 1 && (

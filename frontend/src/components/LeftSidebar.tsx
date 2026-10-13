@@ -27,7 +27,10 @@ export function LeftSidebar() {
         aria-label={collapsed ? '展开侧边栏' : '折叠侧边栏'}
         title={collapsed ? '展开' : '折叠'}
       >
-        {collapsed ? '›' : '‹'}
+        {/* 桌面端左右箭头；手机端底部抽屉时由 CSS 旋转为上下箭头 */}
+        <span className="sidebar-collapse-icon" aria-hidden="true">
+          {collapsed ? '›' : '‹'}
+        </span>
       </button>
       {sidebar === 'station' && <StationPanel />}
       {sidebar === 'line' && <LinePanel />}
