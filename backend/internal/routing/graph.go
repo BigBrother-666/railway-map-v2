@@ -24,7 +24,15 @@ type Link struct {
 	EnterFrom []string
 	// EnterTo 是沿本段到达终点节点的到达面 key（与插件 GeoLink.enterFaceTo 同源）。nil 表示缺失（放行）。
 	EnterTo *string
+	// Track 是正线 / 停靠线标记（geojson track）："main" 正线、"siding" 停靠线，普通段为空。
+	Track string
 }
+
+// IsSiding 本段是否为停靠线（进站道岔第三行出向起到第一个 platform 为止）。
+func (l *Link) IsSiding() bool { return l.Track == "siding" }
+
+// IsMainline 本段是否为正线（进站道岔第四行出向，跨站直通到出站道岔）。
+func (l *Link) IsMainline() bool { return l.Track == "main" }
 
 // Node 是图中的一个节点。
 type Node struct {
@@ -42,7 +50,8 @@ type Graph struct {
 	adjacency  map[string][]Link
 	stationIdx map[string][]string // 车站名 → 该名下所有 station 节点 id（一个车站可能多站台）
 
-	stationDistCache map[string]map[string]float64 // stationDirectDistances 的惰性缓存
+	stationDistCache    map[string]map[string]float64 // stationDirectDistances 的惰性缓存
+	mainlineSwitchCache map[string]string             // mainlineSwitchStations 的惰性缓存
 }
 
 func newGraph() *Graph {
@@ -71,6 +80,7 @@ type geoLineProps struct {
 	DepartDir       string   `json:"departDir,omitempty"`
 	EnterFrom       []string `json:"enterFrom,omitempty"`
 	EnterTo         *string  `json:"enterTo,omitempty"`
+	Track           string   `json:"track,omitempty"`
 }
 
 type geoGeometry struct {
@@ -126,7 +136,7 @@ func BuildFromGeoJSON(fc *model.FeatureCollection) (*Graph, error) {
 		g.addLink(Link{
 			From: l.From, To: l.To, LineID: l.LineID, Distance: l.Length,
 			SystemID: l.RailwaySystemID, DepartDir: l.DepartDir,
-			EnterFrom: l.EnterFrom, EnterTo: l.EnterTo,
+			EnterFrom: l.EnterFrom, EnterTo: l.EnterTo, Track: l.Track,
 		})
 	}
 	return g, nil
@@ -157,6 +167,7 @@ func (g *Graph) addNode(n *Node) {
 }
 
 func (g *Graph) addLink(l Link) {
+	g.mainlineSwitchCache = nil
 	g.adjacency[l.From] = append(g.adjacency[l.From], l)
 	if n, ok := g.Nodes[l.From]; ok {
 		n.LineIDs[l.LineID] = struct{}{}
@@ -185,51 +196,67 @@ func (g *Graph) AllStationNames() []string {
 	return names
 }
 
-// lineLinksOfSwitch 取道岔节点上属于 lineID 的出边（复刻插件 GeoRouteGraph.lineLinksOfSwitch）。
-// 只看本线自己的出边：共线车站的进站道岔上还挂着别的线路的正线 / 停靠线出边，若要求全部出边同属一条线，
-// 共线车站就永远认不出是进站道岔。
-func (g *Graph) lineLinksOfSwitch(nodeID, lineID string) []Link {
+// platformNameOfMainlineSwitch 复刻插件 GeoRouteGraph.platformNameOfMainlineSwitch：
+// 若 nodeID 是 lineID 的进站道岔（本线有 track=main 正线出边），返回沿本线停靠线（track=siding）出边
+// 走到的第一个车站名；停靠线中途可以经过别的道岔。不是进站道岔返回空串。
+func (g *Graph) platformNameOfMainlineSwitch(nodeID, lineID string) string {
 	node := g.Nodes[nodeID]
 	if node == nil || node.Type == "station" || lineID == "" {
-		return nil
+		return ""
 	}
-	var result []Link
-	for _, l := range g.Links(nodeID) {
-		if l.LineID == lineID {
-			result = append(result, l)
+	return g.mainlineSwitchStations()[nodeID+"|"+lineID]
+}
+
+// mainlineSwitchStations 惰性构建「进站道岔|lineId → 停靠线车站名」索引，加边时失效。
+func (g *Graph) mainlineSwitchStations() map[string]string {
+	if g.mainlineSwitchCache != nil {
+		return g.mainlineSwitchCache
+	}
+	result := make(map[string]string)
+	for from, links := range g.adjacency {
+		for i := range links {
+			if !links[i].IsMainline() {
+				continue
+			}
+			if name := g.sidingStationFrom(from, links[i].LineID); name != "" {
+				result[from+"|"+links[i].LineID] = name
+			}
 		}
 	}
+	g.mainlineSwitchCache = result
 	return result
 }
 
-// platformNameOfMainlineSwitch 复刻 RouteGraph.platformNameOfMainlineSwitch：
-// 若 nodeId 是 lineID 的进站道岔，返回其通向的站台名（仅当本线出边同时还通向另一个道岔，即存在正线绕行时）。
-func (g *Graph) platformNameOfMainlineSwitch(nodeID, lineID string) string {
-	links := g.lineLinksOfSwitch(nodeID, lineID)
-	if len(links) == 0 {
-		return ""
-	}
-	toSwitch := false
-	platformName := ""
-	for _, l := range links {
-		to := g.Nodes[l.To]
-		if to == nil {
-			continue
+// sidingStationFrom 从进站道岔沿本线停靠线出边 BFS，返回遇到的第一个车站名；找不到返回空串。
+func (g *Graph) sidingStationFrom(switchID, lineID string) string {
+	queue := []string{switchID}
+	seen := map[string]bool{switchID: true}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, l := range g.Links(cur) {
+			if !l.IsSiding() || l.LineID != lineID {
+				continue
+			}
+			to := g.Nodes[l.To]
+			if to == nil {
+				continue
+			}
+			if to.Type == "station" {
+				if to.Name != "" {
+					return to.Name
+				}
+			} else if !seen[to.ID] {
+				seen[to.ID] = true
+				queue = append(queue, to.ID)
+			}
 		}
-		if to.Type == "station" {
-			platformName = to.Name
-		} else {
-			toSwitch = true
-		}
-	}
-	if toSwitch {
-		return platformName
 	}
 	return ""
 }
 
 // stationDirectDistances 站名级「直达可达」缩合距离矩阵：起点站名 → 终点站名 → 一趟快速车的最短距离（km）。
-// 复刻 RouteGraph.stationDirectDistances：口径为下界估计（忽略 enterFace / 折返 / 正线绕行约束），
+// 复刻 RouteGraph.stationDirectDistances：口径为下界估计（忽略 enterFace / 折返 / 停靠线中途站约束），
 // 只用于 FindTransferJourneys 筛选候选，最终每段仍由 FindByStation 权威实体化施加全部约束。
 func (g *Graph) stationDirectDistances() map[string]map[string]float64 {
 	if g.stationDistCache != nil {

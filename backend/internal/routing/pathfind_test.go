@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"railway-map-backend/internal/model"
@@ -192,12 +193,12 @@ func TestFindByStation_RejectsRepeatingSameStationOnMainline(t *testing.T) {
 		point("nB2", "station", "B", 40, 10),
 		point("nD", "station", "D", 60, 0),
 		line("e.L.nA__bIn1", "nA", "bIn1", "L", 10, map[string]any{"departDir": "e"}),
-		line("e.L.bIn1__nB1", "bIn1", "nB1", "L", 1, map[string]any{"departDir": "s"}),
-		line("e.L.bIn1__bOut1", "bIn1", "bOut1", "L", 1, map[string]any{"departDir": "e"}),
+		line("e.L.bIn1__nB1", "bIn1", "nB1", "L", 1, map[string]any{"departDir": "s", "track": "siding"}),
+		line("e.L.bIn1__bOut1", "bIn1", "bOut1", "L", 1, map[string]any{"departDir": "e", "track": "main"}),
 		line("e.L.bOut1__mid", "bOut1", "mid", "L", 10, map[string]any{"departDir": "e"}),
 		line("e.L.mid__bIn2", "mid", "bIn2", "L", 10, map[string]any{"departDir": "e"}),
-		line("e.L.bIn2__nB2", "bIn2", "nB2", "L", 1, map[string]any{"departDir": "s"}),
-		line("e.L.bIn2__bOut2", "bIn2", "bOut2", "L", 1, map[string]any{"departDir": "e"}),
+		line("e.L.bIn2__nB2", "bIn2", "nB2", "L", 1, map[string]any{"departDir": "s", "track": "siding"}),
+		line("e.L.bIn2__bOut2", "bIn2", "bOut2", "L", 1, map[string]any{"departDir": "e", "track": "main"}),
 		line("e.L.bOut2__nD", "bOut2", "nD", "L", 10, map[string]any{"departDir": "e"}),
 	})
 	if routes := FindByStation(context.Background(), g, "A", "D", 0, noReverse); len(routes) != 0 {
@@ -214,8 +215,8 @@ func TestFindByStation_AllowsFinalArrivalAtSameNamedStation(t *testing.T) {
 		point("dead", "switch", "", 30, 0),
 		line("e.L.nR__c1", "nR", "c1", "L", 10, map[string]any{"departDir": "e"}),
 		line("e.L.c1__rIn", "c1", "rIn", "L", 10, map[string]any{"departDir": "e"}),
-		line("e.L.rIn__nR2", "rIn", "nR2", "L", 10, map[string]any{"departDir": "s"}),
-		line("e.L.rIn__dead", "rIn", "dead", "L", 1, map[string]any{"departDir": "e"}),
+		line("e.L.rIn__nR2", "rIn", "nR2", "L", 10, map[string]any{"departDir": "s", "track": "siding"}),
+		line("e.L.rIn__dead", "rIn", "dead", "L", 1, map[string]any{"departDir": "e", "track": "main"}),
 	})
 	paths := FindByStation(context.Background(), g, "R", "R", 1, noReverse)
 	if len(paths) != 1 {
@@ -233,41 +234,78 @@ func TestFindByStation_AllowsFinalArrivalAtSameNamedStation(t *testing.T) {
 	}
 }
 
-// platformNameOfMainlineSwitch 是寻路内部用来识别「正线绕行」进站道岔的辅助方法
-// （复刻插件 GeoRouteGraph 同名方法），只在 hasMainlineBypass / getNodeStationName 内部使用。
+// platformNameOfMainlineSwitch 是寻路内部用来识别进站道岔的辅助方法（复刻插件 GeoRouteGraph 同名方法），
+// 按 track 标记判定：停靠线中途夹着道岔也能找到车站。
 func TestGraph_PlatformNameOfMainlineSwitch(t *testing.T) {
 	g := buildGraph(t, []model.Feature{
 		point("in", "switch", "", 0, 0),
+		point("x", "switch", "", 5, 5),
 		point("platform", "station", "P", 10, 10),
 		point("out", "switch", "", 20, 0),
-		line("e.L.in__platform", "in", "platform", "L", 5, map[string]any{"departDir": "s"}),
-		line("e.L.in__out", "in", "out", "L", 5, map[string]any{"departDir": "e"}),
+		line("e.L.in__x", "in", "x", "L", 5, map[string]any{"departDir": "s", "track": "siding"}),
+		line("e.L.x__platform", "x", "platform", "L", 5, map[string]any{"departDir": "e", "track": "siding"}),
+		line("e.L.in__out", "in", "out", "L", 5, map[string]any{"departDir": "e", "track": "main"}),
 	})
 	if name := g.platformNameOfMainlineSwitch("in", "L"); name != "P" {
 		t.Errorf("platformNameOfMainlineSwitch = %q, want P", name)
 	}
+	if name := g.platformNameOfMainlineSwitch("x", "L"); name != "" {
+		t.Errorf("intermediate switch platformNameOfMainlineSwitch = %q, want empty", name)
+	}
 }
 
 // 共线车站：进站道岔上同时挂着两条线各自的正线与停靠线出边，每条线都应各自识别为进站道岔。
-// 回归：旧实现要求全部出边同属一条线，共线车站永远认不出。
 func TestGraph_PlatformNameOfMainlineSwitch_SharedStation(t *testing.T) {
 	g := buildGraph(t, []model.Feature{
 		point("in", "switch", "", 0, 0),
 		point("platform", "station", "P", 10, 10),
 		point("out", "switch", "", 20, 0),
-		line("e.L1.in__platform", "in", "platform", "L1", 5, map[string]any{"departDir": "s"}),
-		line("e.L1.in__out", "in", "out", "L1", 5, map[string]any{"departDir": "e"}),
-		line("e.L2.in__platform", "in", "platform", "L2", 5, map[string]any{"departDir": "s"}),
-		line("e.L2.in__out", "in", "out", "L2", 5, map[string]any{"departDir": "e"}),
+		line("e.L1.in__platform", "in", "platform", "L1", 5, map[string]any{"departDir": "s", "track": "siding"}),
+		line("e.L1.in__out", "in", "out", "L1", 5, map[string]any{"departDir": "e", "track": "main"}),
+		line("e.L2.in__platform", "in", "platform", "L2", 5, map[string]any{"departDir": "s", "track": "siding"}),
+		line("e.L2.in__out", "in", "out", "L2", 5, map[string]any{"departDir": "e", "track": "main"}),
 	})
 	for _, lineID := range []string{"L1", "L2"} {
 		if name := g.platformNameOfMainlineSwitch("in", lineID); name != "P" {
 			t.Errorf("[%s] platformNameOfMainlineSwitch = %q, want P", lineID, name)
 		}
 	}
-	// 本线在此只有一条出边（两线分叉道岔）时不是进站道岔
 	if name := g.platformNameOfMainlineSwitch("in", "L3"); name != "" {
 		t.Errorf("[L3] platformNameOfMainlineSwitch = %q, want empty", name)
+	}
+}
+
+// 停靠线 platform 前后都夹着道岔：快速车 A→C 必须走正线跨越 B，站序仍含 B；A→B 可经停靠线到达。
+func TestFindByStation_SkipsStationReachedViaSiding(t *testing.T) {
+	g := buildGraph(t, []model.Feature{
+		point("nA", "station", "A", 0, 0),
+		point("in", "switch", "", 10, 0),
+		point("x", "switch", "", 15, 5),
+		point("nB", "station", "B", 20, 5),
+		point("y", "switch", "", 25, 5),
+		point("out", "switch", "", 30, 0),
+		point("nC", "station", "C", 40, 0),
+		line("e.L.nA__in", "nA", "in", "L", 10, nil),
+		line("e.L.in__x", "in", "x", "L", 1, map[string]any{"departDir": "s", "track": "siding"}),
+		line("e.L.x__nB", "x", "nB", "L", 1, map[string]any{"departDir": "e", "track": "siding"}),
+		line("e.L.nB__y", "nB", "y", "L", 1, nil),
+		line("e.L.y__out", "y", "out", "L", 1, map[string]any{"departDir": "e"}),
+		line("e.L.in__out", "in", "out", "L", 50, map[string]any{"departDir": "e", "track": "main"}),
+		line("e.L.out__nC", "out", "nC", "L", 10, map[string]any{"departDir": "e"}),
+	})
+	ctx := context.Background()
+	ac := FindByStation(ctx, g, "A", "C", 0, noReverse)
+	if len(ac) != 1 {
+		t.Fatalf("A->C expected 1 path, got %d", len(ac))
+	}
+	if got := strings.Join(ac[0].NodeIDs, ","); got != "nA,in,out,nC" {
+		t.Errorf("A->C nodeIds = %s, want nA,in,out,nC", got)
+	}
+	if got := strings.Join(ac[0].Stations, ","); got != "A,B,C" {
+		t.Errorf("A->C stations = %s, want A,B,C", got)
+	}
+	if ab := FindByStation(ctx, g, "A", "B", 0, noReverse); len(ab) == 0 {
+		t.Error("A->B expected a path via siding")
 	}
 }
 

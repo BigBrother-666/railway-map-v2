@@ -78,7 +78,7 @@ var testReachabilityEntryHook func()
 
 // reachableIgnoringRevisit 用标准 Dijkstra（状态 = 节点 + 到达面，每个状态只处理一次）判断从 startID
 // 到任一名为 endStation 的车站节点是否存在合法路径，套用 kShortest 除「同名站不可重复经过」之外的
-// 全部边约束（enterFaceAllows / hasMainlineBypass / 折返站跳过）。
+// 全部边约束（enterFaceAllows / 停靠线中途站跳过 / 折返站跳过）。
 //
 // 忽略「同名站不可重复经过」这一条约束只会让判定更宽松（更容易判定为「可达」），绝不会把真实可达的
 // 两点误判为不可达——因此这里返回 false 时，kShortest 在完整约束下也必然找不到任何合法路径，可安全
@@ -155,14 +155,14 @@ func stateKey(nodeID string, face *string) string {
 }
 
 // reachSkipIntermediate 判断沿 link 从 fromID 走到下一节点是否应被过滤——目标节点不存在，或它是一个
-// 「非终点」中途车站且存在正线绕行 / 属于折返站（与 kShortest 里同一段过滤逻辑一致）。
+// 「非终点」中途车站且经停靠线进入 / 属于折返站（与 kShortest 里同一段过滤逻辑一致）。
 func reachSkipIntermediate(g *Graph, fromID string, link Link, endStation string, isReverse ReversePredicate) bool {
 	nextNode := g.Nodes[link.To]
 	if nextNode == nil {
 		return true
 	}
 	if nextNode.Type == "station" && nextNode.Name != endStation {
-		if hasMainlineBypass(g, fromID, link.To) {
+		if link.IsSiding() {
 			return true
 		}
 		if nextNode.Name != "" && isReverse != nil && isReverse(link.LineID, nextNode.Name) {

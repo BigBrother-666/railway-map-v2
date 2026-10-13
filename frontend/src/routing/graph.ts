@@ -12,6 +12,8 @@ export interface GraphLink {
   lineId: string;
   distance: number; // 米
   systemId?: string;
+  /** 正线 / 停靠线标记（geojson track）。 */
+  track?: 'main' | 'siding';
 }
 
 /** 图中的一个节点。 */
@@ -63,6 +65,7 @@ export class RouteGraph {
         lineId: l.lineId,
         distance: l.length,
         systemId: l.railwaySystemId,
+        track: l.track,
       });
     }
     return g;
@@ -200,36 +203,11 @@ export class RouteGraph {
   }
 
   /**
-   * 取道岔节点上属于 lineId 的出边（复刻插件 GeoRouteGraph.lineLinksOfSwitch）。
-   * 只看本线自己的出边：共线车站的进站道岔上还挂着别的线路的正线 / 停靠线出边，
-   * 若要求全部出边同属一条线，共线车站就认不出是进站道岔（高亮线路时正线不会被隐藏）。
+   * 是否为正线段（geojson track=main，进站道岔跨站直通到出站道岔）。
+   * 高亮 / 线路图只画停靠线，正线段跳过。
    */
-  private lineLinksOfSwitch(nodeId: string, lineId: string | undefined): GraphLink[] {
-    const node = this.nodes.get(nodeId);
-    if (!node || node.type === 'station' || !lineId) return [];
-    return this.links(nodeId).filter((link) => link.lineId === lineId);
-  }
-
-  platformNameOfMainlineSwitch(nodeId: string, lineId: string | undefined): string | null {
-    const links = this.lineLinksOfSwitch(nodeId, lineId);
-    if (links.length === 0) return null;
-    let toSwitch = false;
-    let platformName: string | null = null;
-    for (const link of links) {
-      const to = this.nodes.get(link.to);
-      if (!to) continue;
-      if (to.type === 'station') {
-        platformName = to.name ?? null;
-      } else {
-        toSwitch = true;
-      }
-    }
-    return toSwitch ? platformName : null;
-  }
-
   isMainlineBypassSegment(from: string | undefined, to: string | undefined, lineId: string | undefined): boolean {
     if (!from || !to || !lineId) return false;
-    const toNode = this.nodes.get(to);
-    return toNode?.type !== 'station' && this.platformNameOfMainlineSwitch(from, lineId) != null;
+    return this.links(from).some((l) => l.to === to && l.lineId === lineId && l.track === 'main');
   }
 }

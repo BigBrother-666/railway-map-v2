@@ -38,3 +38,31 @@ describe('RouteGraph 历史路线修补', () => {
     expect(g.repairPath(['A', 'X', 'B'])).toEqual(['A', 'X', 'B']);
   });
 });
+
+describe('RouteGraph 正线判定', () => {
+  it('isMainlineBypassSegment 只按 track=main 判定', () => {
+    const point = (id: string, type: 'station' | 'switch') => ({
+      type: 'Feature' as const,
+      properties: { id, type, world: 'w', name: type === 'station' ? id : undefined },
+      geometry: { type: 'Point' as const, coordinates: [0, 0, 64] },
+    });
+    const line = (from: string, to: string, track?: 'main' | 'siding') => ({
+      type: 'Feature' as const,
+      properties: { id: `${from}-${to}`, from, to, lineId: 'L1', world: 'w', color: '#f00', length: 10, track },
+      geometry: { type: 'LineString' as const, coordinates: [[0, 0], [1, 0]] },
+    });
+    // 停靠线 in→x→P 中间夹道岔 x；正线 in→out
+    const fc = {
+      type: 'FeatureCollection',
+      features: [
+        point('in', 'switch'), point('x', 'switch'), point('P', 'station'), point('out', 'switch'),
+        line('in', 'x', 'siding'), line('x', 'P', 'siding'), line('in', 'out', 'main'),
+      ],
+    } as FeatureCollection;
+    const g = RouteGraph.fromFeatureCollection(fc);
+    expect(g.isMainlineBypassSegment('in', 'out', 'L1')).toBe(true);
+    expect(g.isMainlineBypassSegment('in', 'x', 'L1')).toBe(false);
+    expect(g.isMainlineBypassSegment('x', 'P', 'L1')).toBe(false);
+    expect(g.isMainlineBypassSegment('in', 'out', 'L2')).toBe(false);
+  });
+});

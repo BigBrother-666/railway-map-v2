@@ -31,6 +31,8 @@ export interface LineStringProps {
   color: string;
   length: number;
   layer?: number;
+  /** 正线 / 停靠线标记：main 正线（跨站直通）、siding 停靠线（进站道岔到第一个 platform），普通段缺省。 */
+  track?: 'main' | 'siding';
 }
 
 export type Feature = GeoJSON.Feature<GeoJSON.Geometry, PointProps | LineStringProps>;

@@ -198,7 +198,7 @@ func kShortest(ctx context.Context, g *Graph, startID, endStation string, k int,
 			var curStationName string
 			hasCurStationName := false
 			if curNode != nil && curNode.Type != "station" {
-				curStationName = getNodeStationName(g, cur.nodeID, link.LineID)
+				curStationName = getNodeStationName(g, cur.nodeID, &link)
 				hasCurStationName = curStationName != ""
 			}
 			nextIsTerminal := nextNode.Type == "station" && nextNode.Name == endStation
@@ -222,8 +222,8 @@ func kShortest(ctx context.Context, g *Graph, startID, endStation string, k int,
 			}
 			// 与插件 GeoRouteEngine 一致：中途站的处理
 			if nextNode.Type == "station" && nextNode.Name != endStation {
-				// 存在正线绕行 → 放弃穿越该 station（避免快速车误进停靠线）
-				if hasMainlineBypass(g, cur.nodeID, nextID) {
+				// 经停靠线进入中途站 → 该站有正线可跨越，放弃穿越该 station（避免快速车误进停靠线）
+				if link.IsSiding() {
 					continue
 				}
 				// 折返站 → 快速车不穿越（与插件 isReverseStation 跳过一致）
@@ -235,31 +235,6 @@ func kShortest(ctx context.Context, g *Graph, startID, endStation string, k int,
 		}
 	}
 	return results
-}
-
-// hasMainlineBypass 结构判定某处是否存在「正线绕行」——进站道岔 nodeId 与停靠线车站 stationId
-// 连接了同一个出站道岔。复刻插件 GeoRouteEngine.hasMainlineBypass：用坐标比较出站道岔，
-// 兼容两线共线但节点 id 不同的情况。
-func hasMainlineBypass(g *Graph, nodeID, stationID string) bool {
-	stationLinks := g.Links(stationID)
-	if len(stationLinks) == 0 {
-		return false
-	}
-	stationOut := g.Nodes[stationLinks[0].To]
-	if stationOut == nil {
-		return false
-	}
-	for _, link := range g.Links(nodeID) {
-		to := g.Nodes[link.To]
-		if to != nil && coordEquals(to, stationOut) {
-			return true
-		}
-	}
-	return false
-}
-
-func coordEquals(a, b *Node) bool {
-	return a.X == b.X && a.Y == b.Y && a.Z == b.Z
 }
 
 // enterFaceAllows 入向面门控（复刻插件 GeoRouteEngine.enterFaceAllows）：沿 inLink 到达当前节点后，
@@ -304,11 +279,7 @@ func repeatsStation(g *Graph, cur *entry, stationName, startStation, endStation 
 func stationInPath(g *Graph, e *entry, stationName string) bool {
 	var outgoing *Link
 	for cur := e; cur != nil; cur = cur.prev {
-		lineID := ""
-		if outgoing != nil {
-			lineID = outgoing.LineID
-		}
-		currentStation := getNodeStationName(g, cur.nodeID, lineID)
+		currentStation := getNodeStationName(g, cur.nodeID, outgoing)
 		if currentStation == stationName {
 			return true
 		}
@@ -317,7 +288,9 @@ func stationInPath(g *Graph, e *entry, stationName string) bool {
 	return false
 }
 
-func getNodeStationName(g *Graph, nodeID, lineID string) string {
+// getNodeStationName 复刻插件 GeoRouteEngine.getNodeStationName：车站节点返回站名；进站道岔沿 outgoing
+// 走正线跨站时返回被跨越的车站名（走停靠线时会真正到达站台，由站台节点自身计入，这里返回空串）。
+func getNodeStationName(g *Graph, nodeID string, outgoing *Link) string {
 	node := g.Nodes[nodeID]
 	if node == nil {
 		return ""
@@ -325,7 +298,10 @@ func getNodeStationName(g *Graph, nodeID, lineID string) string {
 	if node.Type == "station" {
 		return node.Name
 	}
-	return g.platformNameOfMainlineSwitch(nodeID, lineID)
+	if outgoing == nil || outgoing.IsSiding() {
+		return ""
+	}
+	return g.platformNameOfMainlineSwitch(nodeID, outgoing.LineID)
 }
 
 // buildPath 从回溯链构建 RoutePath（与前端结构一致，距离换算为 km）。
