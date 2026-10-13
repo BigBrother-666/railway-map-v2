@@ -1036,7 +1036,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: { top: 80, bottom: 80, right: 80, left: 80 + this.leftInset },
+      padding: { top: 0, bottom: 0, right: 0, left: 0 + this.leftInset },
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -1060,7 +1060,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: { top: 80, bottom: 80, right: 80, left: 80 + this.leftInset },
+      padding: { top: 0, bottom: 0, right: 0, left: 0 + this.leftInset },
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
