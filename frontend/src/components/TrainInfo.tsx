@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import { avatarUrl } from '../config';
 import { formatDuration } from '../format';
 import { LineRouteDiagram } from './LineRouteDiagram';
+import { ExpressRouteDiagram } from './ExpressRouteDiagram';
 
 /** 列车信息面板：基本信息 + 车上玩家；快速车则高亮其路线。 */
 export function TrainInfo() {
@@ -106,6 +107,7 @@ export function TrainInfo() {
           </div>
         </div>
         {currentLine && <LineRouteDiagram line={currentLine} />}
+        {train.express && <ExpressRouteDiagram train={train} />}
       </div>
     </div>
   );

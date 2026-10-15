@@ -218,6 +218,12 @@ export interface FrontendConfig {
     trainClusterProgress: number;
     /** 线路路线图内列车图标缩放倍率。 */
     trainIconScale: number;
+    /** 路线图线路线条粗细（px），普通车线路图与快速车路线竖线共用。 */
+    trackWidthPx: number;
+    /** 快速车路线竖线最小高度（px）；竖线占满侧栏剩余高度，不足时取该值。 */
+    expressMinHeightPx: number;
+    /** 快速车路线相邻颜色渐变过渡长度占竖线总长的比例（不超过相邻两色各自长度的一半）。 */
+    expressGradientBlendRatio: number;
   };
   trainIcons: {
     express: string;

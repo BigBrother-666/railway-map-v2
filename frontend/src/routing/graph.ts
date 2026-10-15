@@ -210,4 +210,29 @@ export class RouteGraph {
     if (!from || !to || !lineId) return false;
     return this.links(from).some((l) => l.to === to && l.lineId === lineId && l.track === 'main');
   }
+
+  /**
+   * 正线段跨过的车站名（复刻后端 Graph.sidingStationFrom）：从进站道岔沿本线停靠线（track=siding）出边 BFS，
+   * 返回遇到的第一个车站名；不是正线段或找不到时返回 null。
+   */
+  mainlineBypassStationName(from: string | undefined, to: string | undefined, lineId: string | undefined): string | null {
+    if (!from || !lineId || !this.isMainlineBypassSegment(from, to, lineId)) return null;
+    const queue = [from];
+    const seen = new Set(queue);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const l of this.links(cur)) {
+        if (l.track !== 'siding' || l.lineId !== lineId) continue;
+        const node = this.nodes.get(l.to);
+        if (!node) continue;
+        if (node.type === 'station') {
+          if (node.name) return node.name;
+        } else if (!seen.has(node.id)) {
+          seen.add(node.id);
+          queue.push(node.id);
+        }
+      }
+    }
+    return null;
+  }
 }

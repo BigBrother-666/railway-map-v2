@@ -142,6 +142,12 @@ frontend:
     trainClusterProgress: 0.035
     # 线路路线图中列车图标缩放倍率，例如 0.5 表示缩小为一半。 默认值：0.8。
     trainIconScale: 0.8
+    # 路线图线路线条粗细（px），普通车线路图与快速车路线竖线共用。 默认值：7。
+    trackWidthPx: 7
+    # 快速车路线竖线最小高度（px）。竖线占满侧栏剩余高度，剩余高度不足时取该值（侧栏出现滚动条）。 默认值：240。
+    expressMinHeightPx: 240
+    # 快速车路线竖线上相邻两种线路颜色的渐变过渡长度，占竖线总长的比例；且不超过相邻两色各自长度的一半。 默认值：0.06。
+    expressGradientBlendRatio: 0.06
   trainIcons:
     # 快速车图标，可配置为 data:、http(s): 或前端可访问的静态资源 URL。 默认值：内置 SVG data URL。
     express: "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"

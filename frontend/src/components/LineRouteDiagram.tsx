@@ -4,15 +4,15 @@ import { useStore } from '../store/useStore';
 import type { FeatureCollection, Line, LineStringProps, Train } from '../types';
 import type { RouteGraph } from '../routing/graph';
 
-type Point2 = { x: number; z: number };
+export type Point2 = { x: number; z: number };
 const TRAIN_LANE_OFFSET_PX = 14;
-const DIAGRAM_PAD = 18;
+export const DIAGRAM_PAD = 18;
 const FOLD_RADIUS_MAX = 26;
 const RING_RADIUS_MAX = 46;
-const LABEL_EDGE_MARGIN = 2;
+export const LABEL_EDGE_MARGIN = 2;
 const LABEL_FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif";
 
-interface AxisSegment {
+export interface AxisSegment {
   from: string;
   to: string;
   start: number;
@@ -36,7 +36,7 @@ interface LineAxis {
   stations: StationMark[];
 }
 
-interface TrainMarker {
+export interface TrainMarker {
   train: Train;
   progress: number;
   distance: number;
@@ -66,6 +66,7 @@ export function LineRouteDiagram({ line }: { line: Line }) {
   );
 
   const trainIconScale = clamp(cfg.trainIconScale, 0.25, 2);
+  const trackWidth = clamp(cfg.trackWidthPx, 1, 20);
   const { folded, stationGap } = chooseLayout(line.ring, axis, availableHeight, cfg.minStationGapPx, cfg.maxStationGapPx);
   const enOf = (name: string) => stationAliases[name] || undefined;
 
@@ -81,6 +82,7 @@ export function LineRouteDiagram({ line }: { line: Line }) {
             stationGap={stationGap}
             enOf={enOf}
             trainIconScale={trainIconScale}
+            trackWidth={trackWidth}
             icons={trainIcons}
             onTrainClick={focusTrain}
           />
@@ -92,6 +94,7 @@ export function LineRouteDiagram({ line }: { line: Line }) {
             stationGap={stationGap}
             enOf={enOf}
             trainIconScale={trainIconScale}
+            trackWidth={trackWidth}
             icons={trainIcons}
             onTrainClick={focusTrain}
           />
@@ -103,6 +106,7 @@ export function LineRouteDiagram({ line }: { line: Line }) {
             stationGap={stationGap}
             enOf={enOf}
             trainIconScale={trainIconScale}
+            trackWidth={trackWidth}
             icons={trainIcons}
             onTrainClick={focusTrain}
           />
@@ -119,6 +123,7 @@ function StraightDiagram({
   markers,
   stationGap,
   trainIconScale,
+  trackWidth,
   icons,
   onTrainClick,
   enOf,
@@ -139,7 +144,7 @@ function StraightDiagram({
           x2={xTrack}
           y2={topPad + trackLength}
           stroke={line.color}
-          strokeWidth="7"
+          strokeWidth={trackWidth}
           strokeLinecap="round"
         />
         <StationDots points={axis.stations.map((station) => ({ point: { x: xTrack, z: yOf(station.progress) }, key: station.name }))} />
@@ -178,6 +183,7 @@ function FoldedDiagram({
   markers,
   stationGap,
   trainIconScale,
+  trackWidth,
   icons,
   onTrainClick,
   enOf,
@@ -203,7 +209,7 @@ function FoldedDiagram({
   return (
     <div className="route-diagram route-diagram-folded" style={{ width: foldedWidth, height }}>
       <svg className="route-diagram-path-svg" viewBox={`0 0 ${foldedWidth} ${height}`} aria-hidden="true">
-        <path d={path} fill="none" stroke={line.color} strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={path} fill="none" stroke={line.color} strokeWidth={trackWidth} strokeLinecap="round" strokeLinejoin="round" />
         <StationDots
           points={axis.stations.map((station) => {
             const p = pointOf(station.progress);
@@ -249,6 +255,7 @@ function RingDiagram({
   markers,
   stationGap,
   trainIconScale,
+  trackWidth,
   icons,
   onTrainClick,
   enOf,
@@ -280,7 +287,7 @@ function RingDiagram({
           ry={r}
           fill="none"
           stroke={line.color}
-          strokeWidth="7"
+          strokeWidth={trackWidth}
         />
         <StationDots
           points={axis.stations.map((station) => {
@@ -329,13 +336,14 @@ interface DiagramProps {
   markers: TrainMarker[];
   stationGap: number;
   trainIconScale: number;
+  trackWidth: number;
   icons: { express: string; normal: string };
   onTrainClick: (id: string) => void;
   enOf: (name: string) => string | undefined;
 }
 
 /** 站名标签：中文名在上（超出 maxWidth 时自动换行）、英文名（如有）在下（仅一行，超出以"…"截断），整体以 y 垂直居中。 */
-function StationLabel({
+export function StationLabel({
   name,
   nameEn,
   x,
@@ -343,6 +351,7 @@ function StationLabel({
   anchor,
   maxWidth,
   ring = false,
+  muted = false,
 }: {
   name: string;
   nameEn?: string;
@@ -351,9 +360,11 @@ function StationLabel({
   anchor: 'start' | 'end';
   maxWidth: number;
   ring?: boolean;
+  /** 弱化显示（快速车路线中途站）：字号更小、颜色更暗。 */
+  muted?: boolean;
 }) {
-  const className = `route-diagram-station-text${ring ? ' ring' : ''}`;
-  const nameSize = ring ? 11 : 12;
+  const className = `route-diagram-station-text${ring ? ' ring' : ''}${muted ? ' muted' : ''}`;
+  const nameSize = ring || muted ? 11 : 12;
   const lines = [
     ...wrapText(name, maxWidth, measurerFor(`600 ${nameSize}px ${LABEL_FONT_FAMILY}`, nameSize)).map((text) => ({
       text,
@@ -542,7 +553,7 @@ function foldRadius(stationGap: number): number {
  * 从图形顶部（按滚动容器未滚动时计算）到滚动容器可视区域底部，扣除卡片内图形下方的内容与容器底部内边距。
  * 结果只取决于图形上方内容与容器尺寸，与图形自身高度无关，不会形成测量循环。
  */
-function useAvailableDiagramHeight(cardRef: RefObject<HTMLDivElement>): number | null {
+export function useAvailableDiagramHeight(cardRef: RefObject<HTMLDivElement>): number | null {
   const [height, setHeight] = useState<number | null>(null);
   const observed = useRef<{ el: Element | null; ro: ResizeObserver | null }>({ el: null, ro: null });
   const measureRef = useRef<() => void>(() => {});
@@ -601,7 +612,7 @@ function measureAvailable(card: HTMLElement, diagram: HTMLElement, scroller: HTM
   return viewBottom - diagramTop - trailing;
 }
 
-function StationDots({ points }: { points: { point: Point2; key: string }[] }) {
+export function StationDots({ points }: { points: { point: Point2; key: string }[] }) {
   return (
     <>
       {points.map(({ point, key }, index) => (
@@ -617,7 +628,7 @@ function StationDots({ points }: { points: { point: Point2; key: string }[] }) {
   );
 }
 
-function TrainIcon({
+export function TrainIcon({
   marker,
   src,
   scale,
@@ -934,7 +945,7 @@ function bestProjection(point: Point2, segments: AxisSegment[]) {
   return best;
 }
 
-function projectPointToAxisSegment(point: Point2, segment: AxisSegment) {
+export function projectPointToAxisSegment(point: Point2, segment: AxisSegment) {
   const geomLength = polylineLength(segment.coords);
   let best = { along: 0, distance: Infinity };
   let walked = 0;
@@ -1089,7 +1100,7 @@ function arcPoint(cx: number, cy: number, radius: number, start: number, end: nu
   return { x: cx + Math.cos(angle) * radius, z: cy + Math.sin(angle) * radius };
 }
 
-function polylineLength(coords: Point2[]): number {
+export function polylineLength(coords: Point2[]): number {
   let total = 0;
   for (let i = 0; i < coords.length - 1; i++) {
     total += Math.hypot(coords[i + 1].x - coords[i].x, coords[i + 1].z - coords[i].z);
@@ -1097,10 +1108,10 @@ function polylineLength(coords: Point2[]): number {
   return total;
 }
 
-function edgeKey(from: string, to: string): string {
+export function edgeKey(from: string, to: string): string {
   return `${from}__${to}`;
 }
 
-function clamp(value: number, min: number, max: number): number {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }

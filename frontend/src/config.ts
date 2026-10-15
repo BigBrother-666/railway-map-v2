@@ -30,6 +30,9 @@ const DEFAULT_CONFIG: FrontendConfig = {
     maxStationGapPx: 60,
     trainClusterProgress: 0.035,
     trainIconScale: 0.8,
+    trackWidthPx: 7,
+    expressMinHeightPx: 240,
+    expressGradientBlendRatio: 0.06,
   },
   trainIcons: {
     express:

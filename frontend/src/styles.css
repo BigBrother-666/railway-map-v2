@@ -1602,3 +1602,17 @@ body,
     right: 8px;
   }
 }
+/* 快速车路线图：中途站小圆点与站名（弱化显示） */
+.route-diagram-tick-svg {
+  fill: rgba(245, 247, 251, 0.45);
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.route-diagram-station-text.muted {
+  fill: rgba(220, 226, 238, 0.5);
+  font-size: 11px;
+  font-weight: 500;
+  stroke: rgba(0, 0, 0, 0.45);
+  stroke-width: 2px;
+}

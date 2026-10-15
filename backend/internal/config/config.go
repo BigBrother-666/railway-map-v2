@@ -144,6 +144,9 @@ type RouteDiagramConfig struct {
 	MaxStationGapPx           float64 `yaml:"maxStationGapPx" json:"maxStationGapPx"` // 路线图相邻车站最大间距（px）
 	TrainClusterProgress      float64 `yaml:"trainClusterProgress" json:"trainClusterProgress"`
 	TrainIconScale            float64 `yaml:"trainIconScale" json:"trainIconScale"`
+	TrackWidthPx              float64 `yaml:"trackWidthPx" json:"trackWidthPx"`                           // 路线图线路线条粗细（px），普通车与快速车共用
+	ExpressMinHeightPx        float64 `yaml:"expressMinHeightPx" json:"expressMinHeightPx"`               // 快速车路线竖线最小高度（px）
+	ExpressGradientBlendRatio float64 `yaml:"expressGradientBlendRatio" json:"expressGradientBlendRatio"` // 快速车路线相邻颜色渐变过渡长度占竖线总长的比例
 }
 
 type TrainIconsConfig struct {
@@ -274,6 +277,15 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Frontend.RouteDiagram.TrainIconScale <= 0 {
 		c.Frontend.RouteDiagram.TrainIconScale = 1
+	}
+	if c.Frontend.RouteDiagram.TrackWidthPx <= 0 {
+		c.Frontend.RouteDiagram.TrackWidthPx = 7
+	}
+	if c.Frontend.RouteDiagram.ExpressMinHeightPx <= 0 {
+		c.Frontend.RouteDiagram.ExpressMinHeightPx = 240
+	}
+	if c.Frontend.RouteDiagram.ExpressGradientBlendRatio <= 0 {
+		c.Frontend.RouteDiagram.ExpressGradientBlendRatio = 0.06
 	}
 	if c.Frontend.TrainIcons.Express == "" {
 		c.Frontend.TrainIcons.Express = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
