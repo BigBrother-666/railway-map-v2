@@ -1,6 +1,7 @@
 /** 线路编辑弹窗：结构化编辑车站列表（折返 / 转线）与进出站提示，保存后由插件校验并重载线路配置。 */
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
+import { CONTACT_SYSTEM_ID } from '../../config';
 import type { Line } from '../../types';
 import { centerApi, CenterError } from '../api';
 import {
@@ -39,12 +40,22 @@ export function LineEditor({
       .then(setGlobalLines)
       .catch(() => setGlobalLines(null));
   }, []);
+  // 全部线路 → 车站名（本系统线路以私有配置为准，去掉折返标记与末项转线目标）
+  const lineIndex = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; systemId: string; stations: string[] }>();
+    for (const l of globalLines ?? []) map.set(l.id, { id: l.id, name: l.name, systemId: l.systemId, stations: l.stations });
+    const ids = [...new Set([...map.keys(), ...allLines.map((l) => l.id)])];
+    for (const l of allLines) {
+      const names = parseStations(l.bossbarStations, l.id, ids).stations.map((s) => s.name.trim()).filter(Boolean);
+      map.set(l.id, { id: l.id, name: l.name, systemId: l.systemId, stations: names });
+    }
+    return map;
+  }, [globalLines, allLines]);
   const targets = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; systemId: string }>();
-    for (const l of globalLines ?? []) map.set(l.id, { id: l.id, name: l.name, systemId: l.systemId });
-    for (const l of allLines) map.set(l.id, { id: l.id, name: l.name, systemId: l.systemId });
-    map.delete(line.id);
-    const list = [...map.values()];
+    // 联络线不能作为转线目标
+    const list = [...lineIndex.values()].filter(
+      (l) => l.id !== line.id && l.id !== CONTACT_SYSTEM_ID && l.systemId !== CONTACT_SYSTEM_ID,
+    );
     // 本系统在前，其余按系统、线路 id 排序
     return list.sort((a, b) =>
       a.systemId === line.systemId && b.systemId !== line.systemId
@@ -53,8 +64,9 @@ export function LineEditor({
           ? 1
           : a.systemId.localeCompare(b.systemId) || a.id.localeCompare(b.id),
     );
-  }, [globalLines, allLines, line]);
-  const knownIds = useMemo(() => [line.id, ...targets.map((t) => t.id)], [line.id, targets]);
+  }, [lineIndex, line]);
+  // 识别末项仍用全部线路 id（含联络线），以便旧配置里转入联络线的末项不被误当成车站
+  const knownIds = useMemo(() => [...lineIndex.keys()], [lineIndex]);
   const systemName = (id: string) => systems.find((s) => s.id === id)?.name ?? id;
   const [parsed, setParsed] = useState(() => parseStations(line.bossbarStations, line.id, knownIds));
   const [name, setName] = useState(line.name);
@@ -82,6 +94,14 @@ export function LineEditor({
   const [err, setErr] = useState<CenterError | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const entryOptions = lineIndex.get(nextLineId)?.stations ?? [];
+  const changeNextLine = (id: string) => {
+    setNextLineId(id);
+    // 进入站不属于新线路时清空，强制重新选择
+    const opts = lineIndex.get(id)?.stations ?? [];
+    setNextEntry((cur) => (opts.includes(cur.trim()) ? cur : ''));
+  };
+
   const local = (field: string, msg: string) => setErr(new CenterError(400, 'invalid', msg, field));
 
   const submit = async () => {
@@ -89,6 +109,11 @@ export function LineEditor({
     if (!name.trim()) return local('name', '线路名称不能为空');
     if (!/^#[0-9a-fA-F]{6}$/.test(color)) return local('color', '颜色必须是 #RRGGBB 格式');
     if (stations.filter((s) => s.name.trim()).length < 2) return local('bossbarStations', '至少需要两个车站');
+    if (nextLineId) {
+      if (!targets.some((t) => t.id === nextLineId)) return local('nextLineId', '不能转入该线路');
+      if (!nextEntry.trim()) return local('nextEntryStation', '请选择转线后的进入站');
+      if (!entryOptions.includes(nextEntry.trim())) return local('nextEntryStation', '进入站不是转入线路的车站');
+    }
     const na = validateNotices(noticeArrival);
     if (na) return local('noticeArrival', `进站提示：${na}`);
     const nd = validateNotices(noticeDeparture);
@@ -206,7 +231,7 @@ export function LineEditor({
         <div className="c-form-grid">
           <label className="c-field">
             <span className="c-label">到达终点后转入线路（可选）</span>
-            <select className="c-input" value={nextLineId} onChange={(e) => setNextLineId(e.target.value)}>
+            <select className={`c-input ${bad('nextLineId')}`} value={nextLineId} onChange={(e) => changeNextLine(e.target.value)}>
               <option value="">不转线</option>
               {groupBySystem(targets).map(([sys, list]) => (
                 <optgroup key={sys} label={sys === line.systemId ? `本系统 · ${systemName(sys)}` : systemName(sys)}>
@@ -217,14 +242,37 @@ export function LineEditor({
                   ))}
                 </optgroup>
               ))}
-              {nextLineId && !knownIds.includes(nextLineId) && <option value={nextLineId}>{nextLineId}</option>}
+              {nextLineId && !targets.some((t) => t.id === nextLineId) && (
+                <option value={nextLineId} disabled>
+                  {nextLineId}（不可转入）
+                </option>
+              )}
             </select>
-            <span className="c-help">可选择任意铁路系统的线路（例如经联络线转入其它系统）。</span>
+            {/* <span className="c-help">可选择任意铁路系统的线路（例如经联络线转入其它系统），联络线本身不能作为转入线路。</span> */}
           </label>
           {nextLineId && (
             <label className="c-field">
-              <span className="c-label">转线后的进入站（可选）</span>
-              <input className="c-input" value={nextEntry} onChange={(e) => setNextEntry(e.target.value)} />
+              <span className="c-label">转线后的进入站</span>
+              <select
+                className={`c-input ${bad('nextEntryStation')}`}
+                value={nextEntry}
+                required
+                onChange={(e) => setNextEntry(e.target.value)}
+              >
+                <option value="" disabled>
+                  {entryOptions.length ? '请选择进入站' : '正在加载车站…'}
+                </option>
+                {entryOptions.map((st) => (
+                  <option key={st} value={st}>
+                    {st}
+                  </option>
+                ))}
+                {nextEntry && !entryOptions.includes(nextEntry) && (
+                  <option value={nextEntry} disabled>
+                    {nextEntry}（不在该线路上）
+                  </option>
+                )}
+              </select>
             </label>
           )}
         </div>
