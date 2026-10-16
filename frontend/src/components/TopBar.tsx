@@ -61,6 +61,9 @@ export function TopBar() {
             {menuOpen && (
               <div className="player-popover">
                 <div className="player-popover-name">{player.name}</div>
+                <a className="menu-action" href="/me">
+                  个人中心
+                </a>
                 <button
                   className="menu-action"
                   onClick={() => {

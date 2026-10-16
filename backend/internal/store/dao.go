@@ -165,6 +165,10 @@ func (s *Store) RecordRidePayment(pay model.RidePaymentData) error {
 // set of players aboard the train at that node. Ride history is built later from
 // these events when the train is removed (see FinalizeRide).
 func (s *Store) RecordRideEvent(ev model.RideEventData) error {
+	// 离线补发去重：同一 eventId 只落库一次
+	if exists, err := s.rideEventExists(ev.EventID); err != nil || exists {
+		return err
+	}
 	if ev.ArrivedAt <= 0 {
 		ev.ArrivedAt = time.Now().UnixMilli()
 	}
@@ -186,13 +190,29 @@ func (s *Store) RecordRideEvent(ev model.RideEventData) error {
 		}
 	}
 	uuidsJSON, _ := json.Marshal(uuids)
-	_, err := s.db.Exec(
+	var eventID any // 旧版插件不带 eventId：写 NULL，不参与唯一索引
+	if ev.EventID != "" {
+		eventID = ev.EventID
+	}
+	res, err := s.db.Exec(
 		`INSERT INTO ride_events
-			(train_id, train_type, node_id, station_name, express, line_id, arrived_at, player_uuids)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		ev.TrainID, ev.TrainType, ev.NodeID, ev.StationName, boolToInt(ev.Express), ev.LineID, ev.ArrivedAt, string(uuidsJSON),
+			(train_id, train_type, node_id, station_name, express, line_id, arrived_at, player_uuids, event_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ev.TrainID, ev.TrainType, ev.NodeID, ev.StationName, boolToInt(ev.Express), ev.LineID, ev.ArrivedAt, string(uuidsJSON), eventID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	for _, u := range uuids {
+		if _, err := s.db.Exec(s.insertIgnore("ride_event_players", "event_id, player_uuid", "?, ?"), id, u); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) upsertRidePlayer(player model.Player, updatedAt int64) error {
@@ -215,6 +235,7 @@ func (s *Store) upsertRidePlayer(player model.Player, updatedAt int64) error {
 type rideEventRow struct {
 	nodeID      string
 	stationName string
+	lineID      string
 	trainType   string
 	express     bool
 	arrivedAt   int64
@@ -229,7 +250,7 @@ func (s *Store) FinalizeRide(trainID string) error {
 		return nil
 	}
 	rows, err := s.db.Query(
-		`SELECT node_id, station_name, train_type, express, arrived_at, player_uuids
+		`SELECT node_id, station_name, COALESCE(line_id, ''), train_type, express, arrived_at, player_uuids
 		 FROM ride_events WHERE train_id = ? ORDER BY arrived_at ASC, id ASC`,
 		trainID,
 	)
@@ -243,7 +264,7 @@ func (s *Store) FinalizeRide(trainID string) error {
 		var ev rideEventRow
 		var express int
 		var uuidsJSON string
-		if err := rows.Scan(&ev.nodeID, &ev.stationName, &ev.trainType, &express, &ev.arrivedAt, &uuidsJSON); err != nil {
+		if err := rows.Scan(&ev.nodeID, &ev.stationName, &ev.lineID, &ev.trainType, &express, &ev.arrivedAt, &uuidsJSON); err != nil {
 			return err
 		}
 		ev.express = intToBool(express)
@@ -304,6 +325,7 @@ func (s *Store) loadRidePayment(playerUUID, trainID string) (*ridePayment, error
 type playerNodeStop struct {
 	nodeID      string
 	stationName string
+	lineID      string
 	arrivedAt   int64
 }
 
@@ -322,7 +344,7 @@ func (s *Store) finalizeRidePlayer(playerUUID, trainID string, events []rideEven
 		if len(stops) > 0 && stops[len(stops)-1].nodeID == ev.nodeID {
 			continue
 		}
-		stops = append(stops, playerNodeStop{nodeID: ev.nodeID, stationName: ev.stationName, arrivedAt: ev.arrivedAt})
+		stops = append(stops, playerNodeStop{nodeID: ev.nodeID, stationName: ev.stationName, lineID: ev.lineID, arrivedAt: ev.arrivedAt})
 	}
 	if len(stops) == 0 {
 		return nil
@@ -359,6 +381,7 @@ func (s *Store) finalizeExpress(playerUUID, playerName, trainID, trainType strin
 		endedAt:   endedAt,
 		distance:  pay.Distance, paidFare: pay.PaidFare,
 		startStation: pay.StartStation, endStation: pay.EndStation, nodeIDs: pay.RouteNodeIDs,
+		lineIDs: lineIDsBetween(stops, startedAt, endedAt),
 	})
 }
 
@@ -419,6 +442,7 @@ func (s *Store) finalizeCommon(playerUUID, playerName, trainID, trainType string
 		playerUUID: playerUUID, playerName: playerName, trainID: trainID, trainType: trainType,
 		express: false, startedAt: trimmed[0].arrivedAt, endedAt: trimmed[len(trimmed)-1].arrivedAt,
 		startStation: startStation, endStation: endStation, nodeIDs: nodeIDs,
+		lineIDs: lineIDsBetween(trimmed, trimmed[0].arrivedAt, trimmed[len(trimmed)-1].arrivedAt),
 	})
 }
 
@@ -436,6 +460,19 @@ type rideHistoryRow struct {
 	startStation string
 	endStation   string
 	nodeIDs      []string
+	lineIDs      []string
+}
+
+// lineIDsBetween 按乘车顺序收集 [from, to] 时间区间内经过的线路 ID（去重，保持首次出现顺序）。
+func lineIDsBetween(stops []playerNodeStop, from, to int64) []string {
+	out := []string{}
+	for _, st := range stops {
+		if st.arrivedAt < from || st.arrivedAt > to || st.lineID == "" || contains(out, st.lineID) {
+			continue
+		}
+		out = append(out, st.lineID)
+	}
+	return out
 }
 
 func (s *Store) insertRideHistory(h rideHistoryRow) error {
@@ -443,13 +480,17 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 		return nil
 	}
 	nodeJSON, _ := json.Marshal(h.nodeIDs)
+	if h.lineIDs == nil {
+		h.lineIDs = []string{}
+	}
+	lineJSON, _ := json.Marshal(h.lineIDs)
 	geomJSON, distance := s.snapshotGeometry(h)
 	var query string
 	if s.dialect == dialectMySQL {
 		query = `INSERT INTO ride_history
 			(player_uuid, player_name, train_id, train_type, express, started_at, ended_at, distance,
-			 start_station, end_station, paid_fare, node_ids, geometry)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 start_station, end_station, paid_fare, node_ids, geometry, line_ids)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON DUPLICATE KEY UPDATE
 			player_name = VALUES(player_name),
 			train_type = VALUES(train_type),
@@ -460,12 +501,13 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 			end_station = VALUES(end_station),
 			paid_fare = VALUES(paid_fare),
 			node_ids = VALUES(node_ids),
+			line_ids = VALUES(line_ids),
 			geometry = COALESCE(geometry, VALUES(geometry))`
 	} else {
 		query = `INSERT INTO ride_history
 			(player_uuid, player_name, train_id, train_type, express, started_at, ended_at, distance,
-			 start_station, end_station, paid_fare, node_ids, geometry)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 start_station, end_station, paid_fare, node_ids, geometry, line_ids)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(player_uuid, train_id, started_at) DO UPDATE SET
 			player_name = excluded.player_name,
 			train_type = excluded.train_type,
@@ -476,13 +518,14 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 			end_station = excluded.end_station,
 			paid_fare = excluded.paid_fare,
 			node_ids = excluded.node_ids,
+			line_ids = excluded.line_ids,
 			geometry = COALESCE(ride_history.geometry, excluded.geometry)`
 	}
 	_, err := s.db.Exec(
 		query,
 		h.playerUUID, h.playerName, h.trainID, h.trainType, boolToInt(h.express),
 		h.startedAt, h.endedAt, round2(distance), h.startStation, h.endStation,
-		round2(h.paidFare), string(nodeJSON), geomJSON,
+		round2(h.paidFare), string(nodeJSON), geomJSON, string(lineJSON),
 	)
 	return err
 }

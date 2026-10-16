@@ -42,6 +42,18 @@ func (s *Server) handleMessage(data []byte) {
 		s.onAuthBind(env, true)
 	case model.TypeAuthUnbind:
 		s.onAuthBind(env, false)
+	case model.TypeSnapshotSystemsPrivate:
+		if err := s.cache.SetPrivateSystems(s.extractArray(env.Data, "systems")); err != nil {
+			s.logger.Warn("Invalid snapshot.systems.private payload", "err", err)
+		}
+	case model.TypeSnapshotLinesPrivate:
+		if err := s.cache.SetPrivateLines(s.extractArray(env.Data, "lines")); err != nil {
+			s.logger.Warn("Invalid snapshot.lines.private payload", "err", err)
+		}
+	case model.TypeConfigResult:
+		s.onConfigResult(env)
+	case model.TypeRevenueEvent:
+		s.onRevenueEvent(env)
 	default:
 		s.logger.Warn("Unknown plugin message type", "type", env.Type)
 	}
@@ -58,6 +70,11 @@ func (s *Server) onRidePayment(env model.Envelope) {
 	}
 	if err := s.store.RecordRidePayment(d); err != nil {
 		s.logger.Warn("Failed to record ride payment", "err", err, "trainId", d.TrainID, "player", d.Player.UUID)
+		return
+	}
+	s.ack(d.EventID)
+	if d.Replayed {
+		s.scheduleReplayFinalize(d.TrainID)
 	}
 }
 
@@ -72,6 +89,11 @@ func (s *Server) onRideEvent(env model.Envelope) {
 	}
 	if err := s.store.RecordRideEvent(d); err != nil {
 		s.logger.Warn("Failed to record ride event", "err", err, "trainId", d.TrainID)
+		return
+	}
+	s.ack(d.EventID)
+	if d.Replayed {
+		s.scheduleReplayFinalize(d.TrainID)
 	}
 }
 

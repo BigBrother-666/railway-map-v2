@@ -111,6 +111,10 @@ type TestLoginRequest struct {
 }
 
 type RideEventData struct {
+	// EventID 是插件生成的事件唯一 ID（离线补发去重用）；旧版插件不带此字段。
+	EventID string `json:"eventId,omitempty"`
+	// Replayed 表示这是插件 outbox 离线补发的事件（对应列车可能早已不在实时数据中）。
+	Replayed     bool     `json:"replayed,omitempty"`
 	TrainID      string   `json:"trainId"`
 	TrainType    string   `json:"trainType"`
 	NodeID       string   `json:"nodeId"`
@@ -127,6 +131,10 @@ type RideEventData struct {
 }
 
 type RidePaymentData struct {
+	// EventID 是插件生成的事件唯一 ID（离线补发去重用）；旧版插件不带此字段。
+	EventID string `json:"eventId,omitempty"`
+	// Replayed 表示这是插件 outbox 离线补发的事件（对应列车可能早已不在实时数据中）。
+	Replayed     bool     `json:"replayed,omitempty"`
 	TrainID      string   `json:"trainId"`
 	TrainType    string   `json:"trainType"`
 	Player       Player   `json:"player"`

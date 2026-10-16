@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"sync"
 
+	"railway-map-backend/internal/model"
 	"railway-map-backend/internal/store"
 )
 
@@ -21,6 +22,10 @@ type Cache struct {
 	// stations 是车站英文名映射与站组的原始 JSON（形如 {"aliases":{...},"groups":{...}}）
 	stations        []byte
 	stationsVersion string
+
+	// 私有快照（见 private.go）
+	privateSystems []model.PrivateSystem
+	privateLines   []model.PrivateLine
 
 	// geoIdx 是 geojson 的轨道段 / 节点坐标索引（乘车历史坐标快照用），按 geoIdxVersion 惰性重建
 	geoIdx        *geoIndex
@@ -54,6 +59,7 @@ func (c *Cache) restore() {
 		c.stations = snap.Payload
 		c.stationsVersion = snap.Version
 	}
+	c.restorePrivate()
 }
 
 // SetGeojson 整体替换 geojson 缓存并落库，版本号取内容的 sha1 前缀。

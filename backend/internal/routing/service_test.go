@@ -39,7 +39,7 @@ func newTestService(t *testing.T, geojsonBytes []byte, version string) *Service 
 func newTestServiceWithConfig(t *testing.T, geojsonBytes []byte, version string, cfg config.RouteConfig) *Service {
 	t.Helper()
 	source := &fakeGeoSource{geojson: geojsonBytes, version: version}
-	return NewService(source, func() config.RouteConfig { return cfg }, 0.2)
+	return NewService(source, func() config.RouteConfig { return cfg }, func() float64 { return 0.2 })
 }
 
 func geojsonFixture(t *testing.T) []byte {
@@ -290,7 +290,7 @@ func TestServiceQuery_StationGroupChangeInvalidatesCache(t *testing.T) {
 		SearchWeightDistance: 0.5, SearchWeightPrice: 0.5,
 		MinDirectResults: 1, MaxTransferResults: 3,
 	}
-	svc := NewService(source, func() config.RouteConfig { return cfg }, 0.2)
+	svc := NewService(source, func() config.RouteConfig { return cfg }, func() float64 { return 0.2 })
 
 	got, err := svc.Query(context.Background(), "甲", "丁")
 	if err != nil {

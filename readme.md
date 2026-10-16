@@ -37,10 +37,6 @@ npm install
 npm run dev
 ```
 
-## 配置文件
-
-运行配置使用 `backend/config.yml`，配置项说明见 [backend/config.example.yml](backend/config.example.yml)。
-
 ## 主要接口
 
 - `GET /health`：存活探针。
@@ -54,6 +50,10 @@ npm run dev
 - `POST /api/v1/purchase`：在线购票（单段直达一次调用；联程票由前端对每段各调用一次）。
 - `GET /api/v1/me/history?page=1&pageSize=10`：当前登录玩家的乘车历史。
 - `GET /api/v1/realtime`：前端实时列车 WebSocket。
+- `GET /api/v1/me/profile`、`/me/overview`：个人中心身份、权限、侧栏系统列表与统计（需登录）。
+- `GET|PUT|DELETE /api/v1/me/systems/{id}`、`PUT|DELETE /me/systems/{id}/logo/{web|mc}`、`GET /me/systems/{id}/lines`、`PUT|DELETE /me/lines/{lineId}`：铁路系统与线路管理。
+- `GET /api/v1/me/station-aliases`、`PUT|DELETE /me/station-aliases/{station}`；`GET /me/station-groups`、`PUT|DELETE /me/station-groups/{group}`：车站别名 / 车站组。
+- `/api/v1/admin/rbac`、`/admin/settings`、`/admin/audit`：权限管理、服务器配置、操作日志。
 - `GET /internal/plugin`：插件内部 WebSocket，需要 Bearer token 认证。
 
 ## 降级行为
@@ -67,6 +67,7 @@ npm run dev
 ```dotenv
 BCTS_PLUGIN_TOKEN=change-me
 BCTS_JWT_SECRET=replace-with-random-secret
+BCTS_SUPER_ADMIN_UUID=
 BCTS_DB_DRIVER=mysql
 BCTS_DB_PATH=data/bcts-web.db
 MYSQL_DATABASE=bcts_web

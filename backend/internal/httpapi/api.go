@@ -37,7 +37,10 @@ type API struct {
 	purchase *purchase.Orchestrator
 	auth     *auth.Service
 	store    DataStore
-	frontend model.FrontendBootstrap
+	// frontend 返回当前生效的前端运行时配置（web 端修改后立即生效）。
+	frontend        func() config.FrontendConfig
+	testAuthEnabled bool
+	testAuthUUIDs   []string
 	// frontendBaseURL 是 OAuth 回调完成后跳转回的地图页面地址（带 ?login=... 提示）。
 	frontendBaseURL string
 	logger          *slog.Logger
@@ -49,7 +52,7 @@ type API struct {
 
 	// 路线/车票查询：每玩家限流（token bucket）+ 取消同一玩家尚未完成的旧查询。
 	routing        *routing.Service
-	routeRateLimit float64 // 每玩家每秒最多请求数
+	routeRateLimit func() float64 // 每玩家每秒最多请求数（读当前配置）
 	routeLimMu     sync.Mutex
 	routeLimiters  map[string]*rate.Limiter
 	routeQueryMu   sync.Mutex
@@ -71,13 +74,14 @@ type DataStore interface {
 
 // Options 聚合构建 API 所需依赖。
 type Options struct {
-	Cache           *geo.Cache
-	Agg             *realtime.Aggregator
-	Plugin          PluginStatus
-	Purchase        *purchase.Orchestrator
-	Auth            *auth.Service
-	Store           DataStore
-	Frontend        config.FrontendConfig
+	Cache    *geo.Cache
+	Agg      *realtime.Aggregator
+	Plugin   PluginStatus
+	Purchase *purchase.Orchestrator
+	Auth     *auth.Service
+	Store    DataStore
+	// Frontend 返回当前生效的前端运行时配置。
+	Frontend        func() config.FrontendConfig
 	FrontendBaseURL string
 	TestAuthEnabled bool
 	TestAuthUUIDs   []string
@@ -85,25 +89,23 @@ type Options struct {
 	PurchaseMinInterval time.Duration
 	// Routing 是路线/车票查询服务（nil 时 RouteQuery 返回 503）。
 	Routing *routing.Service
-	// RouteQueryRateLimitPerSecond 是单个登录玩家每秒最多发起的路线查询请求数。
-	RouteQueryRateLimitPerSecond float64
+	// RouteQueryRateLimitPerSecond 返回单个登录玩家每秒最多发起的路线查询请求数（读当前配置）。
+	RouteQueryRateLimitPerSecond func() float64
 	Logger                       *slog.Logger
 }
 
 // New 创建 API。
 func New(o Options) *API {
 	return &API{
-		cache:    o.Cache,
-		agg:      o.Agg,
-		plugin:   o.Plugin,
-		purchase: o.Purchase,
-		auth:     o.Auth,
-		store:    o.Store,
-		frontend: model.FrontendBootstrap{
-			FrontendConfig:  o.Frontend,
-			TestAuthEnabled: o.TestAuthEnabled,
-			TestAuthUUIDs:   o.TestAuthUUIDs,
-		},
+		cache:               o.Cache,
+		agg:                 o.Agg,
+		plugin:              o.Plugin,
+		purchase:            o.Purchase,
+		auth:                o.Auth,
+		store:               o.Store,
+		frontend:            o.Frontend,
+		testAuthEnabled:     o.TestAuthEnabled,
+		testAuthUUIDs:       o.TestAuthUUIDs,
 		frontendBaseURL:     o.FrontendBaseURL,
 		logger:              o.Logger,
 		purchaseMinInterval: o.PurchaseMinInterval,
@@ -123,7 +125,11 @@ func (a *API) Health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) Config(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, a.frontend)
+	writeJSON(w, http.StatusOK, model.FrontendBootstrap{
+		FrontendConfig:  a.frontend(),
+		TestAuthEnabled: a.testAuthEnabled,
+		TestAuthUUIDs:   a.testAuthUUIDs,
+	})
 }
 
 // Meta 返回 geo 版本、插件在线状态、服务器时间。
@@ -254,7 +260,7 @@ func (a *API) redirectLogin(w http.ResponseWriter, r *http.Request, status, reas
 }
 
 func (a *API) TestLogin(w http.ResponseWriter, r *http.Request) {
-	if !a.frontend.TestAuthEnabled {
+	if !a.testAuthEnabled {
 		writeError(w, http.StatusNotFound, "test-auth-disabled", "测试登录未启用")
 		return
 	}
@@ -268,7 +274,7 @@ func (a *API) TestLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allowed := false
-	for _, uuid := range a.frontend.TestAuthUUIDs {
+	for _, uuid := range a.testAuthUUIDs {
 		if uuid == req.UUID {
 			allowed = true
 			break
@@ -450,12 +456,19 @@ func (a *API) RouteQuery(w http.ResponseWriter, r *http.Request) {
 func (a *API) routeLimiterFor(uuid string) *rate.Limiter {
 	a.routeLimMu.Lock()
 	defer a.routeLimMu.Unlock()
-	if lim, ok := a.routeLimiters[uuid]; ok {
-		return lim
+	limit := 3.0
+	if a.routeRateLimit != nil {
+		if v := a.routeRateLimit(); v > 0 {
+			limit = v
+		}
 	}
-	limit := a.routeRateLimit
-	if limit <= 0 {
-		limit = 3
+	if lim, ok := a.routeLimiters[uuid]; ok {
+		// 配置被修改后，已有限流器同步到新速率
+		if lim.Limit() != rate.Limit(limit) {
+			lim.SetLimit(rate.Limit(limit))
+			lim.SetBurst(int(limit) + 1)
+		}
+		return lim
 	}
 	lim := rate.NewLimiter(rate.Limit(limit), int(limit)+1)
 	a.routeLimiters[uuid] = lim

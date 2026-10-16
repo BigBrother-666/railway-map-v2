@@ -24,6 +24,11 @@ type PurchaseRouter interface {
 	Deliver(result model.PurchaseResult)
 }
 
+// ConfigRouter 接收插件回执的配置操作结果（由 pluginconfig 包实现）。
+type ConfigRouter interface {
+	Deliver(result model.ConfigResult)
+}
+
 // Server 维护与插件的单条连接及其收发。
 type Server struct {
 	sharedToken    string
@@ -32,7 +37,13 @@ type Server struct {
 	agg            *realtime.Aggregator
 	store          *store.Store
 	purchaseRouter PurchaseRouter
+	configRouter   ConfigRouter
 	logger         *slog.Logger
+
+	// replayTrains 是离线补发的乘车事件涉及的列车，补发停顿后对其中不在实时数据中的列车结算乘车历史。
+	replayMu     sync.Mutex
+	replayTrains map[string]struct{}
+	replayTimer  *time.Timer
 
 	mu       sync.RWMutex
 	conn     *websocket.Conn
@@ -67,6 +78,11 @@ func NewServer(o Options) *Server {
 // SetPurchaseRouter 注入购票回执路由（编排器在 Server 之后构建，故用 setter）。
 func (s *Server) SetPurchaseRouter(r PurchaseRouter) {
 	s.purchaseRouter = r
+}
+
+// SetConfigRouter 注入配置操作回执路由。
+func (s *Server) SetConfigRouter(r ConfigRouter) {
+	s.configRouter = r
 }
 
 // SetAggregator 注入列车聚合器（聚合器需广播器、广播器需快照器，故用 setter 解环）。

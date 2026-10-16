@@ -117,6 +117,14 @@ func (a *Aggregator) Snapshot() []json.RawMessage {
 	return out
 }
 
+// Has 判断某列车当前是否仍在实时数据中。
+func (a *Aggregator) Has(trainID string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	_, ok := a.trains[trainID]
+	return ok
+}
+
 // Sweep 剔除超时未更新的列车，并广播 remove。应由定时器周期调用。
 func (a *Aggregator) Sweep() {
 	now := time.Now()

@@ -1,4 +1,5 @@
 // Package config 加载后端配置（yaml + 环境变量覆盖，见 docs/BACKEND_PROMPT.md §10）。
+// frontend / route 两段已迁移到数据库（见 internal/settings），这里只保留类型定义与默认值。
 package config
 
 import (
@@ -17,8 +18,16 @@ type Config struct {
 	Realtime RealtimeConfig `yaml:"realtime"`
 	Auth     AuthConfig     `yaml:"auth"`
 	DB       DBConfig       `yaml:"db"`
-	Frontend FrontendConfig `yaml:"frontend"`
-	Route    RouteConfig    `yaml:"route"`
+
+	// Legacy 是旧版 config.yml 中仍残留的 frontend / route 段（已迁移到数据库，由 web 端服务器配置维护）。
+	// 只用于首次启动时一次性导入数据库，不参与运行时配置。
+	Legacy LegacySections `yaml:"-"`
+}
+
+// LegacySections 是旧版 config.yml 中的 frontend / route 段；对应段不存在时为 nil。
+type LegacySections struct {
+	Frontend *FrontendConfig
+	Route    *RouteConfig
 }
 
 type ServerConfig struct {
@@ -41,6 +50,8 @@ type PluginConfig struct {
 	// PurchaseMinIntervalSeconds 是同一玩家两次购票的最小间隔（秒），防止频繁购票压垮服务器。
 	// <=0 时用默认 3 秒。
 	PurchaseMinIntervalSeconds int `yaml:"purchaseMinIntervalSeconds"`
+	// ConfigTimeoutSeconds 是 web 端编辑铁路系统 / 线路 / 车站别名 / 车站组时等待插件回执的超时秒数。<=0 用默认 10。
+	ConfigTimeoutSeconds int `yaml:"configTimeoutSeconds"`
 }
 
 type RealtimeConfig struct {
@@ -53,6 +64,8 @@ type AuthConfig struct {
 	JWTSecret       string          `yaml:"jwtSecret"`
 	TestAuthEnabled bool            `yaml:"testAuthEnabled"`
 	TestAuthUUIDs   []string        `yaml:"testAuthUUIDs"`
+	// SuperAdminUUID 是初始超级管理员的 Minecraft UUID（启动时自动授予内置 super_admin 角色，web 端不可撤销）。
+	SuperAdminUUID string `yaml:"superAdminUuid"`
 }
 
 type MicrosoftConfig struct {
@@ -87,25 +100,25 @@ type FrontendConfig struct {
 // RouteConfig 是路线/车票查询相关的后端内部参数（不下发到前端，见 GET /api/v1/config 只返回 FrontendConfig）。
 type RouteConfig struct {
 	// QueryRateLimitPerSecond 是单个登录玩家每秒最多发起的路线查询请求数。<=0 用默认 3。
-	QueryRateLimitPerSecond float64 `yaml:"queryRateLimitPerSecond"`
+	QueryRateLimitPerSecond float64 `yaml:"queryRateLimitPerSecond" json:"queryRateLimitPerSecond"`
 
 	// 搜索结果排序（复刻插件 search.*，与菜单购票一致）
-	MaxDistanceResults   int     `yaml:"maxDistanceResults"`
-	MaxPriceResults      int     `yaml:"maxPriceResults"`
-	SearchWeightDistance float64 `yaml:"searchWeightDistance"`
-	SearchWeightPrice    float64 `yaml:"searchWeightPrice"`
-	MinDirectResults     int     `yaml:"minDirectResults"`
+	MaxDistanceResults   int     `yaml:"maxDistanceResults" json:"maxDistanceResults"`
+	MaxPriceResults      int     `yaml:"maxPriceResults" json:"maxPriceResults"`
+	SearchWeightDistance float64 `yaml:"searchWeightDistance" json:"searchWeightDistance"`
+	SearchWeightPrice    float64 `yaml:"searchWeightPrice" json:"searchWeightPrice"`
+	MinDirectResults     int     `yaml:"minDirectResults" json:"minDirectResults"`
 
 	// 联程票（一次换乘 / 两段直达）寻路参数（复刻插件 search.max-transfer-* / transfer-min-improvement）
-	MaxTransferResults     int     `yaml:"maxTransferResults"`
-	TransferMinImprovement float64 `yaml:"transferMinImprovement"`
+	MaxTransferResults     int     `yaml:"maxTransferResults" json:"maxTransferResults"`
+	TransferMinImprovement float64 `yaml:"transferMinImprovement" json:"transferMinImprovement"`
 
 	// ComputeTimeoutMs 是单次寻路计算（含直达 + 联程票枚举）的最长耗时，超时则中止该计算并返回
 	// 错误、不写入结果缓存（避免把「算到一半被掐断」的不完整结果误当成「无路线」永久缓存）。这是
 	// 后端自身的计算耗时上限，独立于前端 frontend.routeSearchTimeoutMs（那个只控制单个浏览器请求
 	// 等待多久）：同一份计算可能被多个玩家的请求共享（见 singleflight 折叠），不能用某一个请求的
 	// 耐心去卡它。<=0 用默认 15000。
-	ComputeTimeoutMs int `yaml:"computeTimeoutMs"`
+	ComputeTimeoutMs int `yaml:"computeTimeoutMs" json:"computeTimeoutMs"`
 }
 
 type WorldTileConfig struct {
@@ -173,6 +186,14 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
 		return nil, err
 	}
+	var legacy struct {
+		Frontend *FrontendConfig `yaml:"frontend"`
+		Route    *RouteConfig    `yaml:"route"`
+	}
+	if err := yaml.Unmarshal([]byte(expanded), &legacy); err != nil {
+		return nil, err
+	}
+	cfg.Legacy = LegacySections{Frontend: legacy.Frontend, Route: legacy.Route}
 	cfg.applyDefaults()
 	return &cfg, nil
 }
@@ -199,6 +220,9 @@ func (c *Config) applyDefaults() {
 	if c.Plugin.PurchaseMinIntervalSeconds <= 0 {
 		c.Plugin.PurchaseMinIntervalSeconds = 3
 	}
+	if c.Plugin.ConfigTimeoutSeconds <= 0 {
+		c.Plugin.ConfigTimeoutSeconds = 10
+	}
 	if c.Realtime.TrainTimeoutSeconds <= 0 {
 		c.Realtime.TrainTimeoutSeconds = 30
 	}
@@ -218,123 +242,131 @@ func (c *Config) applyDefaults() {
 	if c.DB.Driver == "sqlite" && c.DB.Path == "" {
 		c.DB.Path = "data/bcts-web.db"
 	}
-	if c.Frontend.RealtimeWSPath == "" {
-		c.Frontend.RealtimeWSPath = "/api/v1/realtime"
+}
+
+// ApplyFrontendDefaults 为前端运行时配置中未配置 / 非法的字段填充默认值。
+func ApplyFrontendDefaults(f *FrontendConfig) {
+	if f.RealtimeWSPath == "" {
+		f.RealtimeWSPath = "/api/v1/realtime"
 	}
-	if c.Frontend.RouteSearchTimeoutMs <= 0 {
-		c.Frontend.RouteSearchTimeoutMs = 10000
+	if f.RouteSearchTimeoutMs <= 0 {
+		f.RouteSearchTimeoutMs = 10000
 	}
-	if c.Frontend.DefaultWorld == "" {
-		c.Frontend.DefaultWorld = "world1"
+	if f.DefaultWorld == "" {
+		f.DefaultWorld = "world1"
 	}
-	if c.Frontend.WorldTiles == nil {
-		c.Frontend.WorldTiles = map[string]WorldTileConfig{"world1": {Zoom: 14}}
+	if f.WorldTiles == nil {
+		f.WorldTiles = map[string]WorldTileConfig{"world1": {Zoom: 14}}
 	}
-	if c.Frontend.MapStyle.LineWidth <= 0 {
-		c.Frontend.MapStyle.LineWidth = 3
+	if f.MapStyle.LineWidth <= 0 {
+		f.MapStyle.LineWidth = 3
 	}
-	if c.Frontend.MapStyle.HighlightWidth <= 0 {
-		c.Frontend.MapStyle.HighlightWidth = 7
+	if f.MapStyle.HighlightWidth <= 0 {
+		f.MapStyle.HighlightWidth = 7
 	}
-	if c.Frontend.MapStyle.DimOpacity <= 0 {
-		c.Frontend.MapStyle.DimOpacity = 0.2
+	if f.MapStyle.DimOpacity <= 0 {
+		f.MapStyle.DimOpacity = 0.2
 	}
-	if c.Frontend.MapStyle.LineOpacity <= 0 {
-		c.Frontend.MapStyle.LineOpacity = 0.9
+	if f.MapStyle.LineOpacity <= 0 {
+		f.MapStyle.LineOpacity = 0.9
 	}
-	if c.Frontend.MapStyle.StationRadius <= 0 {
-		c.Frontend.MapStyle.StationRadius = 6
+	if f.MapStyle.StationRadius <= 0 {
+		f.MapStyle.StationRadius = 6
 	}
-	if c.Frontend.MapStyle.StationStrokeWidth <= 0 {
-		c.Frontend.MapStyle.StationStrokeWidth = 2
+	if f.MapStyle.StationStrokeWidth <= 0 {
+		f.MapStyle.StationStrokeWidth = 2
 	}
-	if c.Frontend.MapStyle.StationTextSize <= 0 {
-		c.Frontend.MapStyle.StationTextSize = 12
+	if f.MapStyle.StationTextSize <= 0 {
+		f.MapStyle.StationTextSize = 12
 	}
-	if c.Frontend.MapStyle.StationEnTextSize <= 0 {
-		c.Frontend.MapStyle.StationEnTextSize = 10
+	if f.MapStyle.StationEnTextSize <= 0 {
+		f.MapStyle.StationEnTextSize = 10
 	}
-	if c.Frontend.MapStyle.StationMergePixelDistance <= 0 {
-		c.Frontend.MapStyle.StationMergePixelDistance = 28
+	if f.MapStyle.StationMergePixelDistance <= 0 {
+		f.MapStyle.StationMergePixelDistance = 28
 	}
-	if c.Frontend.MapStyle.TrainIconSize <= 0 {
-		c.Frontend.MapStyle.TrainIconSize = 0.6
+	if f.MapStyle.TrainIconSize <= 0 {
+		f.MapStyle.TrainIconSize = 0.6
 	}
-	if c.Frontend.MapStyle.TrainFocusZoom <= 0 {
-		c.Frontend.MapStyle.TrainFocusZoom = 16
+	if f.MapStyle.TrainFocusZoom <= 0 {
+		f.MapStyle.TrainFocusZoom = 16
 	}
-	if c.Frontend.RouteDiagram.ProjectionThresholdBlocks <= 0 {
-		c.Frontend.RouteDiagram.ProjectionThresholdBlocks = 40
+	if f.RouteDiagram.ProjectionThresholdBlocks <= 0 {
+		f.RouteDiagram.ProjectionThresholdBlocks = 40
 	}
-	if c.Frontend.RouteDiagram.MinStationGapPx <= 0 {
-		c.Frontend.RouteDiagram.MinStationGapPx = 32
+	if f.RouteDiagram.MinStationGapPx <= 0 {
+		f.RouteDiagram.MinStationGapPx = 32
 	}
-	if c.Frontend.RouteDiagram.MaxStationGapPx < c.Frontend.RouteDiagram.MinStationGapPx {
-		c.Frontend.RouteDiagram.MaxStationGapPx = max(60, c.Frontend.RouteDiagram.MinStationGapPx)
+	if f.RouteDiagram.MaxStationGapPx < f.RouteDiagram.MinStationGapPx {
+		f.RouteDiagram.MaxStationGapPx = max(60, f.RouteDiagram.MinStationGapPx)
 	}
-	if c.Frontend.RouteDiagram.TrainClusterProgress <= 0 {
-		c.Frontend.RouteDiagram.TrainClusterProgress = 0.035
+	if f.RouteDiagram.TrainClusterProgress <= 0 {
+		f.RouteDiagram.TrainClusterProgress = 0.035
 	}
-	if c.Frontend.RouteDiagram.TrainIconScale <= 0 {
-		c.Frontend.RouteDiagram.TrainIconScale = 1
+	if f.RouteDiagram.TrainIconScale <= 0 {
+		f.RouteDiagram.TrainIconScale = 1
 	}
-	if c.Frontend.RouteDiagram.TrackWidthPx <= 0 {
-		c.Frontend.RouteDiagram.TrackWidthPx = 7
+	if f.RouteDiagram.TrackWidthPx <= 0 {
+		f.RouteDiagram.TrackWidthPx = 7
 	}
-	if c.Frontend.RouteDiagram.ExpressMinHeightPx <= 0 {
-		c.Frontend.RouteDiagram.ExpressMinHeightPx = 240
+	if f.RouteDiagram.ExpressMinHeightPx <= 0 {
+		f.RouteDiagram.ExpressMinHeightPx = 240
 	}
-	if c.Frontend.RouteDiagram.ExpressGradientBlendRatio <= 0 {
-		c.Frontend.RouteDiagram.ExpressGradientBlendRatio = 0.06
+	if f.RouteDiagram.ExpressGradientBlendRatio <= 0 {
+		f.RouteDiagram.ExpressGradientBlendRatio = 0.06
 	}
-	if c.Frontend.TrainIcons.Express == "" {
-		c.Frontend.TrainIcons.Express = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
+	if f.TrainIcons.Express == "" {
+		f.TrainIcons.Express = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%23ff5252'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
 	}
-	if c.Frontend.TrainIcons.Normal == "" {
-		c.Frontend.TrainIcons.Normal = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%2342a5f5'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
+	if f.TrainIcons.Normal == "" {
+		f.TrainIcons.Normal = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Ccircle%20cx='16'%20cy='16'%20r='13'%20fill='%2342a5f5'%20stroke='%23fff'%20stroke-width='3'/%3E%3C/svg%3E"
 	}
-	if c.Frontend.DefaultSystemLogo == "" {
-		c.Frontend.DefaultSystemLogo = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='20'%20height='20'%20viewBox='0%200%2020%2020'%3E%3Crect%20width='20'%20height='20'%20rx='4'%20fill='%233a3f4b'/%3E%3Cpath%20d='M6%205h8v7a3%203%200%200%201-3%203H9a3%203%200%200%201-3-3z'%20fill='%238a90a0'/%3E%3Ccircle%20cx='8'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3Ccircle%20cx='12'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3C/svg%3E"
+	if f.DefaultSystemLogo == "" {
+		f.DefaultSystemLogo = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='20'%20height='20'%20viewBox='0%200%2020%2020'%3E%3Crect%20width='20'%20height='20'%20rx='4'%20fill='%233a3f4b'/%3E%3Cpath%20d='M6%205h8v7a3%203%200%200%201-3%203H9a3%203%200%200%201-3-3z'%20fill='%238a90a0'/%3E%3Ccircle%20cx='8'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3Ccircle%20cx='12'%20cy='16'%20r='1'%20fill='%238a90a0'/%3E%3C/svg%3E"
 	}
-	if c.Frontend.AvatarURLTemplate == "" {
-		c.Frontend.AvatarURLTemplate = "https://mineskin.eu/helm/{player}"
+	if f.AvatarURLTemplate == "" {
+		f.AvatarURLTemplate = "https://mineskin.eu/helm/{player}"
 	}
-	if c.Frontend.DefaultPricePerKm <= 0 {
-		c.Frontend.DefaultPricePerKm = 0.2
+	if f.DefaultPricePerKm <= 0 {
+		f.DefaultPricePerKm = 0.2
 	}
-	if c.Frontend.ThemeColor == "" {
-		c.Frontend.ThemeColor = "#ffd400"
+	if f.ThemeColor == "" {
+		f.ThemeColor = "#ffd400"
 	}
-	if c.Frontend.CurrencyName == "" {
-		c.Frontend.CurrencyName = "帕元"
+	if f.CurrencyName == "" {
+		f.CurrencyName = "帕元"
 	}
-	if c.Route.QueryRateLimitPerSecond <= 0 {
-		c.Route.QueryRateLimitPerSecond = 3
+}
+
+// ApplyRouteDefaults 为路线查询参数中未配置的字段填充默认值。
+func ApplyRouteDefaults(r *RouteConfig) {
+	if r.QueryRateLimitPerSecond <= 0 {
+		r.QueryRateLimitPerSecond = 3
 	}
 	// 搜索排序默认值（与插件 config.yml search.* 对齐）。
 	// max-*-results 允许配 <=0 表示不限制，故用「负数才纠正」而非 <=0；未配置时 yaml 零值 0 恰是「不限制」，
 	// 但插件默认给 5，这里对「未出现即 0」统一给 5：区分不了「显式 0」与「缺省」，与插件一致按缺省处理。
-	if c.Route.MaxDistanceResults == 0 {
-		c.Route.MaxDistanceResults = 5
+	if r.MaxDistanceResults == 0 {
+		r.MaxDistanceResults = 5
 	}
-	if c.Route.MaxPriceResults == 0 {
-		c.Route.MaxPriceResults = 5
+	if r.MaxPriceResults == 0 {
+		r.MaxPriceResults = 5
 	}
 	// 权重：两者都为 0（未配置）时给 0.5/0.5；显式配置其一即保留。
-	if c.Route.SearchWeightDistance == 0 && c.Route.SearchWeightPrice == 0 {
-		c.Route.SearchWeightDistance = 0.5
-		c.Route.SearchWeightPrice = 0.5
+	if r.SearchWeightDistance == 0 && r.SearchWeightPrice == 0 {
+		r.SearchWeightDistance = 0.5
+		r.SearchWeightPrice = 0.5
 	}
-	if c.Route.MinDirectResults == 0 {
-		c.Route.MinDirectResults = 1
+	if r.MinDirectResults == 0 {
+		r.MinDirectResults = 1
 	}
-	if c.Route.MaxTransferResults == 0 {
-		c.Route.MaxTransferResults = 3
+	if r.MaxTransferResults == 0 {
+		r.MaxTransferResults = 3
 	}
-	if c.Route.TransferMinImprovement == 0 {
-		c.Route.TransferMinImprovement = 0.2
+	if r.TransferMinImprovement == 0 {
+		r.TransferMinImprovement = 0.2
 	}
-	if c.Route.ComputeTimeoutMs <= 0 {
-		c.Route.ComputeTimeoutMs = 15000
+	if r.ComputeTimeoutMs <= 0 {
+		r.ComputeTimeoutMs = 15000
 	}
 }

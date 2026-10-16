@@ -6,25 +6,18 @@ import (
 	"testing"
 )
 
-// 写一个最小 yaml，验证 frontend currencyName 与 route 搜索/联程票默认值都被填充（修复此前 currencyName 漏配）。
+// 验证 frontend currencyName 与 route 搜索/联程票默认值都被填充（修复此前 currencyName 漏配）。
 func TestFrontendDefaults(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yml")
-	if err := os.WriteFile(path, []byte("server:\n  addr: \":9000\"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	f := cfg.Frontend
+	var f FrontendConfig
+	ApplyFrontendDefaults(&f)
 	if f.CurrencyName != "帕元" {
 		t.Errorf("CurrencyName = %q, want 帕元", f.CurrencyName)
 	}
 	if rd := f.RouteDiagram; rd.MinStationGapPx != 32 || rd.MaxStationGapPx != 60 {
 		t.Errorf("station gap = %v/%v, want 32/60", rd.MinStationGapPx, rd.MaxStationGapPx)
 	}
-	rt := cfg.Route
+	var rt RouteConfig
+	ApplyRouteDefaults(&rt)
 	if rt.QueryRateLimitPerSecond != 3 {
 		t.Errorf("QueryRateLimitPerSecond = %v, want 3", rt.QueryRateLimitPerSecond)
 	}
@@ -45,8 +38,8 @@ func TestFrontendDefaults(t *testing.T) {
 	}
 }
 
-// 显式配置应保留，不被默认值覆盖（含 <=0 允许值与显式 0 权重）。
-func TestFrontendExplicitValuesKept(t *testing.T) {
+// 旧版 config.yml 中的 frontend / route 段解析为 Legacy（供一次性导入数据库），显式配置原样保留（含显式 0 权重）。
+func TestLegacySectionsParsed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
 	yaml := "frontend:\n" +
@@ -63,15 +56,38 @@ func TestFrontendExplicitValuesKept(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	f := cfg.Frontend
+	if cfg.Legacy.Frontend == nil || cfg.Legacy.Route == nil {
+		t.Fatalf("legacy sections not parsed: %+v", cfg.Legacy)
+	}
+	f := *cfg.Legacy.Frontend
+	ApplyFrontendDefaults(&f)
 	if f.CurrencyName != "Gold" {
 		t.Errorf("CurrencyName = %q, want Gold", f.CurrencyName)
 	}
-	rt := cfg.Route
+	rt := *cfg.Legacy.Route
+	ApplyRouteDefaults(&rt)
 	if rt.MaxDistanceResults != 8 {
 		t.Errorf("MaxDistanceResults = %d, want 8", rt.MaxDistanceResults)
 	}
 	if rt.SearchWeightDistance != 1.0 || rt.SearchWeightPrice != 0.0 {
 		t.Errorf("weights = %v/%v, want 1.0/0.0 (显式配置保留)", rt.SearchWeightDistance, rt.SearchWeightPrice)
+	}
+}
+
+// 没有 frontend / route 段时 Legacy 为 nil（不会触发导入）。
+func TestLegacySectionsAbsent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("server:\n  addr: \":9000\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Legacy.Frontend != nil || cfg.Legacy.Route != nil {
+		t.Errorf("Legacy = %+v, want both nil", cfg.Legacy)
+	}
+	if cfg.Plugin.ConfigTimeoutSeconds != 10 {
+		t.Errorf("ConfigTimeoutSeconds = %d, want 10", cfg.Plugin.ConfigTimeoutSeconds)
 	}
 }

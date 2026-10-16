@@ -176,6 +176,10 @@ body,
   margin-bottom: 4px;
 }
 .menu-action {
+  display: block;
+  box-sizing: border-box;
+  font: inherit;
+  text-decoration: none;
   width: 100%;
   text-align: left;
   background: transparent;

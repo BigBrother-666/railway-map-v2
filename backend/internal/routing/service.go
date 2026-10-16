@@ -37,7 +37,7 @@ type Service struct {
 	graphVer    string
 	reverseSet  map[string]struct{}
 	systems     map[string]System
-	globalPrice float64
+	globalPrice func() float64
 	// stationsVer 是当前 groupOf 对应的站组数据版本；站组变化时结果缓存整体作废（图本身不必重建）。
 	stationsVer string
 	// groupOf 是 站名 → 所在站组全部成员（含自身），只用于联程票换乘。
@@ -49,12 +49,19 @@ type Service struct {
 	inflight singleflight.Group
 }
 
-// NewService 创建路线查询服务。cfgFn 每次查询都会调用一次，以便配置热更新（若未来支持）立即生效；
-// 目前配置在启动时加载一次，cfgFn 可简单地返回同一份 config.RouteConfig。
-func NewService(source GeoSource, cfgFn func() config.RouteConfig, globalPricePerKm float64) *Service {
-	s := &Service{source: source, cfg: cfgFn, globalPrice: globalPricePerKm}
+// NewService 创建路线查询服务。cfgFn / globalPriceFn 每次计算都会调用，以便 web 端修改服务器配置后立即生效；
+// 配置变化时调用方还需调用 InvalidateCache 作废按旧配置算出的结果缓存。
+func NewService(source GeoSource, cfgFn func() config.RouteConfig, globalPriceFn func() float64) *Service {
+	s := &Service{source: source, cfg: cfgFn, globalPrice: globalPriceFn}
 	s.resultCache.Store(&sync.Map{})
 	return s
+}
+
+// InvalidateCache 作废全部站点对结果缓存（排序参数 / 默认票价等配置变化时调用）。
+func (s *Service) InvalidateCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resultCache.Store(&sync.Map{})
 }
 
 type lineProps struct {
@@ -257,7 +264,7 @@ func (s *Service) Query(ctx context.Context, startStation, endStation string) ([
 			IsReverse:        isReverse,
 			GroupMembers:     func(name string) []string { return snap.groupOf[name] },
 			Cfg:              cfg,
-			GlobalPricePerKm: s.globalPrice,
+			GlobalPricePerKm: s.globalPrice(),
 		}
 		result := ComputeCandidates(computeCtx, snap.graph, input)
 		if testComputeDoneHook != nil {
