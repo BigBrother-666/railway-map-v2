@@ -151,36 +151,39 @@ export function LineEditor({
 
   return (
     <EditModalFrame title={`编辑线路 · ${line.id}`} onClose={onClose} onSubmit={submit} busy={busy} error={err} wide>
-      <div className="c-form-grid">
-        <label className="c-field">
-          <span className="c-label">线路名称</span>
-          <input className={`c-input ${bad('name')}`} value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <label className="c-field">
-          <span className="c-label">线路颜色</span>
-          <div className="c-inline">
-            <input
-              type="color"
-              className="c-color"
-              value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#a9a9a9'}
-              onChange={(e) => setColor(e.target.value)}
-              aria-label="选择线路颜色"
-            />
-            <input className={`c-input c-mono ${bad('color')}`} value={color} onChange={(e) => setColor(e.target.value)} />
-          </div>
-        </label>
-        <label className="c-field">
-          <span className="c-label">所属铁路系统</span>
-          <select className={`c-input ${bad('systemId')}`} value={systemId} onChange={(e) => setSystemId(e.target.value)}>
-            {!systems.some((s) => s.id === systemId) && <option value={systemId}>{systemId}</option>}
-            {systems.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <fieldset className="c-fieldset">
+        <legend>基础信息</legend>
+        <div className="c-form-grid">
+          <label className="c-field">
+            <span className="c-label">线路名称</span>
+            <input className={`c-input ${bad('name')}`} value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="c-field">
+            <span className="c-label">线路颜色</span>
+            <div className="c-inline">
+              <input
+                type="color"
+                className="c-color"
+                value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#a9a9a9'}
+                onChange={(e) => setColor(e.target.value)}
+                aria-label="选择线路颜色"
+              />
+              <input className={`c-input c-mono ${bad('color')}`} value={color} onChange={(e) => setColor(e.target.value)} />
+            </div>
+          </label>
+          <label className="c-field">
+            <span className="c-label">所属铁路系统</span>
+            <select className={`c-input ${bad('systemId')}`} value={systemId} onChange={(e) => setSystemId(e.target.value)}>
+              {!systems.some((s) => s.id === systemId) && <option value={systemId}>{systemId}</option>}
+              {systems.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </fieldset>
 
       <fieldset className={`c-fieldset ${bad('bossbarStations')}`}>
         <legend>车站列表（按运行顺序）</legend>

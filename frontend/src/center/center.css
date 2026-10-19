@@ -716,9 +716,9 @@ textarea.c-input {
 }
 /* 分节框用主题色边框和浅色底，与输入框的灰色边框区分开 */
 .c-fieldset {
-  border: 1.5px solid var(--c-accent);
+  border: 1px solid var(--c-accent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--c-accent) 5%, transparent);
+  background: color-mix(in srgb, var(--c-accent) 3%, transparent);
   padding: 12px 14px;
   margin: 0 0 14px;
   display: flex;
