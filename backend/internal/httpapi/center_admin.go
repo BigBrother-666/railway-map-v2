@@ -246,13 +246,16 @@ func (c *Center) RevokeRole(w http.ResponseWriter, r *http.Request) {
 // GetSettings 返回当前配置、默认值与修改信息（GET /admin/settings）。
 func (c *Center) GetSettings(w http.ResponseWriter, r *http.Request) {
 	cur := c.settings.Current()
-	df, dr := settings.Defaults()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"frontend":     cur.Frontend,
 		"route":        cur.Route,
-		"defaults":     map[string]any{"frontend": df, "route": dr},
+		"plugin":       cur.Plugin,
+		"realtime":     cur.Realtime,
+		"defaults":     settings.Defaults(),
 		"frontendMeta": cur.FrontendMeta,
 		"routeMeta":    cur.RouteMeta,
+		"pluginMeta":   cur.PluginMeta,
+		"realtimeMeta": cur.RealtimeMeta,
 	})
 }
 
@@ -281,6 +284,22 @@ func (c *Center) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		before, after = cur.Route, rc
 		err = c.settings.UpdateRoute(rc, actor)
+	case settings.SectionPlugin:
+		var pc config.PluginSettings
+		if json.NewDecoder(r.Body).Decode(&pc) != nil {
+			writeError(w, http.StatusBadRequest, "bad-request", "请求体无效")
+			return
+		}
+		before, after = cur.Plugin, pc
+		err = c.settings.UpdatePlugin(pc, actor)
+	case settings.SectionRealtime:
+		var rt config.RealtimeConfig
+		if json.NewDecoder(r.Body).Decode(&rt) != nil {
+			writeError(w, http.StatusBadRequest, "bad-request", "请求体无效")
+			return
+		}
+		before, after = cur.Realtime, rt
+		err = c.settings.UpdateRealtime(rt, actor)
 	default:
 		writeError(w, http.StatusNotFound, "not-found", "未知的配置段")
 		return

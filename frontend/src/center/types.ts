@@ -176,6 +176,20 @@ export interface RouteSettings {
   computeTimeoutMs: number;
 }
 
+export interface PluginSettings {
+  heartbeatSeconds: number;
+  purchaseTimeoutSeconds: number;
+  purchaseMinIntervalSeconds: number;
+  configTimeoutSeconds: number;
+}
+
+export interface RealtimeSettings {
+  trainTimeoutSeconds: number;
+  clientSendBuffer: number;
+}
+
+export type SettingsSection = 'frontend' | 'route' | 'plugin' | 'realtime';
+
 export interface SettingsMeta {
   updatedBy?: string;
   updatedAt?: number;
@@ -184,9 +198,13 @@ export interface SettingsMeta {
 export interface SettingsResponse {
   frontend: FrontendConfig;
   route: RouteSettings;
-  defaults: { frontend: FrontendConfig; route: RouteSettings };
+  plugin: PluginSettings;
+  realtime: RealtimeSettings;
+  defaults: { frontend: FrontendConfig; route: RouteSettings; plugin: PluginSettings; realtime: RealtimeSettings };
   frontendMeta: SettingsMeta;
   routeMeta: SettingsMeta;
+  pluginMeta: SettingsMeta;
+  realtimeMeta: SettingsMeta;
 }
 
 export interface AuditEntry {

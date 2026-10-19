@@ -1,8 +1,10 @@
 /** 铁路系统详情：系统信息 / 成员 / Logo 编辑、删除（仅创建者或管理员），以及线路列表与线路编辑。 */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { api } from '../../api/client';
 import { getConfig } from '../../config';
 import { centerApi, CenterError } from '../api';
 import type { CenterContext } from '../CenterApp';
+import { parseStations } from '../lineFormat';
 import { navigate } from '../router';
 import type { PlayerRow, PrivateLine, SystemDetail } from '../types';
 import {
@@ -24,6 +26,12 @@ import { LineEditor } from './LineEditor';
 export function SystemPage({ id, ctx }: { id: string; ctx: CenterContext }) {
   const sys = useAsync(() => centerApi.system(id), [id]);
   const lines = useAsync(() => centerApi.systemLines(id), [id]);
+  // 全服线路 id，用于识别末项转线目标（可能是其它系统的线路）；转线不计入车站数
+  const globalLines = useAsync(() => api.lines().catch(() => []), []);
+  const knownLineIds = useMemo(
+    () => [...(lines.data ?? []).map((l) => l.id), ...(globalLines.data ?? []).map((l) => l.id)],
+    [lines.data, globalLines.data],
+  );
   const { notify, node: notice } = useNotice();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -131,7 +139,7 @@ export function SystemPage({ id, ctx }: { id: string; ctx: CenterContext }) {
                     <td data-label="ID" className="c-mono">
                       {l.id}
                     </td>
-                    <td data-label="车站数">{l.bossbarStations.length}</td>
+                    <td data-label="车站数">{parseStations(l.bossbarStations, l.id, knownLineIds).stations.length}</td>
                     <td className="c-right c-actions">
                       <button className="c-btn small" disabled={!online || !s.canEdit} onClick={() => setEditLine(l)}>
                         编辑
@@ -518,8 +526,8 @@ function LogoCard({
   return (
     <Card title="系统 Logo">
       <div className="c-logo-grid">
-        {slot('web', '网页 Logo', '显示在线路图侧栏等网页位置，插件会自动缩放。', sys.logoUrl)}
-        {slot('mc', '游戏内 Logo', '显示在游戏内车票等位置，插件会自动缩放。', sys.mcLogoUrl)}
+        {slot('web', '网页 Logo', '显示在线路图侧边栏等网页位置。', sys.logoUrl)}
+        {slot('mc', '游戏内 Logo', '显示在游戏内车票系统中。', sys.mcLogoUrl)}
       </div>
     </Card>
   );

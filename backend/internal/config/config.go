@@ -1,5 +1,5 @@
 // Package config 加载后端配置（yaml + 环境变量覆盖，见 docs/BACKEND_PROMPT.md §10）。
-// frontend / route 两段已迁移到数据库（见 internal/settings），这里只保留类型定义与默认值。
+// frontend / route / plugin（除 sharedToken）/ realtime 已迁移到数据库（见 internal/settings），这里只保留类型定义与默认值。
 package config
 
 import (
@@ -12,22 +12,24 @@ import (
 
 // Config 是后端总配置。
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Log      LogConfig      `yaml:"log"`
-	Plugin   PluginConfig   `yaml:"plugin"`
-	Realtime RealtimeConfig `yaml:"realtime"`
-	Auth     AuthConfig     `yaml:"auth"`
-	DB       DBConfig       `yaml:"db"`
+	Server ServerConfig `yaml:"server"`
+	Log    LogConfig    `yaml:"log"`
+	Plugin PluginConfig `yaml:"plugin"`
+	Auth   AuthConfig   `yaml:"auth"`
+	DB     DBConfig     `yaml:"db"`
 
-	// Legacy 是旧版 config.yml 中仍残留的 frontend / route 段（已迁移到数据库，由 web 端服务器配置维护）。
+	// Legacy 是旧版 config.yml 中仍残留的 frontend / route / plugin / realtime 段（已迁移到数据库，由 web 端服务器配置维护）。
 	// 只用于首次启动时一次性导入数据库，不参与运行时配置。
 	Legacy LegacySections `yaml:"-"`
 }
 
-// LegacySections 是旧版 config.yml 中的 frontend / route 段；对应段不存在时为 nil。
+// LegacySections 是旧版 config.yml 中的 frontend / route / plugin / realtime 段；对应段不存在时为 nil。
+// plugin 段只有 sharedToken（仍留在 config.yml）时 Plugin 为 nil。
 type LegacySections struct {
 	Frontend *FrontendConfig
 	Route    *RouteConfig
+	Plugin   *PluginSettings
+	Realtime *RealtimeConfig
 }
 
 type ServerConfig struct {
@@ -43,20 +45,30 @@ type LogConfig struct {
 	Dir   string `yaml:"dir"`
 }
 
+// PluginConfig 是 config.yml 中 plugin 段仍保留的部分（密钥不入库）。
 type PluginConfig struct {
-	SharedToken            string `yaml:"sharedToken"`
-	HeartbeatSeconds       int    `yaml:"heartbeatSeconds"`
-	PurchaseTimeoutSeconds int    `yaml:"purchaseTimeoutSeconds"`
-	// PurchaseMinIntervalSeconds 是同一玩家两次购票的最小间隔（秒），防止频繁购票压垮服务器。
-	// <=0 时用默认 3 秒。
-	PurchaseMinIntervalSeconds int `yaml:"purchaseMinIntervalSeconds"`
-	// ConfigTimeoutSeconds 是 web 端编辑铁路系统 / 线路 / 车站别名 / 车站组时等待插件回执的超时秒数。<=0 用默认 10。
-	ConfigTimeoutSeconds int `yaml:"configTimeoutSeconds"`
+	SharedToken string `yaml:"sharedToken"`
 }
 
+// PluginSettings 是插件链路的可编辑参数（数据库 app_settings 的 plugin 段）。
+type PluginSettings struct {
+	// HeartbeatSeconds 是后端向插件发送 ping 的间隔秒数。<=0 用默认 15。
+	HeartbeatSeconds int `yaml:"heartbeatSeconds" json:"heartbeatSeconds"`
+	// PurchaseTimeoutSeconds 是在线购票等待插件扣款/出票回执的超时秒数。<=0 用默认 10。
+	PurchaseTimeoutSeconds int `yaml:"purchaseTimeoutSeconds" json:"purchaseTimeoutSeconds"`
+	// PurchaseMinIntervalSeconds 是同一玩家两次购票的最小间隔（秒），防止频繁购票压垮服务器。
+	// <=0 时用默认 3 秒。
+	PurchaseMinIntervalSeconds int `yaml:"purchaseMinIntervalSeconds" json:"purchaseMinIntervalSeconds"`
+	// ConfigTimeoutSeconds 是 web 端编辑铁路系统 / 线路 / 车站别名 / 车站组时等待插件回执的超时秒数。<=0 用默认 10。
+	ConfigTimeoutSeconds int `yaml:"configTimeoutSeconds" json:"configTimeoutSeconds"`
+}
+
+// RealtimeConfig 是实时列车推送的可编辑参数（数据库 app_settings 的 realtime 段）。
 type RealtimeConfig struct {
-	TrainTimeoutSeconds int `yaml:"trainTimeoutSeconds"`
-	ClientSendBuffer    int `yaml:"clientSendBuffer"`
+	// TrainTimeoutSeconds 是列车多久未更新就视为消失。<=0 用默认 30。
+	TrainTimeoutSeconds int `yaml:"trainTimeoutSeconds" json:"trainTimeoutSeconds"`
+	// ClientSendBuffer 是每个前端实时 WebSocket 连接的发送缓冲帧数（只影响新连接）。<=0 用默认 64。
+	ClientSendBuffer int `yaml:"clientSendBuffer" json:"clientSendBuffer"`
 }
 
 type AuthConfig struct {
@@ -189,11 +201,26 @@ func Load(path string) (*Config, error) {
 	var legacy struct {
 		Frontend *FrontendConfig `yaml:"frontend"`
 		Route    *RouteConfig    `yaml:"route"`
+		Plugin   map[string]any  `yaml:"plugin"`
+		Realtime *RealtimeConfig `yaml:"realtime"`
 	}
 	if err := yaml.Unmarshal([]byte(expanded), &legacy); err != nil {
 		return nil, err
 	}
-	cfg.Legacy = LegacySections{Frontend: legacy.Frontend, Route: legacy.Route}
+	cfg.Legacy = LegacySections{Frontend: legacy.Frontend, Route: legacy.Route, Realtime: legacy.Realtime}
+	// plugin 段本身仍存在（sharedToken），只有出现了已迁移的键才视为旧段。
+	delete(legacy.Plugin, "sharedToken")
+	if len(legacy.Plugin) > 0 {
+		b, err := yaml.Marshal(legacy.Plugin)
+		if err != nil {
+			return nil, err
+		}
+		var p PluginSettings
+		if err := yaml.Unmarshal(b, &p); err != nil {
+			return nil, err
+		}
+		cfg.Legacy.Plugin = &p
+	}
 	cfg.applyDefaults()
 	return &cfg, nil
 }
@@ -210,24 +237,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Log.Dir == "" {
 		c.Log.Dir = "data/logs"
-	}
-	if c.Plugin.HeartbeatSeconds <= 0 {
-		c.Plugin.HeartbeatSeconds = 15
-	}
-	if c.Plugin.PurchaseTimeoutSeconds <= 0 {
-		c.Plugin.PurchaseTimeoutSeconds = 10
-	}
-	if c.Plugin.PurchaseMinIntervalSeconds <= 0 {
-		c.Plugin.PurchaseMinIntervalSeconds = 3
-	}
-	if c.Plugin.ConfigTimeoutSeconds <= 0 {
-		c.Plugin.ConfigTimeoutSeconds = 10
-	}
-	if c.Realtime.TrainTimeoutSeconds <= 0 {
-		c.Realtime.TrainTimeoutSeconds = 30
-	}
-	if c.Realtime.ClientSendBuffer <= 0 {
-		c.Realtime.ClientSendBuffer = 64
 	}
 	if c.Auth.Microsoft.RedirectPath == "" {
 		c.Auth.Microsoft.RedirectPath = "/api/v1/auth/callback"
@@ -368,5 +377,31 @@ func ApplyRouteDefaults(r *RouteConfig) {
 	}
 	if r.ComputeTimeoutMs <= 0 {
 		r.ComputeTimeoutMs = 15000
+	}
+}
+
+// ApplyPluginDefaults 为插件链路参数中未配置 / 非法的字段填充默认值。
+func ApplyPluginDefaults(p *PluginSettings) {
+	if p.HeartbeatSeconds <= 0 {
+		p.HeartbeatSeconds = 15
+	}
+	if p.PurchaseTimeoutSeconds <= 0 {
+		p.PurchaseTimeoutSeconds = 10
+	}
+	if p.PurchaseMinIntervalSeconds <= 0 {
+		p.PurchaseMinIntervalSeconds = 3
+	}
+	if p.ConfigTimeoutSeconds <= 0 {
+		p.ConfigTimeoutSeconds = 10
+	}
+}
+
+// ApplyRealtimeDefaults 为实时列车参数中未配置 / 非法的字段填充默认值。
+func ApplyRealtimeDefaults(r *RealtimeConfig) {
+	if r.TrainTimeoutSeconds <= 0 {
+		r.TrainTimeoutSeconds = 30
+	}
+	if r.ClientSendBuffer <= 0 {
+		r.ClientSendBuffer = 64
 	}
 }

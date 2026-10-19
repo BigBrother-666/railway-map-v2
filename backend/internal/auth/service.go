@@ -65,7 +65,8 @@ func (s *Service) AuthCodeURL(state string) string {
 	if s.oauth == nil {
 		return ""
 	}
-	return s.oauth.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	return s.oauth.AuthCodeURL(state, oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("prompt", "select_account"))
 }
 
 // Exchange 用授权码换取 MC profile，并校验白名单；通过则返回玩家身份。

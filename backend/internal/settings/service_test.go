@@ -31,6 +31,9 @@ func TestDefaultsWhenEmpty(t *testing.T) {
 	if s.Frontend().CurrencyName != "帕元" || s.Route().ComputeTimeoutMs != 15000 {
 		t.Errorf("defaults not applied: %+v %+v", s.Frontend(), s.Route())
 	}
+	if s.Plugin().HeartbeatSeconds != 15 || s.Realtime().TrainTimeoutSeconds != 30 {
+		t.Errorf("defaults not applied: %+v %+v", s.Plugin(), s.Realtime())
+	}
 }
 
 // 旧 yml 段只在数据库为空时导入一次；之后数据库优先，yml 被忽略。
@@ -101,5 +104,52 @@ func TestValidateRoute(t *testing.T) {
 	// max*Results <= 0 表示不限制，合法
 	if errs := ValidateRoute(config.RouteConfig{MaxDistanceResults: -1}); len(errs) != 0 {
 		t.Errorf("errs = %v", errs)
+	}
+}
+
+// plugin / realtime 段：旧 yml 导入一次、校验、保存、重置。
+func TestPluginRealtimeSections(t *testing.T) {
+	st := openStore(t)
+	legacy := config.LegacySections{
+		Plugin:   &config.PluginSettings{HeartbeatSeconds: 20},
+		Realtime: &config.RealtimeConfig{TrainTimeoutSeconds: 45},
+	}
+	s, err := New(st, legacy, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Plugin().HeartbeatSeconds != 20 || s.Plugin().PurchaseTimeoutSeconds != 10 || s.Realtime().TrainTimeoutSeconds != 45 {
+		t.Fatalf("legacy not imported: %+v %+v", s.Plugin(), s.Realtime())
+	}
+	if s.Current().PluginMeta.UpdatedBy != "migration" || s.Current().RealtimeMeta.UpdatedBy != "migration" {
+		t.Errorf("meta = %+v %+v", s.Current().PluginMeta, s.Current().RealtimeMeta)
+	}
+
+	var fe FieldErrors
+	if err := s.UpdatePlugin(config.PluginSettings{HeartbeatSeconds: -1}, "u1"); !errors.As(err, &fe) || len(fe) != 1 {
+		t.Fatalf("err = %v, want 1 field error", err)
+	}
+	if err := s.UpdateRealtime(config.RealtimeConfig{ClientSendBuffer: 99999}, "u1"); !errors.As(err, &fe) || len(fe) != 1 {
+		t.Fatalf("err = %v, want 1 field error", err)
+	}
+	if err := s.UpdatePlugin(config.PluginSettings{PurchaseMinIntervalSeconds: 5}, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateRealtime(config.RealtimeConfig{ClientSendBuffer: 128}, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	s2, _ := New(st, config.LegacySections{}, quiet)
+	if s2.Plugin().PurchaseMinIntervalSeconds != 5 || s2.Plugin().HeartbeatSeconds != 15 || s2.Realtime().ClientSendBuffer != 128 {
+		t.Errorf("not persisted: %+v %+v", s2.Plugin(), s2.Realtime())
+	}
+
+	if err := s.Reset(SectionPlugin); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Reset(SectionRealtime); err != nil {
+		t.Fatal(err)
+	}
+	if s.Plugin().PurchaseMinIntervalSeconds != 3 || s.Realtime().ClientSendBuffer != 64 {
+		t.Errorf("reset failed: %+v %+v", s.Plugin(), s.Realtime())
 	}
 }

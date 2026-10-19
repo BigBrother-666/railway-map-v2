@@ -1,10 +1,10 @@
 /**
- * 服务器配置：按 schema 渲染 frontend（前端运行时配置）与 route（寻路参数）两段的分组表单。
+ * 服务器配置：按 schema 渲染 frontend（前端运行时配置）、route（寻路参数）、plugin（插件链路）、realtime（实时列车）四段的分组表单。
  * 每项显示默认值、单项恢复默认；改动高亮，底部固定「保存 / 放弃」栏。保存后后端立即生效，前端用户刷新页面后生效。
  */
 import { useEffect, useMemo, useState } from 'react';
 import { centerApi, type FieldError } from '../api';
-import type { FrontendConfig, RouteSettings, SettingsResponse } from '../types';
+import type { FrontendConfig, PluginSettings, RealtimeSettings, RouteSettings, SettingsResponse, SettingsSection } from '../types';
 import { Card, ConfirmModal, ErrorState, formatTime, Loading, PageHeader, toCenterError, useAsync, useNotice } from '../ui';
 
 type FieldType = 'text' | 'number' | 'color' | 'image' | 'textarea';
@@ -95,6 +95,37 @@ const ROUTE_GROUPS: GroupDef[] = [
   },
 ];
 
+const PLUGIN_GROUPS: GroupDef[] = [
+  {
+    title: '插件链路',
+    desc: '后端与游戏插件之间的心跳与回执等待参数。保存后立即生效（心跳间隔从下一次 ping 起生效）。',
+    fields: [
+      { path: 'heartbeatSeconds', label: '心跳间隔（秒）', type: 'number', step: 1, min: 0, help: '后端向插件发送 ping 的间隔' },
+      { path: 'purchaseTimeoutSeconds', label: '购票回执超时（秒）', type: 'number', step: 1, min: 0, help: '等待插件扣款 / 出票回执' },
+      { path: 'purchaseMinIntervalSeconds', label: '购票最小间隔（秒）', type: 'number', step: 1, min: 0, help: '同一玩家两次购票的最小间隔' },
+      { path: 'configTimeoutSeconds', label: '配置回执超时（秒）', type: 'number', step: 1, min: 0, help: '个人中心编辑系统 / 线路 / 车站时等待插件写入' },
+    ],
+  },
+];
+
+const REALTIME_GROUPS: GroupDef[] = [
+  {
+    title: '实时列车',
+    desc: '实时列车推送参数。保存后立即生效；发送缓冲只影响之后新建立的连接。',
+    fields: [
+      { path: 'trainTimeoutSeconds', label: '列车消失超时（秒）', type: 'number', step: 1, min: 0, help: '超过该时长未更新的列车从地图移除' },
+      { path: 'clientSendBuffer', label: '每连接发送缓冲（帧）', type: 'number', step: 1, min: 0, max: 4096, help: '满时丢弃最旧帧' },
+    ],
+  },
+];
+
+const SECTION_LABELS: Record<SettingsSection, string> = {
+  frontend: '前端显示',
+  route: '路线查询',
+  plugin: '插件链路',
+  realtime: '实时列车',
+};
+
 function getPath(obj: unknown, path: string): unknown {
   return path.split('.').reduce<any>((o, k) => (o == null ? undefined : o[k]), obj);
 }
@@ -112,23 +143,22 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 export function SettingsPage() {
   const { data, error, loading, reload, setData } = useAsync(() => centerApi.settings(), []);
-  const [tab, setTab] = useState<'frontend' | 'route'>('frontend');
+  const [tab, setTab] = useState<SettingsSection>('frontend');
 
   if (loading && !data) return <Loading rows={8} />;
   if (error || !data) return error ? <ErrorState error={error} onRetry={reload} /> : null;
 
   return (
     <>
-      <PageHeader title="服务器配置" sub="原 config.yml 中的 frontend / route 段，保存在数据库中。" />
+      <PageHeader title="服务器配置" sub="原 config.yml 中的 frontend / route / plugin / realtime 段，保存在数据库中。" />
       <div className="c-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'frontend'} className={`c-tab ${tab === 'frontend' ? 'active' : ''}`} onClick={() => setTab('frontend')}>
-          前端显示
-        </button>
-        <button role="tab" aria-selected={tab === 'route'} className={`c-tab ${tab === 'route' ? 'active' : ''}`} onClick={() => setTab('route')}>
-          路线查询
-        </button>
+        {(Object.keys(SECTION_LABELS) as SettingsSection[]).map((s) => (
+          <button key={s} role="tab" aria-selected={tab === s} className={`c-tab ${tab === s ? 'active' : ''}`} onClick={() => setTab(s)}>
+            {SECTION_LABELS[s]}
+          </button>
+        ))}
       </div>
-      {tab === 'frontend' ? (
+      {tab === 'frontend' && (
         <SectionForm<FrontendConfig>
           key="frontend"
           section="frontend"
@@ -140,7 +170,8 @@ export function SettingsPage() {
           onSaved={setData}
           extra={(v, set, def) => <WorldTilesEditor value={v} set={set} defaults={def} />}
         />
-      ) : (
+      )}
+      {tab === 'route' && (
         <SectionForm<RouteSettings>
           key="route"
           section="route"
@@ -149,6 +180,30 @@ export function SettingsPage() {
           meta={data.routeMeta}
           groups={ROUTE_GROUPS}
           save={(v) => centerApi.saveRoute(v)}
+          onSaved={setData}
+        />
+      )}
+      {tab === 'plugin' && (
+        <SectionForm<PluginSettings>
+          key="plugin"
+          section="plugin"
+          value={data.plugin}
+          defaults={data.defaults.plugin}
+          meta={data.pluginMeta}
+          groups={PLUGIN_GROUPS}
+          save={(v) => centerApi.savePlugin(v)}
+          onSaved={setData}
+        />
+      )}
+      {tab === 'realtime' && (
+        <SectionForm<RealtimeSettings>
+          key="realtime"
+          section="realtime"
+          value={data.realtime}
+          defaults={data.defaults.realtime}
+          meta={data.realtimeMeta}
+          groups={REALTIME_GROUPS}
+          save={(v) => centerApi.saveRealtime(v)}
           onSaved={setData}
         />
       )}
@@ -166,7 +221,7 @@ function SectionForm<T extends object>({
   onSaved,
   extra,
 }: {
-  section: 'frontend' | 'route';
+  section: SettingsSection;
   value: T;
   defaults: T;
   meta: { updatedBy?: string; updatedAt?: number };
@@ -199,7 +254,7 @@ function SectionForm<T extends object>({
     try {
       const res = await save(draft);
       onSaved(res);
-      notify('success', '已保存并生效，前端用户刷新页面后看到新配置');
+      notify('success', section === 'frontend' ? '已保存并生效，前端用户刷新页面后看到新配置' : '已保存并生效');
     } catch (e) {
       const ce = toCenterError(e);
       if (ce.fields) setFieldErrs(ce.fields);
@@ -254,7 +309,7 @@ function SectionForm<T extends object>({
         <ConfirmModal
           title="恢复默认配置"
           confirmText="恢复默认"
-          message={<p>将「{section === 'frontend' ? '前端显示' : '路线查询'}」全部配置恢复为默认值并立即生效。</p>}
+          message={<p>将「{SECTION_LABELS[section]}」全部配置恢复为默认值并立即生效。</p>}
           onConfirm={async () => {
             onSaved(await centerApi.resetSettings(section));
             notify('success', '已恢复默认');

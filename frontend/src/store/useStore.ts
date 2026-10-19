@@ -15,6 +15,7 @@ import type {
   RailwaySystem,
   RideHistoryItem,
   RideHistoryResponse,
+  RouteGeometry,
   RoutePath,
   Train,
 } from '../types';
@@ -192,6 +193,7 @@ export const useStore = create<AppState>((set, get) => ({
       const stationAliases = stations.aliases ?? {};
       const stationGroups = stations.groups ?? {};
       attachStationNameEn(geojson, stationAliases);
+      attachLineColors(geojson, lines);
       const graph = RouteGraph.fromFeatureCollection(geojson);
       const systemMap = new Map(systems.map((s) => [s.id, s]));
       const reverseSet = new Set<string>();
@@ -509,7 +511,7 @@ export const useStore = create<AppState>((set, get) => ({
     // 有坐标快照则改用快照渲染；旧记录无快照时用当前图最短路修补节点序列兜底。
     const graph = get().graph;
     const intact = !graph || graph.hasAllEdges(item.nodeIds);
-    const historyGeometry = !intact ? item.geometry : undefined;
+    const historyGeometry = !intact && item.geometry ? withLineColors(item.geometry, get().lines) : undefined;
     const nodeIds = intact || historyGeometry ? item.nodeIds : graph.repairPath(item.nodeIds);
     set({
       selectedHistoryId: item.id,
@@ -548,6 +550,28 @@ function attachStationNameEn(fc: FeatureCollection, aliases: Record<string, stri
     const en = aliases[p.name];
     if (en) p.nameEn = en;
   }
+}
+
+/** 线路配置中找不到线路时的兜底颜色（与插件 LineConfig.getColor 一致）。 */
+const DEFAULT_LINE_COLOR = '#a9a9a9';
+
+/**
+ * 用线路配置颜色覆盖 geojson 轨道段的 color（原地修改）。
+ * 线路颜色只以线路配置为准，修改颜色后插件无需重新遍历线路。
+ */
+function attachLineColors(fc: FeatureCollection, lines: Line[]): void {
+  const colors = new Map(lines.map((l) => [l.id, l.color]));
+  for (const f of fc.features) {
+    if (f.geometry?.type !== 'LineString') continue;
+    const p = f.properties as LineStringProps | null;
+    if (p) p.color = colors.get(p.lineId) || DEFAULT_LINE_COLOR;
+  }
+}
+
+/** 乘车历史坐标快照按当前线路配置着色；线路已删除时保留快照中结算时的颜色。 */
+function withLineColors(geom: RouteGeometry, lines: Line[]): RouteGeometry {
+  const colors = new Map(lines.map((l) => [l.id, l.color]));
+  return { ...geom, segments: geom.segments.map((s) => ({ ...s, color: colors.get(s.lineId) || s.color })) };
 }
 
 /** 从 geojson 提取所有出现过的世界名（按首次出现顺序，首个即默认世界兜底）。 */

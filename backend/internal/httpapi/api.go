@@ -46,7 +46,7 @@ type API struct {
 	logger          *slog.Logger
 
 	// 购票频率限制：每玩家一个 token bucket（burst=1），同一玩家两次购票的最小间隔由此换算。
-	purchaseMinInterval time.Duration
+	purchaseMinInterval func() time.Duration // 读当前配置，web 端修改后立即生效
 	purchaseLimMu       sync.Mutex
 	purchaseLimiters    map[string]*rate.Limiter
 
@@ -85,8 +85,8 @@ type Options struct {
 	FrontendBaseURL string
 	TestAuthEnabled bool
 	TestAuthUUIDs   []string
-	// PurchaseMinInterval 是同一玩家两次购票的最小间隔（<=0 时购票不限频）。
-	PurchaseMinInterval time.Duration
+	// PurchaseMinInterval 返回同一玩家两次购票的最小间隔（nil 或 <=0 时购票不限频）。
+	PurchaseMinInterval func() time.Duration
 	// Routing 是路线/车票查询服务（nil 时 RouteQuery 返回 503）。
 	Routing *routing.Service
 	// RouteQueryRateLimitPerSecond 返回单个登录玩家每秒最多发起的路线查询请求数（读当前配置）。
@@ -376,10 +376,14 @@ func (a *API) Purchase(w http.ResponseWriter, r *http.Request) {
 // continuation=true（联程票续段）跳过间隔检查，但仍消耗令牌，使整程结束后正常计冷却。
 // minInterval<=0 时不限频。
 func (a *API) allowPurchase(uuid string, continuation bool) bool {
-	if a.purchaseMinInterval <= 0 {
+	if a.purchaseMinInterval == nil {
 		return true
 	}
-	lim := a.purchaseLimiterFor(uuid)
+	interval := a.purchaseMinInterval()
+	if interval <= 0 {
+		return true
+	}
+	lim := a.purchaseLimiterFor(uuid, interval)
 	if continuation {
 		_ = lim.Allow() // 消耗令牌但不判定结果，避免续段被自己的冷却拦下
 		return true
@@ -387,13 +391,17 @@ func (a *API) allowPurchase(uuid string, continuation bool) bool {
 	return lim.Allow()
 }
 
-func (a *API) purchaseLimiterFor(uuid string) *rate.Limiter {
+func (a *API) purchaseLimiterFor(uuid string, interval time.Duration) *rate.Limiter {
 	a.purchaseLimMu.Lock()
 	defer a.purchaseLimMu.Unlock()
 	if lim, ok := a.purchaseLimiters[uuid]; ok {
+		// 配置被修改后，已有限流器同步到新间隔
+		if lim.Limit() != rate.Every(interval) {
+			lim.SetLimit(rate.Every(interval))
+		}
 		return lim
 	}
-	lim := rate.NewLimiter(rate.Every(a.purchaseMinInterval), 1)
+	lim := rate.NewLimiter(rate.Every(interval), 1)
 	a.purchaseLimiters[uuid] = lim
 	return lim
 }

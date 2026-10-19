@@ -26,14 +26,14 @@ type pending struct {
 // Orchestrator 维护挂起请求并关联插件回执。
 type Orchestrator struct {
 	sender  Sender
-	timeout time.Duration
+	timeout func() time.Duration // 读当前配置，web 端修改后立即生效
 
 	mu      sync.Mutex
 	pending map[string]*pending
 }
 
-// New 创建编排器。
-func New(sender Sender, timeout time.Duration) *Orchestrator {
+// New 创建编排器。timeout 返回当前等待插件回执的超时。
+func New(sender Sender, timeout func() time.Duration) *Orchestrator {
 	return &Orchestrator{
 		sender:  sender,
 		timeout: timeout,
@@ -78,7 +78,7 @@ func (o *Orchestrator) Submit(playerUUID, playerName string, req model.PurchaseR
 	select {
 	case result := <-p.ch:
 		return result
-	case <-time.After(o.timeout):
+	case <-time.After(o.timeout()):
 		return model.PurchaseResult{RequestID: requestID, Success: false, Reason: "internal-error"}
 	}
 }

@@ -151,36 +151,39 @@ export function LineEditor({
 
   return (
     <EditModalFrame title={`编辑线路 · ${line.id}`} onClose={onClose} onSubmit={submit} busy={busy} error={err} wide>
-      <div className="c-form-grid">
-        <label className="c-field">
-          <span className="c-label">线路名称</span>
-          <input className={`c-input ${bad('name')}`} value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <label className="c-field">
-          <span className="c-label">线路颜色</span>
-          <div className="c-inline">
-            <input
-              type="color"
-              className="c-color"
-              value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#a9a9a9'}
-              onChange={(e) => setColor(e.target.value)}
-              aria-label="选择线路颜色"
-            />
-            <input className={`c-input c-mono ${bad('color')}`} value={color} onChange={(e) => setColor(e.target.value)} />
-          </div>
-        </label>
-        <label className="c-field">
-          <span className="c-label">所属铁路系统</span>
-          <select className={`c-input ${bad('systemId')}`} value={systemId} onChange={(e) => setSystemId(e.target.value)}>
-            {!systems.some((s) => s.id === systemId) && <option value={systemId}>{systemId}</option>}
-            {systems.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <fieldset className="c-fieldset">
+        <legend>基础信息</legend>
+        <div className="c-form-grid">
+          <label className="c-field">
+            <span className="c-label">线路名称</span>
+            <input className={`c-input ${bad('name')}`} value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="c-field">
+            <span className="c-label">线路颜色</span>
+            <div className="c-inline">
+              <input
+                type="color"
+                className="c-color"
+                value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : '#a9a9a9'}
+                onChange={(e) => setColor(e.target.value)}
+                aria-label="选择线路颜色"
+              />
+              <input className={`c-input c-mono ${bad('color')}`} value={color} onChange={(e) => setColor(e.target.value)} />
+            </div>
+          </label>
+          <label className="c-field">
+            <span className="c-label">所属铁路系统</span>
+            <select className={`c-input ${bad('systemId')}`} value={systemId} onChange={(e) => setSystemId(e.target.value)}>
+              {!systems.some((s) => s.id === systemId) && <option value={systemId}>{systemId}</option>}
+              {systems.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </fieldset>
 
       <fieldset className={`c-fieldset ${bad('bossbarStations')}`}>
         <legend>车站列表（按运行顺序）</legend>
@@ -349,7 +352,7 @@ function NoticeEditor({
               set(i, e.target.value === 'sound' ? { kind: 'sound', name: '', pitch: '1', volume: '1' } : { kind: 'announce', text: '' })
             }
           >
-            <option value="announce">公告</option>
+            <option value="announce">文字</option>
             <option value="sound">声音</option>
           </select>
           {r.kind === 'announce' ? (
@@ -358,11 +361,11 @@ function NoticeEditor({
               value={r.text}
               placeholder="列车即将到达 {line_color}{curr_station}站"
               onChange={(e) => set(i, { ...r, text: e.target.value })}
-              aria-label="公告文字"
+              aria-label="文字"
             />
           ) : (
             <>
-              <input className="c-input" value={r.name} placeholder="声音名称" onChange={(e) => set(i, { ...r, name: e.target.value })} aria-label="声音名称" />
+              <input className="c-input" value={r.name} placeholder="block.note_block.bell" onChange={(e) => set(i, { ...r, name: e.target.value })} aria-label="声音名称" />
               <input className="c-input c-num" value={r.pitch} inputMode="decimal" onChange={(e) => set(i, { ...r, pitch: e.target.value })} aria-label="音调" title="音调" />
               <input className="c-input c-num" value={r.volume} inputMode="decimal" onChange={(e) => set(i, { ...r, volume: e.target.value })} aria-label="音量" title="音量" />
             </>
@@ -375,7 +378,8 @@ function NoticeEditor({
       <button type="button" className="c-btn small" onClick={() => onChange([...rows, { kind: 'announce', text: '' }])}>
         + 添加提示
       </button>
-      <span className="c-help">占位符：{'{curr_station} {next_station} {line_name} {railway_system} {line_color}'}</span>
+      <span className="c-help">文字可用占位符：{'{curr_station} {next_station} {line_name} {railway_system} {line_color}'}</span>
+      <span className="c-help">声音后的两个数字分别是 音调(0.5-2) 和 音量(0-1)</span>
     </fieldset>
   );
 }
