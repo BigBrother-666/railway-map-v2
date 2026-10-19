@@ -63,7 +63,11 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Cleanup(func() { _ = st.Close() })
 	cache := geo.NewCache(st)
 	systems, _ := json.Marshal([]model.PrivateSystem{{ID: "sys", Name: "S", Creator: uCreator, Members: []string{uCreator, uMember}}})
-	lines, _ := json.Marshal([]model.PrivateLine{{ID: "l1", SystemID: "sys", Name: "L", Color: "#ffffff", BossbarStations: []string{"A", "B"}}})
+	lines, _ := json.Marshal([]model.PrivateLine{
+		{ID: "l1", SystemID: "sys", Name: "L", Color: "#ffffff", BossbarStations: []string{"A", "B"}},
+		{ID: "l2", SystemID: "sys", Name: "L2", Color: "#ffffff", BossbarStations: []string{"B", "C:RV", "D"}},
+		{ID: "contact", SystemID: "contact", Name: "联络线", Color: "#888888", BossbarStations: []string{"X", "Y"}},
+	})
 	if err := cache.SetPrivateSystems(systems); err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +140,10 @@ func TestCenterPermissionMatrix(t *testing.T) {
 		{"成员可编辑线路", uMember, http.MethodPut, "/me/lines/l1", lineBody, 200},
 		{"路人不能编辑线路", uOutside, http.MethodPut, "/me/lines/l1", lineBody, 404},
 		{"线路颜色校验", uMember, http.MethodPut, "/me/lines/l1", strings.Replace(lineBody, "#000000", "red", 1), 400},
+		{"转线需要进入站", uMember, http.MethodPut, "/me/lines/l1", strings.Replace(lineBody, `"B"]`, `"B","l2"]`, 1), 400},
+		{"进入站须属于转入线路", uMember, http.MethodPut, "/me/lines/l1", strings.Replace(lineBody, `"B"]`, `"B","l2:A"]`, 1), 400},
+		{"转线进入折返站", uMember, http.MethodPut, "/me/lines/l1", strings.Replace(lineBody, `"B"]`, `"B","l2:C"]`, 1), 200},
+		{"不能转入联络线", uMember, http.MethodPut, "/me/lines/l1", strings.Replace(lineBody, `"B"]`, `"B","contact:X"]`, 1), 400},
 		{"不能编辑不存在的系统", uAdmin, http.MethodPut, "/me/systems/nope", sysBody, 404},
 		{"无权限看服务器配置", uCreator, http.MethodGet, "/admin/settings", "", 403},
 		{"超管看服务器配置", uAdmin, http.MethodGet, "/admin/settings", "", 200},

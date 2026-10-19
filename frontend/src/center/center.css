@@ -158,9 +158,17 @@ html:has(.center) #root {
 }
 .c-nav-icon {
   width: 18px;
-  text-align: center;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--c-muted);
-  font-size: 13px;
+  font-size: 16px;
+  line-height: 1;
+}
+.c-nav-icon svg {
+  display: block;
 }
 .c-nav-link.active .c-nav-icon {
   color: var(--c-text);
@@ -206,7 +214,22 @@ html:has(.center) #root {
   border-bottom: 1px solid var(--c-border);
 }
 .c-menu-btn {
-  display: none;
+  font-size: 16px;
+}
+/* 宽屏折叠侧栏 */
+@media (min-width: 861px) {
+  .c-shell {
+    transition: grid-template-columns 0.2s ease;
+  }
+  .c-shell.sidebar-collapsed {
+    grid-template-columns: 0 1fr;
+  }
+  .sidebar-collapsed .c-sidebar {
+    visibility: hidden;
+    padding-left: 0;
+    padding-right: 0;
+    border-right: none;
+  }
 }
 .c-crumb {
   flex: 1;
@@ -1284,9 +1307,6 @@ td.c-actions > * + * {
     inset: 0;
     z-index: 44;
     background: rgba(0, 0, 0, 0.4);
-  }
-  .c-menu-btn {
-    display: inline-grid;
   }
   .c-topbar {
     padding: 0 12px;

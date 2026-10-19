@@ -341,6 +341,10 @@ func (c *Center) UpdateLine(w http.ResponseWriter, r *http.Request) {
 		writeFieldError(w, "bossbarColor", "BossBar 颜色无效")
 		return
 	}
+	if field, msg := validateTransfer(line.ID, req.BossbarStations, c.cache.PrivateLines()); msg != "" {
+		writeFieldError(w, field, msg)
+		return
+	}
 	if req.SystemID != line.SystemID {
 		target, found := c.cache.PrivateSystem(req.SystemID)
 		if !found || !c.access(r, target).canEdit() {
@@ -350,6 +354,58 @@ func (c *Center) UpdateLine(w http.ResponseWriter, r *http.Request) {
 	}
 	c.pluginCall(w, r, pluginconfig.OpLineUpdate, "line.update", line.ID, req,
 		map[string]any{"before": line, "after": req})
+}
+
+// contactID 是联络线的特殊线路 / 系统 id，不能作为转线目标。
+const contactID = "contact"
+
+// splitTransfer 识别 bossbar-stations 末项是否为转线目标（"<线路id>" 或 "<线路id>:<进入站>"，与插件 LineConfig 规则一致），
+// 返回目标线路、进入站与去掉末项后的车站列表。
+func splitTransfer(selfID string, items []string, lines []model.PrivateLine) (target *model.PrivateLine, entry string, stations []string) {
+	if len(items) == 0 {
+		return nil, "", items
+	}
+	last := strings.TrimSpace(items[len(items)-1])
+	candidate, rest, _ := strings.Cut(last, ":")
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" || candidate == selfID {
+		return nil, "", items
+	}
+	for i := range lines {
+		if lines[i].ID == candidate {
+			return &lines[i], strings.TrimSpace(rest), items[:len(items)-1]
+		}
+	}
+	return nil, "", items
+}
+
+// stationNames 返回线路的车站名（去掉折返标记 :RV 与末项转线目标）。
+func stationNames(l model.PrivateLine, lines []model.PrivateLine) []string {
+	_, _, items := splitTransfer(l.ID, l.BossbarStations, lines)
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		if i := strings.LastIndex(it, ":"); i >= 0 && strings.EqualFold(strings.TrimSpace(it[i+1:]), "RV") {
+			it = it[:i]
+		}
+		names = append(names, strings.TrimSpace(it))
+	}
+	return names
+}
+
+// validateTransfer 校验转线：目标不能是联络线，进入站必填且必须是目标线路的车站。
+func validateTransfer(selfID string, items []string, lines []model.PrivateLine) (field, msg string) {
+	target, entry, _ := splitTransfer(selfID, items, lines)
+	switch {
+	case target == nil:
+		return "", ""
+	case target.ID == contactID || target.SystemID == contactID:
+		return "nextLineId", "不能转入联络线"
+	case entry == "":
+		return "nextEntryStation", "请选择转线后的进入站"
+	case !slices.Contains(stationNames(*target, lines), entry):
+		return "nextEntryStation", "进入站不是转入线路的车站"
+	}
+	return "", ""
 }
 
 // DeleteLine 删除线路（DELETE /me/lines/{lineId}）。

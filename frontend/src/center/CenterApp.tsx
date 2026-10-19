@@ -22,11 +22,52 @@ export interface CenterContext {
   refreshProfile: () => Promise<void>;
 }
 
+const MOBILE_QUERY = '(max-width: 860px)';
+const COLLAPSE_KEY = 'center-sidebar-collapsed';
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+const ICON_PROPS = {
+  viewBox: '0 0 24 24',
+  width: 18,
+  height: 18,
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+} as const;
+
+/** 概览：仪表盘四宫格 */
+const OverviewIcon = (
+  <svg {...ICON_PROPS}>
+    <rect x="3" y="3" width="7" height="9" rx="1.5" />
+    <rect x="14" y="3" width="7" height="5" rx="1.5" />
+    <rect x="14" y="12" width="7" height="9" rx="1.5" />
+    <rect x="3" y="16" width="7" height="5" rx="1.5" />
+  </svg>
+);
+
+/** 车站别名：标签 */
+const AliasIcon = (
+  <svg {...ICON_PROPS}>
+    <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" />
+    <circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 export function CenterApp() {
   const path = usePath();
   const route = parseRoute(path);
   const { choice, setChoice, theme } = useTheme();
   const [drawer, setDrawer] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
   const [configReady, setConfigReady] = useState(false);
   const profile = useAsync(() => centerApi.profile(), []);
 
@@ -46,6 +87,22 @@ export function CenterApp() {
 
   useEffect(() => setDrawer(false), [path]);
 
+  // 窄屏切换抽屉，宽屏折叠 / 展开侧栏（记住选择）
+  const toggleNav = () => {
+    if (window.matchMedia(MOBILE_QUERY).matches) {
+      setDrawer((v) => !v);
+      return;
+    }
+    setCollapsed((v) => {
+      try {
+        localStorage.setItem(COLLAPSE_KEY, v ? '0' : '1');
+      } catch {
+        // localStorage 不可用时只在本次会话生效
+      }
+      return !v;
+    });
+  };
+
   let body: ReactNode;
   if (profile.loading && !profile.data) {
     body = <div className="c-boot"><Loading rows={4} /></div>;
@@ -56,7 +113,7 @@ export function CenterApp() {
   } else {
     const ctx: CenterContext = { profile: profile.data, refreshProfile: profile.reload };
     body = (
-      <div className={`c-shell ${drawer ? 'drawer-open' : ''}`}>
+      <div className={`c-shell ${drawer ? 'drawer-open' : ''} ${collapsed ? 'sidebar-collapsed' : ''}`}>
         <Sidebar profile={profile.data} route={route} />
         <div className="c-drawer-mask" onClick={() => setDrawer(false)} />
         <div className="c-main">
@@ -65,7 +122,7 @@ export function CenterApp() {
             route={route}
             themeChoice={choice}
             setTheme={setChoice}
-            onMenu={() => setDrawer((v) => !v)}
+            onMenu={toggleNav}
           />
           <main className="c-content">{configReady && <Page route={route} ctx={ctx} />}</main>
         </div>
@@ -120,7 +177,7 @@ function Sidebar({ profile, route }: { profile: Profile; route: Route }) {
   const has = (p: string) => perms.includes(p);
   const stationItems = [
     has(PERM.stationAlias) && (
-      <NavLink key="a" to="/me/station-aliases" icon="Aa" active={route.page === 'station-aliases'}>
+      <NavLink key="a" to="/me/station-aliases" icon={AliasIcon} active={route.page === 'station-aliases'}>
         车站别名
       </NavLink>
     ),
@@ -155,7 +212,7 @@ function Sidebar({ profile, route }: { profile: Profile; route: Route }) {
         <span>帕拉伦铁路</span>
       </a>
       <nav className="c-nav">
-        <NavLink to="/me" icon="◎" active={route.page === 'overview'}>
+        <NavLink to="/me" icon={OverviewIcon} active={route.page === 'overview'}>
           概览
         </NavLink>
         {profile.systems.length > 0 && (
@@ -222,7 +279,7 @@ function TopBar({
   };
   return (
     <header className="c-topbar">
-      <button className="c-icon-btn c-menu-btn" onClick={onMenu} aria-label="打开导航">
+      <button className="c-icon-btn c-menu-btn" onClick={onMenu} aria-label="展开 / 收起导航" title="展开 / 收起导航">
         ☰
       </button>
       <div className="c-crumb">
