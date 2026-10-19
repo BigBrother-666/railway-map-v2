@@ -172,7 +172,7 @@ type RouteGeometry struct {
 	End   []float64 `json:"end,omitempty"`
 }
 
-// RouteGeometrySegment 是快照中同一线路、同一颜色的连续折线。
+// RouteGeometrySegment 是快照中同一线路的连续折线，Color 为结算时的线路配置颜色。
 type RouteGeometrySegment struct {
 	LineID string      `json:"lineId"`
 	Color  string      `json:"color"`

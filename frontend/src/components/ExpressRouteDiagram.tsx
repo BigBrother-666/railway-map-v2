@@ -164,7 +164,7 @@ export function ExpressRouteDiagram({ train }: { train: Train }) {
 }
 
 /**
- * 按快速车 routeNodeIds 逐段构建路线轴：段长取 geojson length（缺省按几何长度），颜色取 geojson color（含联络线）。
+ * 按快速车 routeNodeIds 逐段构建路线轴：段长取 geojson length（缺省按几何长度），颜色取轨道段 color（加载时已按线路配置覆盖，含联络线）。
  * geojson 缺失某段时以两端节点直线兜底，颜色沿用相邻段。
  */
 export function buildExpressAxis(nodeIds: string[], fc: FeatureCollection, graph: RouteGraph): ExpressAxis | null {

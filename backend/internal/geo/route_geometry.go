@@ -10,7 +10,6 @@ import (
 // edgeGeom 是 geojson 中一条有向轨道段的几何与属性（供乘车历史坐标快照使用）。
 type edgeGeom struct {
 	lineID string
-	color  string
 	world  string
 	length float64     // 米
 	coords [][]float64 // 游戏坐标 [x, z]
@@ -30,7 +29,6 @@ type rawFeature struct {
 		To     string  `json:"to"`
 		LineID string  `json:"lineId"`
 		World  string  `json:"world"`
-		Color  string  `json:"color"`
 		Length float64 `json:"length"`
 	} `json:"properties"`
 	Geometry struct {
@@ -71,7 +69,7 @@ func buildGeoIndex(payload []byte) *geoIndex {
 				}
 			}
 			idx.edges[p.From+"__"+p.To] = edgeGeom{
-				lineID: p.LineID, color: p.Color, world: p.World, length: p.Length, coords: coords,
+				lineID: p.LineID, world: p.World, length: p.Length, coords: coords,
 			}
 		}
 	}
@@ -99,7 +97,8 @@ func (c *Cache) index() *geoIndex {
 	return idx
 }
 
-// RouteGeometry 按节点序列从当前 geojson 截取完整线路坐标快照（相邻同线路同颜色的段合并为一条折线）。
+// RouteGeometry 按节点序列从当前 geojson 截取完整线路坐标快照（相邻同线路的段合并为一条折线）。
+// 颜色取线路配置（不用 geojson 的 color，改线路颜色后无需插件重新遍历）。
 // 用于乘车历史：即使之后 geojson 更新（中间增删节点、线路删除），历史仍可按当时的线形显示。
 //
 // @param nodeIDs 路线节点 id 序列
@@ -109,6 +108,7 @@ func (c *Cache) RouteGeometry(nodeIDs []string) (geom *model.RouteGeometry, mete
 		return nil, 0, false
 	}
 	idx := c.index()
+	colors := c.lineColors()
 	g := &model.RouteGeometry{}
 	complete = true
 	var cur *model.RouteGeometrySegment
@@ -123,12 +123,12 @@ func (c *Cache) RouteGeometry(nodeIDs []string) (geom *model.RouteGeometry, mete
 		if g.World == "" {
 			g.World = e.world
 		}
-		if cur != nil && cur.LineID == e.lineID && cur.Color == e.color {
+		if cur != nil && cur.LineID == e.lineID {
 			cur.Coords = appendCoords(cur.Coords, e.coords)
 			continue
 		}
 		g.Segments = append(g.Segments, model.RouteGeometrySegment{
-			LineID: e.lineID, Color: e.color, Coords: appendCoords(nil, e.coords),
+			LineID: e.lineID, Color: lineColorOr(colors, e.lineID), Coords: appendCoords(nil, e.coords),
 		})
 		cur = &g.Segments[len(g.Segments)-1]
 	}
@@ -141,6 +141,28 @@ func (c *Cache) RouteGeometry(nodeIDs []string) (geom *model.RouteGeometry, mete
 	g.Start = idx.nodes[nodeIDs[0]]
 	g.End = idx.nodes[nodeIDs[len(nodeIDs)-1]]
 	return g, meters, complete
+}
+
+// DefaultLineColor 是线路配置中找不到线路时的兜底颜色（与插件 LineConfig.getColor 一致）。
+const DefaultLineColor = "#a9a9a9"
+
+// lineColors 返回线路 id → 配置颜色（取自线路私有快照，含联络线 contact）。
+func (c *Cache) lineColors() map[string]string {
+	lines := c.PrivateLines()
+	m := make(map[string]string, len(lines))
+	for _, l := range lines {
+		if l.Color != "" {
+			m[l.ID] = l.Color
+		}
+	}
+	return m
+}
+
+func lineColorOr(colors map[string]string, lineID string) string {
+	if c, ok := colors[lineID]; ok {
+		return c
+	}
+	return DefaultLineColor
 }
 
 // appendCoords 把一段坐标追加到折线末尾（与末点重合的首点去重），坐标保留 2 位小数。

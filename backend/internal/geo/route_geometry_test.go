@@ -66,3 +66,20 @@ func TestRouteGeometryRebuildsAfterGeojsonUpdate(t *testing.T) {
 		t.Fatalf("expected no geometry after update, got %+v", geom)
 	}
 }
+
+// TestRouteGeometryUsesLineConfigColor 校验快照颜色取线路配置而非 geojson color，缺配置时用兜底色。
+func TestRouteGeometryUsesLineConfigColor(t *testing.T) {
+	c := &Cache{}
+	c.SetGeojson([]byte(testGeojson))
+	geom, _, _ := c.RouteGeometry([]string{"A", "S", "B"})
+	if geom.Segments[0].Color != DefaultLineColor {
+		t.Fatalf("expected default color without line config, got %s", geom.Segments[0].Color)
+	}
+	if err := c.SetPrivateLines([]byte(`[{"id":"L1","color":"#00AA00"}]`)); err != nil {
+		t.Fatal(err)
+	}
+	geom, _, _ = c.RouteGeometry([]string{"A", "S", "B"})
+	if geom.Segments[0].Color != "#00AA00" {
+		t.Fatalf("expected line config color, got %s", geom.Segments[0].Color)
+	}
+}
