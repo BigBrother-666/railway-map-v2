@@ -33,14 +33,14 @@ type trainEntry struct {
 type Aggregator struct {
 	mu        sync.RWMutex
 	trains    map[string]*trainEntry
-	timeout   time.Duration
+	timeout   func() time.Duration // 读当前配置，web 端修改后立即生效
 	bc        Broadcaster
 	finalizer RideFinalizer
 	logger    *slog.Logger
 }
 
-// NewAggregator 创建聚合器。timeout 内未更新的列车视为消失。
-func NewAggregator(timeout time.Duration, bc Broadcaster) *Aggregator {
+// NewAggregator 创建聚合器。timeout 返回当前超时，超时内未更新的列车视为消失。
+func NewAggregator(timeout func() time.Duration, bc Broadcaster) *Aggregator {
 	return &Aggregator{
 		trains:  make(map[string]*trainEntry),
 		timeout: timeout,
@@ -128,11 +128,12 @@ func (a *Aggregator) Has(trainID string) bool {
 // Sweep 剔除超时未更新的列车，并广播 remove。应由定时器周期调用。
 func (a *Aggregator) Sweep() {
 	now := time.Now()
+	timeout := a.timeout()
 	var removed []string
 
 	a.mu.Lock()
 	for id, e := range a.trains {
-		if now.Sub(e.lastSeen) > a.timeout {
+		if now.Sub(e.lastSeen) > timeout {
 			delete(a.trains, id)
 			removed = append(removed, id)
 		}
@@ -147,21 +148,24 @@ func (a *Aggregator) Sweep() {
 	}
 }
 
-// StartSweeper 启动周期剔除（每 timeout/2 扫一次），返回停止函数。
+// StartSweeper 启动周期剔除（每 timeout/2 扫一次，每轮重新读取 timeout），返回停止函数。
 func (a *Aggregator) StartSweeper() (stop func()) {
-	interval := a.timeout / 2
-	if interval <= 0 {
-		interval = time.Second
+	interval := func() time.Duration {
+		if d := a.timeout() / 2; d > 0 {
+			return d
+		}
+		return time.Second
 	}
-	ticker := time.NewTicker(interval)
+	timer := time.NewTimer(interval())
 	done := make(chan struct{})
 	go func() {
 		for {
 			select {
-			case <-ticker.C:
+			case <-timer.C:
 				a.Sweep()
+				timer.Reset(interval())
 			case <-done:
-				ticker.Stop()
+				timer.Stop()
 				return
 			}
 		}

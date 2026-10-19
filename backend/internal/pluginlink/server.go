@@ -32,7 +32,7 @@ type ConfigRouter interface {
 // Server 维护与插件的单条连接及其收发。
 type Server struct {
 	sharedToken    string
-	heartbeat      time.Duration
+	heartbeat      func() time.Duration // 读当前配置，web 端修改后下一次 ping 起生效
 	cache          *geo.Cache
 	agg            *realtime.Aggregator
 	store          *store.Store
@@ -54,7 +54,7 @@ type Server struct {
 // Options 聚合构建 Server 所需依赖。
 type Options struct {
 	SharedToken    string
-	Heartbeat      time.Duration
+	Heartbeat      func() time.Duration
 	Cache          *geo.Cache
 	Aggregator     *realtime.Aggregator
 	Store          *store.Store
@@ -187,20 +187,27 @@ func (s *Server) clearConn(conn *websocket.Conn) {
 	_ = conn.Close(websocket.StatusNormalClosure, "")
 }
 
-// startHeartbeat 周期向插件发 ping，返回停止函数。
+// startHeartbeat 周期向插件发 ping（每次重新读取间隔），返回停止函数。
 func (s *Server) startHeartbeat(ctx context.Context) func() {
-	ticker := time.NewTicker(s.heartbeat)
+	interval := func() time.Duration {
+		if d := s.heartbeat(); d > 0 {
+			return d
+		}
+		return 15 * time.Second
+	}
+	timer := time.NewTimer(interval())
 	done := make(chan struct{})
 	go func() {
 		for {
 			select {
-			case <-ticker.C:
+			case <-timer.C:
 				s.Send(newEnvelope(model.TypePing, "", nil))
+				timer.Reset(interval())
 			case <-done:
-				ticker.Stop()
+				timer.Stop()
 				return
 			case <-ctx.Done():
-				ticker.Stop()
+				timer.Stop()
 				return
 			}
 		}

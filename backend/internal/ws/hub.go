@@ -37,13 +37,13 @@ type client struct {
 type Hub struct {
 	mu          sync.RWMutex
 	clients     map[*client]struct{}
-	sendBuffer  int
+	sendBuffer  func() int // 读当前配置，只影响之后新建的连接
 	snapshotter Snapshotter
 	logger      *slog.Logger
 }
 
-// NewHub 创建 hub。sendBuffer 为每客户端发送缓冲大小。
-func NewHub(sendBuffer int, snapshotter Snapshotter, logger *slog.Logger) *Hub {
+// NewHub 创建 hub。sendBuffer 返回每客户端发送缓冲大小。
+func NewHub(sendBuffer func() int, snapshotter Snapshotter, logger *slog.Logger) *Hub {
 	return &Hub{
 		clients:     make(map[*client]struct{}),
 		sendBuffer:  sendBuffer,
@@ -97,7 +97,7 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := &client{conn: conn, send: make(chan []byte, h.sendBuffer)}
+	c := &client{conn: conn, send: make(chan []byte, max(h.sendBuffer(), 1))}
 	h.add(c)
 	defer h.remove(c)
 	h.logger.Info("Frontend WebSocket connected", "remote", r.RemoteAddr)

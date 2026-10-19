@@ -84,10 +84,50 @@ func TestLegacySectionsAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.Legacy.Frontend != nil || cfg.Legacy.Route != nil {
-		t.Errorf("Legacy = %+v, want both nil", cfg.Legacy)
+	if cfg.Legacy.Frontend != nil || cfg.Legacy.Route != nil || cfg.Legacy.Plugin != nil || cfg.Legacy.Realtime != nil {
+		t.Errorf("Legacy = %+v, want all nil", cfg.Legacy)
 	}
-	if cfg.Plugin.ConfigTimeoutSeconds != 10 {
-		t.Errorf("ConfigTimeoutSeconds = %d, want 10", cfg.Plugin.ConfigTimeoutSeconds)
+}
+
+// plugin 段只有 sharedToken 时不算旧段；出现已迁移的键才解析为 Legacy.Plugin。realtime 段整段迁移。
+func TestLegacyPluginRealtime(t *testing.T) {
+	dir := t.TempDir()
+	onlyToken := filepath.Join(dir, "a.yml")
+	if err := os.WriteFile(onlyToken, []byte("plugin:\n  sharedToken: \"t\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(onlyToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Plugin.SharedToken != "t" || cfg.Legacy.Plugin != nil {
+		t.Errorf("token=%q legacy=%+v", cfg.Plugin.SharedToken, cfg.Legacy.Plugin)
+	}
+
+	full := filepath.Join(dir, "b.yml")
+	yml := "plugin:\n  sharedToken: \"t\"\n  heartbeatSeconds: 20\n  configTimeoutSeconds: 7\n" +
+		"realtime:\n  trainTimeoutSeconds: 45\n"
+	if err := os.WriteFile(full, []byte(yml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Legacy.Plugin == nil || cfg.Legacy.Plugin.HeartbeatSeconds != 20 || cfg.Legacy.Plugin.ConfigTimeoutSeconds != 7 {
+		t.Fatalf("Legacy.Plugin = %+v", cfg.Legacy.Plugin)
+	}
+	if cfg.Legacy.Realtime == nil || cfg.Legacy.Realtime.TrainTimeoutSeconds != 45 {
+		t.Fatalf("Legacy.Realtime = %+v", cfg.Legacy.Realtime)
+	}
+	p := *cfg.Legacy.Plugin
+	ApplyPluginDefaults(&p)
+	if p.PurchaseTimeoutSeconds != 10 || p.PurchaseMinIntervalSeconds != 3 {
+		t.Errorf("plugin defaults = %+v", p)
+	}
+	rt := *cfg.Legacy.Realtime
+	ApplyRealtimeDefaults(&rt)
+	if rt.ClientSendBuffer != 64 {
+		t.Errorf("ClientSendBuffer = %d, want 64", rt.ClientSendBuffer)
 	}
 }

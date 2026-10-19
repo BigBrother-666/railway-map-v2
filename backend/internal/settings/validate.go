@@ -142,3 +142,31 @@ func sortErrors(errs FieldErrors) {
 		}
 	}
 }
+
+// ValidatePlugin 校验插件链路参数；0 表示使用默认值。
+func ValidatePlugin(p config.PluginSettings) FieldErrors {
+	v := &validator{}
+	for _, f := range []struct {
+		field string
+		x     int
+	}{
+		{"heartbeatSeconds", p.HeartbeatSeconds},
+		{"purchaseTimeoutSeconds", p.PurchaseTimeoutSeconds},
+		{"purchaseMinIntervalSeconds", p.PurchaseMinIntervalSeconds},
+		{"configTimeoutSeconds", p.ConfigTimeoutSeconds},
+	} {
+		v.nonNegative(f.field, float64(f.x))
+	}
+	return v.errs
+}
+
+// ValidateRealtime 校验实时列车参数；0 表示使用默认值。
+func ValidateRealtime(r config.RealtimeConfig) FieldErrors {
+	v := &validator{}
+	v.nonNegative("trainTimeoutSeconds", float64(r.TrainTimeoutSeconds))
+	v.nonNegative("clientSendBuffer", float64(r.ClientSendBuffer))
+	if r.ClientSendBuffer > 4096 {
+		v.add("clientSendBuffer", "不能超过 4096")
+	}
+	return v.errs
+}

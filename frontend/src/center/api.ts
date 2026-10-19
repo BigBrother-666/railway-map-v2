@@ -11,8 +11,11 @@ import type {
   PrivateLine,
   Profile,
   RbacOverview,
+  PluginSettings,
+  RealtimeSettings,
   RouteSettings,
   SettingsResponse,
+  SettingsSection,
   StationAliasesResponse,
   StationGroupsResponse,
   SystemDetail,
@@ -122,7 +125,9 @@ export const centerApi = {
   settings: () => request<SettingsResponse>('GET', '/admin/settings/'),
   saveFrontend: (f: FrontendConfig) => request<SettingsResponse>('PUT', '/admin/settings/frontend', f),
   saveRoute: (r: RouteSettings) => request<SettingsResponse>('PUT', '/admin/settings/route', r),
-  resetSettings: (section: 'frontend' | 'route') =>
+  savePlugin: (p: PluginSettings) => request<SettingsResponse>('PUT', '/admin/settings/plugin', p),
+  saveRealtime: (r: RealtimeSettings) => request<SettingsResponse>('PUT', '/admin/settings/realtime', r),
+  resetSettings: (section: SettingsSection) =>
     request<SettingsResponse>('POST', `/admin/settings/${section}/reset`),
 
   audit: (q: { page: number; actor?: string; action?: string; from?: number; to?: number }) => {

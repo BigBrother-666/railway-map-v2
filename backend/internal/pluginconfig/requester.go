@@ -43,14 +43,14 @@ type Sender interface {
 // Requester 维护挂起的配置请求。
 type Requester struct {
 	sender  Sender
-	timeout time.Duration
+	timeout func() time.Duration // 读当前配置，web 端修改后立即生效
 
 	mu      sync.Mutex
 	pending map[string]chan model.ConfigResult
 }
 
-// New 创建 Requester。
-func New(sender Sender, timeout time.Duration) *Requester {
+// New 创建 Requester。timeout 返回当前等待插件回执的超时。
+func New(sender Sender, timeout func() time.Duration) *Requester {
 	return &Requester{sender: sender, timeout: timeout, pending: make(map[string]chan model.ConfigResult)}
 }
 
@@ -85,7 +85,7 @@ func (r *Requester) Do(op string, actor model.Player, payload any) (model.Config
 	select {
 	case res := <-ch:
 		return res, nil
-	case <-time.After(r.timeout):
+	case <-time.After(r.timeout()):
 		return model.ConfigResult{}, ErrTimeout
 	}
 }

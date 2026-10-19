@@ -1,5 +1,5 @@
-// Package settings 维护 web 端可编辑的服务器配置（原 config.yml 的 frontend / route 段）。
-// 默认值在代码里（config.ApplyFrontendDefaults / ApplyRouteDefaults），数据库 app_settings 存整段覆盖值；
+// Package settings 维护 web 端可编辑的服务器配置（原 config.yml 的 frontend / route / plugin（除 sharedToken）/ realtime 段）。
+// 默认值在代码里（config.Apply*Defaults），数据库 app_settings 存整段覆盖值；
 // 不与 config.yml 合并。保存后通过原子快照立即对后续请求生效。
 package settings
 
@@ -18,6 +18,8 @@ import (
 const (
 	SectionFrontend = "frontend"
 	SectionRoute    = "route"
+	SectionPlugin   = "plugin"
+	SectionRealtime = "realtime"
 )
 
 // ErrUnknownSection 表示请求了不存在的配置段。
@@ -36,12 +38,21 @@ type Meta struct {
 	UpdatedAt int64  `json:"updatedAt,omitempty"`
 }
 
+// Values 是全部可编辑配置段的取值。
+type Values struct {
+	Frontend config.FrontendConfig `json:"frontend"`
+	Route    config.RouteConfig    `json:"route"`
+	Plugin   config.PluginSettings `json:"plugin"`
+	Realtime config.RealtimeConfig `json:"realtime"`
+}
+
 // Snapshot 是某一时刻生效的全部可编辑配置（不可变，替换整体）。
 type Snapshot struct {
-	Frontend     config.FrontendConfig
-	Route        config.RouteConfig
+	Values
 	FrontendMeta Meta
 	RouteMeta    Meta
+	PluginMeta   Meta
+	RealtimeMeta Meta
 }
 
 // Service 持有当前生效配置。
@@ -55,57 +66,50 @@ type Service struct {
 func New(st Store, legacy config.LegacySections, logger *slog.Logger) (*Service, error) {
 	s := &Service{store: st, logger: logger}
 	snap := &Snapshot{}
-
-	frontendRow, err := st.LoadSetting(SectionFrontend)
-	if err != nil {
+	var err error
+	if snap.FrontendMeta, err = load(s, SectionFrontend, legacy.Frontend, &snap.Frontend, config.ApplyFrontendDefaults); err != nil {
 		return nil, err
 	}
-	switch {
-	case frontendRow != nil:
-		if err := json.Unmarshal(frontendRow.Payload, &snap.Frontend); err != nil {
-			return nil, fmt.Errorf("解析数据库中的 frontend 配置失败: %w", err)
-		}
-		snap.FrontendMeta = Meta{UpdatedBy: frontendRow.UpdatedBy, UpdatedAt: frontendRow.UpdatedAt}
-		if legacy.Frontend != nil {
-			logger.Warn("config.yml 中的 frontend 段已废弃并被忽略，请在 web 端服务器配置中修改，并从 config.yml 删除该段")
-		}
-	case legacy.Frontend != nil:
-		snap.Frontend = *legacy.Frontend
-		config.ApplyFrontendDefaults(&snap.Frontend)
-		if err := s.persist(SectionFrontend, snap.Frontend, "migration"); err != nil {
-			return nil, err
-		}
-		snap.FrontendMeta = Meta{UpdatedBy: "migration"}
-		logger.Info("已将 config.yml 中的 frontend 段导入数据库，可从 config.yml 删除该段")
-	}
-	config.ApplyFrontendDefaults(&snap.Frontend)
-
-	routeRow, err := st.LoadSetting(SectionRoute)
-	if err != nil {
+	if snap.RouteMeta, err = load(s, SectionRoute, legacy.Route, &snap.Route, config.ApplyRouteDefaults); err != nil {
 		return nil, err
 	}
-	switch {
-	case routeRow != nil:
-		if err := json.Unmarshal(routeRow.Payload, &snap.Route); err != nil {
-			return nil, fmt.Errorf("解析数据库中的 route 配置失败: %w", err)
-		}
-		snap.RouteMeta = Meta{UpdatedBy: routeRow.UpdatedBy, UpdatedAt: routeRow.UpdatedAt}
-		if legacy.Route != nil {
-			logger.Warn("config.yml 中的 route 段已废弃并被忽略，请在 web 端服务器配置中修改，并从 config.yml 删除该段")
-		}
-	case legacy.Route != nil:
-		snap.Route = *legacy.Route
-		config.ApplyRouteDefaults(&snap.Route)
-		if err := s.persist(SectionRoute, snap.Route, "migration"); err != nil {
-			return nil, err
-		}
-		snap.RouteMeta = Meta{UpdatedBy: "migration"}
-		logger.Info("已将 config.yml 中的 route 段导入数据库，可从 config.yml 删除该段")
+	if snap.PluginMeta, err = load(s, SectionPlugin, legacy.Plugin, &snap.Plugin, config.ApplyPluginDefaults); err != nil {
+		return nil, err
 	}
-	config.ApplyRouteDefaults(&snap.Route)
-
+	if snap.RealtimeMeta, err = load(s, SectionRealtime, legacy.Realtime, &snap.Realtime, config.ApplyRealtimeDefaults); err != nil {
+		return nil, err
+	}
 	s.cur.Store(snap)
 	return s, nil
+}
+
+// load 读取一段配置到 dst：数据库优先；数据库没有而 legacy 非 nil 时导入数据库；最后填充默认值。
+func load[T any](s *Service, section string, legacy *T, dst *T, applyDefaults func(*T)) (Meta, error) {
+	var meta Meta
+	row, err := s.store.LoadSetting(section)
+	if err != nil {
+		return meta, err
+	}
+	switch {
+	case row != nil:
+		if err := json.Unmarshal(row.Payload, dst); err != nil {
+			return meta, fmt.Errorf("解析数据库中的 %s 配置失败: %w", section, err)
+		}
+		meta = Meta{UpdatedBy: row.UpdatedBy, UpdatedAt: row.UpdatedAt}
+		if legacy != nil {
+			s.logger.Warn(fmt.Sprintf("config.yml 中的 %s 段已废弃并被忽略，请在 web 端服务器配置中修改，并从 config.yml 删除该段", section))
+		}
+	case legacy != nil:
+		*dst = *legacy
+		applyDefaults(dst)
+		if err := s.persist(section, *dst, "migration"); err != nil {
+			return meta, err
+		}
+		meta = Meta{UpdatedBy: "migration"}
+		s.logger.Info(fmt.Sprintf("已将 config.yml 中的 %s 段导入数据库，可从 config.yml 删除该段", section))
+	}
+	applyDefaults(dst)
+	return meta, nil
 }
 
 // Current 返回当前生效配置快照（只读）。
@@ -123,13 +127,24 @@ func (s *Service) Route() config.RouteConfig {
 	return s.cur.Load().Route
 }
 
-// Defaults 返回两段配置的代码默认值（供前端「恢复默认」与对比展示）。
-func Defaults() (config.FrontendConfig, config.RouteConfig) {
-	var f config.FrontendConfig
-	var r config.RouteConfig
-	config.ApplyFrontendDefaults(&f)
-	config.ApplyRouteDefaults(&r)
-	return f, r
+// Plugin 返回当前插件链路参数。
+func (s *Service) Plugin() config.PluginSettings {
+	return s.cur.Load().Plugin
+}
+
+// Realtime 返回当前实时列车参数。
+func (s *Service) Realtime() config.RealtimeConfig {
+	return s.cur.Load().Realtime
+}
+
+// Defaults 返回各段配置的代码默认值（供前端「恢复默认」与对比展示）。
+func Defaults() Values {
+	var v Values
+	config.ApplyFrontendDefaults(&v.Frontend)
+	config.ApplyRouteDefaults(&v.Route)
+	config.ApplyPluginDefaults(&v.Plugin)
+	config.ApplyRealtimeDefaults(&v.Realtime)
+	return v
 }
 
 // UpdateFrontend 校验并整段保存前端配置，成功后立即生效。
@@ -158,23 +173,52 @@ func (s *Service) UpdateRoute(r config.RouteConfig, actor string) error {
 	return nil
 }
 
+// UpdatePlugin 校验并整段保存插件链路参数，成功后立即生效。
+func (s *Service) UpdatePlugin(p config.PluginSettings, actor string) error {
+	if errs := ValidatePlugin(p); len(errs) > 0 {
+		return errs
+	}
+	config.ApplyPluginDefaults(&p)
+	if err := s.persist(SectionPlugin, p, actor); err != nil {
+		return err
+	}
+	s.swap(func(n *Snapshot) { n.Plugin = p; n.PluginMeta = s.meta(SectionPlugin) })
+	return nil
+}
+
+// UpdateRealtime 校验并整段保存实时列车参数，成功后立即生效（发送缓冲只影响新连接）。
+func (s *Service) UpdateRealtime(r config.RealtimeConfig, actor string) error {
+	if errs := ValidateRealtime(r); len(errs) > 0 {
+		return errs
+	}
+	config.ApplyRealtimeDefaults(&r)
+	if err := s.persist(SectionRealtime, r, actor); err != nil {
+		return err
+	}
+	s.swap(func(n *Snapshot) { n.Realtime = r; n.RealtimeMeta = s.meta(SectionRealtime) })
+	return nil
+}
+
 // Reset 删除某段数据库记录，恢复代码默认值。
 func (s *Service) Reset(section string) error {
-	f, r := Defaults()
+	d := Defaults()
+	var mut func(*Snapshot)
 	switch section {
 	case SectionFrontend:
-		if err := s.store.DeleteSetting(section); err != nil {
-			return err
-		}
-		s.swap(func(n *Snapshot) { n.Frontend = f; n.FrontendMeta = Meta{} })
+		mut = func(n *Snapshot) { n.Frontend = d.Frontend; n.FrontendMeta = Meta{} }
 	case SectionRoute:
-		if err := s.store.DeleteSetting(section); err != nil {
-			return err
-		}
-		s.swap(func(n *Snapshot) { n.Route = r; n.RouteMeta = Meta{} })
+		mut = func(n *Snapshot) { n.Route = d.Route; n.RouteMeta = Meta{} }
+	case SectionPlugin:
+		mut = func(n *Snapshot) { n.Plugin = d.Plugin; n.PluginMeta = Meta{} }
+	case SectionRealtime:
+		mut = func(n *Snapshot) { n.Realtime = d.Realtime; n.RealtimeMeta = Meta{} }
 	default:
 		return ErrUnknownSection
 	}
+	if err := s.store.DeleteSetting(section); err != nil {
+		return err
+	}
+	s.swap(mut)
 	return nil
 }
 

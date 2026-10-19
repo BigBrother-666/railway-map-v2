@@ -84,7 +84,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	}
 	authSvc := auth.NewSessionService("test-secret", st)
 	fp := &fakePlugin{online: true}
-	fp.req = pluginconfig.New(fp, time.Second)
+	fp.req = pluginconfig.New(fp, func() time.Duration { return time.Second })
 	api := New(Options{Auth: authSvc, Frontend: set.Frontend, Logger: logger})
 	c := NewCenter(CenterOptions{
 		API: api, Store: st, Cache: cache, RBAC: rb, Settings: set,

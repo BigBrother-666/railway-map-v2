@@ -24,20 +24,6 @@ plugin:
   # 插件连接 /internal/plugin 的 Bearer token。 默认值：空。
   # 由 BCTS_PLUGIN_TOKEN 注入；必须与插件的 shared-token 一致。
   sharedToken: "${BCTS_PLUGIN_TOKEN}"
-  # 后端向插件发送 ping 的间隔秒数。 默认值：15。
-  heartbeatSeconds: 15
-  # 在线购票等待插件扣款/出票回执的超时秒数。 默认值：10。
-  purchaseTimeoutSeconds: 10
-  # 同一玩家两次购票的最小间隔秒数，防止频繁购票压垮服务器；<=0 使用默认值 3。
-  purchaseMinIntervalSeconds: 3
-  # 网页个人中心编辑铁路系统 / 线路 / 车站别名 / 车站组时，等待插件写入回执的超时秒数；<=0 使用默认值 10。
-  configTimeoutSeconds: 10
-
-realtime:
-  # 列车多久未更新就视为消失，并向前端广播移除矿车图标。 默认值：30。
-  trainTimeoutSeconds: 30
-  # 每个前端实时 WebSocket 连接的发送缓冲帧数，满时丢弃最旧帧。 默认值：64。
-  clientSendBuffer: 64
 
 auth:
   microsoft:

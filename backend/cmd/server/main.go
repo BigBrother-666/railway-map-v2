@@ -78,27 +78,31 @@ func main() {
 
 	cache := geo.NewCache(st)
 	st.SetGeometryProvider(cache)
-	hub := ws.NewHub(cfg.Realtime.ClientSendBuffer, nil, logger)
-	agg := realtime.NewAggregator(time.Duration(cfg.Realtime.TrainTimeoutSeconds)*time.Second, hub)
+	// plugin / realtime 参数读当前配置（web 端服务器配置修改后立即生效）
+	seconds := func(get func() int) func() time.Duration {
+		return func() time.Duration { return time.Duration(get()) * time.Second }
+	}
+	hub := ws.NewHub(func() int { return settingsSvc.Realtime().ClientSendBuffer }, nil, logger)
+	agg := realtime.NewAggregator(seconds(func() int { return settingsSvc.Realtime().TrainTimeoutSeconds }), hub)
 	agg.SetRideFinalizer(st, logger)
 	hub.SetSnapshotter(agg)
 	stopSweeper := agg.StartSweeper()
 	defer stopSweeper()
-	logger.Info("Realtime aggregator started", "trainTimeoutSeconds", cfg.Realtime.TrainTimeoutSeconds)
+	logger.Info("Realtime aggregator started", "trainTimeoutSeconds", settingsSvc.Realtime().TrainTimeoutSeconds)
 
 	pluginServer := pluginlink.NewServer(pluginlink.Options{
 		SharedToken: cfg.Plugin.SharedToken,
-		Heartbeat:   time.Duration(cfg.Plugin.HeartbeatSeconds) * time.Second,
+		Heartbeat:   seconds(func() int { return settingsSvc.Plugin().HeartbeatSeconds }),
 		Cache:       cache,
 		Aggregator:  agg,
 		Store:       st,
 		Logger:      logger,
 	})
-	orchestrator := purchase.New(pluginServer, time.Duration(cfg.Plugin.PurchaseTimeoutSeconds)*time.Second)
+	orchestrator := purchase.New(pluginServer, seconds(func() int { return settingsSvc.Plugin().PurchaseTimeoutSeconds }))
 	pluginServer.SetPurchaseRouter(orchestrator)
-	configRequester := pluginconfig.New(pluginServer, time.Duration(cfg.Plugin.ConfigTimeoutSeconds)*time.Second)
+	configRequester := pluginconfig.New(pluginServer, seconds(func() int { return settingsSvc.Plugin().ConfigTimeoutSeconds }))
 	pluginServer.SetConfigRouter(configRequester)
-	logger.Info("Plugin link server initialized", "heartbeatSeconds", cfg.Plugin.HeartbeatSeconds, "purchaseTimeoutSeconds", cfg.Plugin.PurchaseTimeoutSeconds)
+	logger.Info("Plugin link server initialized", "heartbeatSeconds", settingsSvc.Plugin().HeartbeatSeconds, "purchaseTimeoutSeconds", settingsSvc.Plugin().PurchaseTimeoutSeconds)
 
 	var authSvc *auth.Service
 	if cfg.Auth.Microsoft.ClientID != "" {
@@ -122,7 +126,7 @@ func main() {
 		Purchase: orchestrator, Auth: authSvc, Store: st, Logger: logger,
 		Frontend: settingsSvc.Frontend, FrontendBaseURL: cfg.Server.FrontendBaseURL,
 		TestAuthEnabled: cfg.Auth.TestAuthEnabled, TestAuthUUIDs: cfg.Auth.TestAuthUUIDs,
-		PurchaseMinInterval:          time.Duration(cfg.Plugin.PurchaseMinIntervalSeconds) * time.Second,
+		PurchaseMinInterval:          seconds(func() int { return settingsSvc.Plugin().PurchaseMinIntervalSeconds }),
 		Routing:                      routingSvc,
 		RouteQueryRateLimitPerSecond: func() float64 { return settingsSvc.Route().QueryRateLimitPerSecond },
 	})
