@@ -81,7 +81,7 @@ export function formatNotices(rows: NoticeRow[]): string {
 /** 前端预校验提示行（与插件规则一致：sound 需要名称与数字音调 / 音量，announce 文字非空）。 */
 export function validateNotices(rows: NoticeRow[]): string | null {
   for (const r of rows) {
-    if (r.kind === 'announce' && !r.text.trim()) return '公告文字不能为空';
+    if (r.kind === 'announce' && !r.text.trim()) return '文字不能为空';
     if (r.kind === 'sound') {
       if (!r.name.trim()) return '声音名称不能为空';
       if (!Number.isFinite(Number(r.pitch)) || !Number.isFinite(Number(r.volume)) || r.pitch === '' || r.volume === '') {

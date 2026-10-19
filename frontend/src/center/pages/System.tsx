@@ -526,8 +526,8 @@ function LogoCard({
   return (
     <Card title="系统 Logo">
       <div className="c-logo-grid">
-        {slot('web', '网页 Logo', '显示在线路图侧栏等网页位置，插件会自动缩放。', sys.logoUrl)}
-        {slot('mc', '游戏内 Logo', '显示在游戏内车票等位置，插件会自动缩放。', sys.mcLogoUrl)}
+        {slot('web', '网页 Logo', '显示在线路图侧边栏等网页位置。', sys.logoUrl)}
+        {slot('mc', '游戏内 Logo', '显示在游戏内车票系统中。', sys.mcLogoUrl)}
       </div>
     </Card>
   );

@@ -187,7 +187,6 @@ function AliasModal({
           onChange={(e) => setEnglish(e.target.value)}
           autoFocus={!init.isNew}
         />
-        <span className="c-help">连续空格会合并为一个。</span>
       </label>
     </EditModalFrame>
   );
