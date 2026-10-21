@@ -9,4 +9,5 @@
 /backend/.env
 /backend/config.yml
 /db-backups
+/scripts/.env
 
