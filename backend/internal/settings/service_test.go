@@ -153,3 +153,80 @@ func TestPluginRealtimeSections(t *testing.T) {
 		t.Errorf("reset failed: %+v %+v", s.Plugin(), s.Realtime())
 	}
 }
+
+func TestTilesSection(t *testing.T) {
+	s, err := New(openStore(t), config.LegacySections{}, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Tiles().CacheMaxMB != 64 || s.Tiles().Sources == nil || s.Tiles().WorldTiles["world1"].Zoom != 14 {
+		t.Errorf("defaults not applied: %+v", s.Tiles())
+	}
+	bad := config.TilesConfig{Sources: []config.TileSourceConfig{
+		{ID: "a", URL: "ftp://x"}, {ID: "a", Type: "bluemap", URL: "https://x/"}, {ID: "b c", URL: "https://x/"},
+	}, CacheMaxMB: -1}
+	tooMany := 7
+	bad.WorldTiles = map[string]config.WorldTileConfig{"world1": {SynthZoomLevels: &tooMany, SynthMarginBlocks: -1}}
+	var fe FieldErrors
+	if err := s.UpdateTiles(bad, "u"); !errors.As(err, &fe) || len(fe) != 7 {
+		t.Errorf("err = %v", err)
+	}
+	ok := config.TilesConfig{Sources: []config.TileSourceConfig{{ID: "s2", URL: "https://map.example.com/dynmap/"}}, CacheMaxMB: 128}
+	if err := s.UpdateTiles(ok, "u"); err != nil {
+		t.Fatal(err)
+	}
+	if s.Tiles().Sources[0].Type != "dynmap" || s.Tiles().CacheMaxMB != 128 || s.Current().TilesMeta.UpdatedBy != "u" {
+		t.Errorf("saved = %+v %+v", s.Tiles(), s.Current().TilesMeta)
+	}
+	// 配置了外部来源后 defaultWorld 可以是未写进 worldTiles 的世界
+	f := s.Frontend()
+	f.DefaultWorld = "Paralon"
+	if err := s.UpdateFrontend(f, "u"); err != nil {
+		t.Errorf("defaultWorld from tile source rejected: %v", err)
+	}
+	// 去掉外部来源后 worldTiles 必须包含默认世界
+	if err := s.UpdateTiles(config.TilesConfig{WorldTiles: map[string]config.WorldTileConfig{"world1": {}}}, "u"); !errors.As(err, &fe) {
+		t.Errorf("missing default world accepted: %v", err)
+	}
+	if err := s.Reset(SectionTiles); err != nil || len(s.Tiles().Sources) != 0 {
+		t.Errorf("reset: %v %+v", err, s.Tiles())
+	}
+}
+
+// 旧版数据库 frontend 段里的 worldTiles 移到 tiles 段（优先于 config.yml），只迁移一次。
+func TestWorldTilesMigration(t *testing.T) {
+	st := openStore(t)
+	if err := st.SaveSetting(SectionFrontend, []byte(`{"currencyName":"Gold","worldTiles":{"w":{"tileUrl":"https://db/{z}/{x}/{y}.png"}}}`), "old"); err != nil {
+		t.Fatal(err)
+	}
+	legacy := config.LegacySections{Tiles: &config.TilesConfig{WorldTiles: map[string]config.WorldTileConfig{"yml": {}}}}
+	s, err := New(st, legacy, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Tiles().WorldTiles["w"].TileURL != "https://db/{z}/{x}/{y}.png" || len(s.Tiles().WorldTiles) != 1 {
+		t.Fatalf("worldTiles = %+v", s.Tiles().WorldTiles)
+	}
+	if s.Frontend().CurrencyName != "Gold" || s.Current().TilesMeta.UpdatedBy != "migration" {
+		t.Errorf("frontend = %+v meta = %+v", s.Frontend(), s.Current().TilesMeta)
+	}
+	if err := s.UpdateTiles(config.TilesConfig{WorldTiles: map[string]config.WorldTileConfig{"world1": {Zoom: 3}}}, "u"); err != nil {
+		t.Fatal(err)
+	}
+	s2, _ := New(st, legacy, quiet)
+	if s2.Tiles().WorldTiles["world1"].Zoom != 3 || len(s2.Tiles().WorldTiles) != 1 {
+		t.Errorf("migrated again: %+v", s2.Tiles().WorldTiles)
+	}
+}
+
+// 无数据库记录时导入 config.yml 中的 frontend.worldTiles。
+func TestWorldTilesLegacyYAML(t *testing.T) {
+	legacy := config.LegacySections{Tiles: &config.TilesConfig{WorldTiles: map[string]config.WorldTileConfig{"yml": {Zoom: 5}}}}
+	s, err := New(openStore(t), legacy, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Tiles().WorldTiles["yml"].Zoom != 5 {
+		t.Errorf("worldTiles = %+v", s.Tiles().WorldTiles)
+	}
+}

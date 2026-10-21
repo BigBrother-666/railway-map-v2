@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"golang.org/x/time/rate"
 
 	"railway-map-backend/internal/auth"
@@ -22,6 +23,7 @@ import (
 	"railway-map-backend/internal/purchase"
 	"railway-map-backend/internal/realtime"
 	"railway-map-backend/internal/routing"
+	"railway-map-backend/internal/tilesource"
 )
 
 // PluginStatus 暴露插件连通状态（由 pluginlink.Server 实现）。
@@ -39,6 +41,7 @@ type API struct {
 	store    DataStore
 	// frontend 返回当前生效的前端运行时配置（web 端修改后立即生效）。
 	frontend        func() config.FrontendConfig
+	tiles           *tilesource.Service
 	testAuthEnabled bool
 	testAuthUUIDs   []string
 	// frontendBaseURL 是 OAuth 回调完成后跳转回的地图页面地址（带 ?login=... 提示）。
@@ -81,7 +84,9 @@ type Options struct {
 	Auth     *auth.Service
 	Store    DataStore
 	// Frontend 返回当前生效的前端运行时配置。
-	Frontend        func() config.FrontendConfig
+	Frontend func() config.FrontendConfig
+	// Tiles 是世界底图服务（静态 worldTiles + 外部地图来源）。
+	Tiles           *tilesource.Service
 	FrontendBaseURL string
 	TestAuthEnabled bool
 	TestAuthUUIDs   []string
@@ -104,6 +109,7 @@ func New(o Options) *API {
 		auth:                o.Auth,
 		store:               o.Store,
 		frontend:            o.Frontend,
+		tiles:               o.Tiles,
 		testAuthEnabled:     o.TestAuthEnabled,
 		testAuthUUIDs:       o.TestAuthUUIDs,
 		frontendBaseURL:     o.FrontendBaseURL,
@@ -124,9 +130,15 @@ func (a *API) Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// Config 返回前端运行时配置与世界底图（静态 worldTiles 与外部地图来源合并后的结果）。
 func (a *API) Config(w http.ResponseWriter, r *http.Request) {
+	var worldTiles map[string]config.WorldTileConfig
+	if a.tiles != nil {
+		worldTiles = a.tiles.WorldTiles()
+	}
 	writeJSON(w, http.StatusOK, model.FrontendBootstrap{
 		FrontendConfig:  a.frontend(),
+		WorldTiles:      worldTiles,
 		TestAuthEnabled: a.testAuthEnabled,
 		TestAuthUUIDs:   a.testAuthUUIDs,
 	})
@@ -155,6 +167,34 @@ func (a *API) Geojson(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", version)
 	w.Header().Set("X-Geo-Version", version)
 	writeRaw(w, http.StatusOK, payload)
+}
+
+// Tile 代理外部地图瓦片（GET /api/v1/tiles/{source}/{world}/{z}/{x}/{y}）。上游地址只由服务器配置的来源
+// 与已发现的世界拼出，z/x/y 为整数，不会成为开放代理；与 dynmap 网页一样无需登录。
+func (a *API) Tile(w http.ResponseWriter, r *http.Request) {
+	if a.tiles == nil {
+		writeError(w, http.StatusNotFound, "not-found", "瓦片不存在")
+		return
+	}
+	z, x, y, ok := tilesource.ParseTileCoords(chi.URLParam(r, "z"), chi.URLParam(r, "x"), chi.URLParam(r, "y"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "bad-request", "瓦片坐标无效")
+		return
+	}
+	tile, err := a.tiles.Fetch(r.Context(), chi.URLParam(r, "source"), chi.URLParam(r, "world"), z, x, y)
+	if errors.Is(err, tilesource.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not-found", "瓦片不存在")
+		return
+	}
+	if err != nil {
+		a.logger.Warn("Tile proxy failed", "err", err, "path", r.URL.Path)
+		writeError(w, http.StatusBadGateway, "upstream-error", "上游地图不可用")
+		return
+	}
+	w.Header().Set("Content-Type", tile.ContentType)
+	w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(a.tiles.BrowserMaxAge()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(tile.Data)
 }
 
 // Lines / Systems 返回线路 / 系统数组（原始 JSON 透传）。

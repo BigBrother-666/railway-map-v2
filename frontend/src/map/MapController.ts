@@ -831,7 +831,7 @@ export class MapController {
 
     const source: maplibregl.RasterSourceSpecification = {
       type: 'raster',
-      tiles: [tile.tileUrl],
+      tiles: [absoluteTileUrl(tile.tileUrl)],
       tileSize: tile.tileSize ?? 256,
     };
     if (tile.minNativeZoom !== undefined) source.minzoom = tile.minNativeZoom;
@@ -1094,6 +1094,14 @@ export class MapController {
     this.map.setMinZoom(tile?.minZoom ?? 0);
     this.map.setMaxZoom(tile?.maxZoom ?? 20);
   }
+}
+
+/**
+ * 瓦片地址转绝对地址：外部地图（dynmap 等）由后端代理，下发的是 /api/v1/tiles/... 相对路径。
+ * 不用 new URL()——它会把 {z}/{x}/{y} 的花括号转义掉。
+ */
+function absoluteTileUrl(url: string): string {
+  return url.startsWith('/') && !url.startsWith('//') ? window.location.origin + url : url;
 }
 
 /**

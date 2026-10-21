@@ -2,10 +2,12 @@ package settings
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
 	"railway-map-backend/internal/config"
+	"railway-map-backend/internal/tilesource"
 )
 
 // FieldError 是单个字段的校验错误（field 为 JSON 路径，如 mapStyle.lineWidth）。
@@ -25,7 +27,10 @@ func (e FieldErrors) Error() string {
 	return strings.Join(parts, "; ")
 }
 
-var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+var (
+	hexColor     = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+	tileSourceID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
+)
 
 type validator struct{ errs FieldErrors }
 
@@ -46,8 +51,8 @@ func (v *validator) between(field string, x, lo, hi float64) {
 	}
 }
 
-// ValidateFrontend 校验前端运行时配置；零值字段视为「使用默认值」不报错。
-func ValidateFrontend(f config.FrontendConfig) FieldErrors {
+// ValidateFrontend 校验前端运行时配置；零值字段视为「使用默认值」不报错。tiles 用于校验 defaultWorld。
+func ValidateFrontend(f config.FrontendConfig, tiles config.TilesConfig) FieldErrors {
 	v := &validator{}
 	if f.ThemeColor != "" && !hexColor.MatchString(f.ThemeColor) {
 		v.add("themeColor", "必须是 #RRGGBB 格式")
@@ -62,37 +67,8 @@ func ValidateFrontend(f config.FrontendConfig) FieldErrors {
 	if f.RouteSearchTimeoutMs < 0 {
 		v.add("routeSearchTimeoutMs", "不能为负数")
 	}
-	if f.DefaultWorld != "" && len(f.WorldTiles) > 0 {
-		if _, ok := f.WorldTiles[f.DefaultWorld]; !ok {
-			v.add("defaultWorld", "必须是已配置的世界之一")
-		}
-	}
-	for name, t := range f.WorldTiles {
-		p := "worldTiles." + name
-		if strings.TrimSpace(name) == "" {
-			v.add("worldTiles", "世界名不能为空")
-		}
-		if t.Opacity != 0 {
-			v.between(p+".opacity", t.Opacity, 0, 1)
-		}
-		if t.Scheme != "" && t.Scheme != "xyz" && t.Scheme != "tms" {
-			v.add(p+".scheme", "只能是 xyz 或 tms")
-		}
-		if t.TileSize < 0 {
-			v.add(p+".tileSize", "不能为负数")
-		}
-		if t.MinZoom != 0 && t.MaxZoom != 0 && t.MinZoom > t.MaxZoom {
-			v.add(p+".minZoom", "不能大于 maxZoom")
-		}
-		if t.MinNativeZoom != 0 && t.MaxNativeZoom != 0 && t.MinNativeZoom > t.MaxNativeZoom {
-			v.add(p+".minNativeZoom", "不能大于 maxNativeZoom")
-		}
-		if len(t.MapOffset) != 0 && len(t.MapOffset) != 2 {
-			v.add(p+".mapOffset", "必须是 [x, z] 两个数")
-		}
-		if len(t.Center) != 0 && len(t.Center) != 2 {
-			v.add(p+".center", "必须是 [x, z] 两个数")
-		}
+	if !defaultWorldKnown(f.DefaultWorld, tiles) {
+		v.add("defaultWorld", "必须是「世界底图」中已配置的世界")
 	}
 	ms := f.MapStyle
 	for field, x := range map[string]float64{
@@ -168,5 +144,99 @@ func ValidateRealtime(r config.RealtimeConfig) FieldErrors {
 	if r.ClientSendBuffer > 4096 {
 		v.add("clientSendBuffer", "不能超过 4096")
 	}
+	return v.errs
+}
+
+// defaultWorldKnown 报告 defaultWorld 是否可用：配置了外部来源时世界由来源自动发现，不强制写进 worldTiles。
+func defaultWorldKnown(world string, t config.TilesConfig) bool {
+	if world == "" || len(t.WorldTiles) == 0 || len(t.Sources) > 0 {
+		return true
+	}
+	_, ok := t.WorldTiles[world]
+	return ok
+}
+
+// ValidateTiles 校验世界底图配置；数值 0 表示使用默认值。defaultWorld 为当前前端配置的默认世界。
+func ValidateTiles(t config.TilesConfig, defaultWorld string) FieldErrors {
+	v := &validator{}
+	for name, w := range t.WorldTiles {
+		p := "worldTiles." + name
+		if strings.TrimSpace(name) == "" {
+			v.add("worldTiles", "世界名不能为空")
+		}
+		if w.Opacity != 0 {
+			v.between(p+".opacity", w.Opacity, 0, 1)
+		}
+		if w.Scheme != "" && w.Scheme != "xyz" && w.Scheme != "tms" {
+			v.add(p+".scheme", "只能是 xyz 或 tms")
+		}
+		if w.TileSize < 0 {
+			v.add(p+".tileSize", "不能为负数")
+		}
+		if w.MinZoom != 0 && w.MaxZoom != 0 && w.MinZoom > w.MaxZoom {
+			v.add(p+".minZoom", "不能大于 maxZoom")
+		}
+		if w.MinNativeZoom != 0 && w.MaxNativeZoom != 0 && w.MinNativeZoom > w.MaxNativeZoom {
+			v.add(p+".minNativeZoom", "不能大于 maxNativeZoom")
+		}
+		if len(w.MapOffset) != 0 && len(w.MapOffset) != 2 {
+			v.add(p+".mapOffset", "必须是 [x, z] 两个数")
+		}
+		if len(w.Center) != 0 && len(w.Center) != 2 {
+			v.add(p+".center", "必须是 [x, z] 两个数")
+		}
+		if n := w.SynthZoomLevels; n != nil && (*n < 0 || *n > 6) {
+			v.add(p+".synthZoomLevels", "取值范围 0 ~ 6")
+		}
+		v.nonNegative(p+".synthMarginBlocks", float64(w.SynthMarginBlocks))
+	}
+	if !defaultWorldKnown(defaultWorld, t) {
+		v.add("worldTiles", "缺少默认世界 %s（可先在「前端显示」中修改默认世界）", defaultWorld)
+	}
+	seen := map[string]bool{}
+	for i, src := range t.Sources {
+		p := fmt.Sprintf("sources.%d", i)
+		switch {
+		case !tileSourceID.MatchString(src.ID):
+			v.add(p+".id", "只能包含字母、数字、- 和 _（1~32 个字符）")
+		case seen[src.ID]:
+			v.add(p+".id", "与其他来源重复")
+		}
+		seen[src.ID] = true
+		if src.Type != "" && !tilesource.Supported(src.Type) {
+			v.add(p+".type", "不支持的地图类型")
+		}
+		if u, err := url.Parse(src.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			v.add(p+".url", "必须是 http(s) 地址")
+		}
+	}
+	for _, f := range []struct {
+		field string
+		x     int
+	}{
+		{"cacheMaxMb", t.CacheMaxMB},
+		{"cacheTtlSeconds", t.CacheTTLSeconds},
+		{"synthCacheTtlSeconds", t.SynthCacheTTLSeconds},
+		{"blankCacheTtlSeconds", t.BlankCacheTTLSeconds},
+		{"browserCacheSeconds", t.BrowserCacheSeconds},
+		{"discoveryRefreshSeconds", t.DiscoveryRefreshSeconds},
+		{"upstreamTimeoutSeconds", t.UpstreamTimeoutSeconds},
+		{"upstreamConcurrency", t.UpstreamConcurrency},
+	} {
+		v.nonNegative(f.field, float64(f.x))
+	}
+	if t.CacheMaxMB > 4096 {
+		v.add("cacheMaxMb", "不能超过 4096")
+	}
+	if t.DiscoveryRefreshSeconds > 0 && t.DiscoveryRefreshSeconds < 10 {
+		v.add("discoveryRefreshSeconds", "不能小于 10")
+	}
+	if t.UpstreamConcurrency > 64 {
+		v.add("upstreamConcurrency", "不能超过 64")
+	}
+	if t.RenderJPEGQuality < 0 || t.RenderJPEGQuality > 100 {
+		v.add("renderJpegQuality", "取值范围 1 ~ 100")
+	}
+	sortErrors(v.errs)
 	return v.errs
 }

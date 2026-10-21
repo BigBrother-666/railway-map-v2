@@ -30,6 +30,7 @@ import (
 	"railway-map-backend/internal/routing"
 	"railway-map-backend/internal/settings"
 	"railway-map-backend/internal/store"
+	"railway-map-backend/internal/tilesource"
 	"railway-map-backend/internal/ws"
 )
 
@@ -119,12 +120,17 @@ func main() {
 		logger.Warn("Authentication is not configured; auth routes and purchases are disabled")
 	}
 
+	tileSvc := tilesource.New(settingsSvc.Tiles, cache.WorldBounds, logger)
+	tileCtx, stopTiles := context.WithCancel(context.Background())
+	defer stopTiles()
+	go tileSvc.Run(tileCtx)
+
 	routingSvc := routing.NewService(cache, settingsSvc.Route, func() float64 { return settingsSvc.Frontend().DefaultPricePerKm })
 
 	api := httpapi.New(httpapi.Options{
 		Cache: cache, Agg: agg, Plugin: pluginServer,
 		Purchase: orchestrator, Auth: authSvc, Store: st, Logger: logger,
-		Frontend: settingsSvc.Frontend, FrontendBaseURL: cfg.Server.FrontendBaseURL,
+		Frontend: settingsSvc.Frontend, Tiles: tileSvc, FrontendBaseURL: cfg.Server.FrontendBaseURL,
 		TestAuthEnabled: cfg.Auth.TestAuthEnabled, TestAuthUUIDs: cfg.Auth.TestAuthUUIDs,
 		PurchaseMinInterval:          seconds(func() int { return settingsSvc.Plugin().PurchaseMinIntervalSeconds }),
 		Routing:                      routingSvc,
@@ -133,7 +139,7 @@ func main() {
 	center := httpapi.NewCenter(httpapi.CenterOptions{
 		API: api, Store: st, Cache: cache, RBAC: rbacSvc, Settings: settingsSvc,
 		Plugin: configRequester, PluginOnline: pluginServer.Online,
-		OnSettingsChanged: routingSvc.InvalidateCache, Logger: logger,
+		OnSettingsChanged: func() { routingSvc.InvalidateCache(); tileSvc.Reload() }, Logger: logger,
 	})
 
 	r := buildRouter(cfg, api, center, pluginServer, hub, logger)
@@ -178,6 +184,7 @@ func buildRouter(cfg *config.Config, api *httpapi.API, center *httpapi.Center, p
 		r.Get("/systems", api.Systems)
 		r.Get("/stations", api.Stations)
 		r.Get("/trains", api.Trains)
+		r.Get("/tiles/{source}/{world}/{z}/{x}/{y}", api.Tile)
 
 		r.Get("/auth/login", api.Login)
 		r.Get("/auth/callback", api.Callback)
@@ -228,6 +235,7 @@ func buildRouter(cfg *config.Config, api *httpapi.API, center *httpapi.Center, p
 			})
 			r.With(center.RequirePerm(rbac.PermSettings)).Route("/admin/settings", func(r chi.Router) {
 				r.Get("/", center.GetSettings)
+				r.Get("/tiles/status", center.TileSourcesStatus)
 				r.Put("/{section}", center.UpdateSettings)
 				r.Post("/{section}/reset", center.ResetSettings)
 			})
@@ -284,7 +292,11 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 				message = "WebSocket request completed"
 			}
-			logger.Info(message,
+			level := slog.LevelInfo
+			if strings.HasPrefix(r.URL.Path, tilesource.ProxyPath+"/") {
+				level = slog.LevelDebug // 地图瓦片请求量大，避免刷屏
+			}
+			logger.Log(r.Context(), level, message,
 				"method", r.Method,
 				"path", r.URL.RequestURI(),
 				"status", status,

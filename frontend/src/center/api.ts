@@ -5,7 +5,7 @@
 import { API_BASE } from '../config';
 import type {
   AuditPage,
-  FrontendConfig,
+  FrontendSettings,
   OverviewResponse,
   PlayerRow,
   PrivateLine,
@@ -16,6 +16,8 @@ import type {
   RouteSettings,
   SettingsResponse,
   SettingsSection,
+  TileSourcesSettings,
+  TileSourcesStatus,
   StationAliasesResponse,
   StationGroupsResponse,
   SystemDetail,
@@ -123,10 +125,12 @@ export const centerApi = {
     request<WriteResult>('DELETE', `/admin/rbac/users/${enc(uuid)}/roles/${roleId}`),
 
   settings: () => request<SettingsResponse>('GET', '/admin/settings/'),
-  saveFrontend: (f: FrontendConfig) => request<SettingsResponse>('PUT', '/admin/settings/frontend', f),
+  saveFrontend: (f: FrontendSettings) => request<SettingsResponse>('PUT', '/admin/settings/frontend', f),
   saveRoute: (r: RouteSettings) => request<SettingsResponse>('PUT', '/admin/settings/route', r),
   savePlugin: (p: PluginSettings) => request<SettingsResponse>('PUT', '/admin/settings/plugin', p),
   saveRealtime: (r: RealtimeSettings) => request<SettingsResponse>('PUT', '/admin/settings/realtime', r),
+  saveTiles: (t: TileSourcesSettings) => request<SettingsResponse>('PUT', '/admin/settings/tiles', t),
+  tilesStatus: () => request<TileSourcesStatus>('GET', '/admin/settings/tiles/status'),
   resetSettings: (section: SettingsSection) =>
     request<SettingsResponse>('POST', `/admin/settings/${section}/reset`),
 

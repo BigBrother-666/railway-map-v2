@@ -102,8 +102,10 @@ type Player struct {
 
 type FrontendBootstrap struct {
 	config.FrontendConfig
-	TestAuthEnabled bool     `json:"testAuthEnabled"`
-	TestAuthUUIDs   []string `json:"testAuthUUIDs,omitempty"`
+	// WorldTiles 是各世界的底图（来自服务器配置的 tiles 段，已与外部地图来源合并）。
+	WorldTiles      map[string]config.WorldTileConfig `json:"worldTiles"`
+	TestAuthEnabled bool                              `json:"testAuthEnabled"`
+	TestAuthUUIDs   []string                          `json:"testAuthUUIDs,omitempty"`
 }
 
 type TestLoginRequest struct {

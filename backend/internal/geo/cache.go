@@ -31,6 +31,10 @@ type Cache struct {
 	geoIdx        *geoIndex
 	geoIdxVersion string
 
+	// worldBounds 是各世界线路 / 车站坐标范围（见 world_bounds.go），按 worldBoundsVersion 惰性重建
+	worldBounds        map[string]Bounds
+	worldBoundsVersion string
+
 	store *store.Store
 }
 

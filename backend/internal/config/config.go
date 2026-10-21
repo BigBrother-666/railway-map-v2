@@ -30,6 +30,8 @@ type LegacySections struct {
 	Route    *RouteConfig
 	Plugin   *PluginSettings
 	Realtime *RealtimeConfig
+	// Tiles 只含旧版 frontend.worldTiles。
+	Tiles *TilesConfig
 }
 
 type ServerConfig struct {
@@ -71,6 +73,46 @@ type RealtimeConfig struct {
 	ClientSendBuffer int `yaml:"clientSendBuffer" json:"clientSendBuffer"`
 }
 
+// TilesConfig 是世界底图配置：静态瓦片（worldTiles）与外部网页地图（dynmap 等）来源。后端发现各来源的世界，
+// 与 worldTiles 合并后经 GET /api/v1/config 的 worldTiles 下发；外部瓦片经后端代理（GET /api/v1/tiles/...）并缓存。
+type TilesConfig struct {
+	// WorldTiles 是每个世界的底图参数。外部来源提供了该世界时优先用外部地图（只沿用这里的视图参数
+	// zoom / center / opacity / minZoom / maxZoom）；否则用这里的静态瓦片。
+	WorldTiles map[string]WorldTileConfig `yaml:"worldTiles" json:"worldTiles"`
+	// Sources 按顺序生效：同一世界出现在多个来源时取第一个。
+	Sources []TileSourceConfig `yaml:"sources" json:"sources"`
+	// CacheMaxMB 是后端瓦片内存缓存上限（MB）。<=0 用默认 64。
+	CacheMaxMB int `yaml:"cacheMaxMb" json:"cacheMaxMb"`
+	// CacheTTLSeconds 是上游瓦片在后端缓存中的有效期（秒）。过期后仍先返回旧瓦片，同时在后台重新拉取。<=0 用默认 300。
+	CacheTTLSeconds int `yaml:"cacheTtlSeconds" json:"cacheTtlSeconds"`
+	// SynthCacheTTLSeconds 是后端合成瓦片的缓存有效期（秒）。合成瓦片由大量上游瓦片拼成、重新生成代价高，宜设得较长。<=0 用默认 10800。
+	SynthCacheTTLSeconds int `yaml:"synthCacheTtlSeconds" json:"synthCacheTtlSeconds"`
+	// BlankCacheTTLSeconds 是空白瓦片（上游没有该瓦片，即未渲染区域）的缓存有效期（秒）。<=0 用默认 10800。
+	BlankCacheTTLSeconds int `yaml:"blankCacheTtlSeconds" json:"blankCacheTtlSeconds"`
+	// BrowserCacheSeconds 是代理瓦片响应的 Cache-Control max-age（秒）。<=0 用默认 300。
+	BrowserCacheSeconds int `yaml:"browserCacheSeconds" json:"browserCacheSeconds"`
+	// DiscoveryRefreshSeconds 是重新读取上游元数据（世界 / 地图列表）的间隔（秒）。<=0 用默认 600。
+	DiscoveryRefreshSeconds int `yaml:"discoveryRefreshSeconds" json:"discoveryRefreshSeconds"`
+	// UpstreamTimeoutSeconds 是单次向上游请求元数据或瓦片的超时（秒）。<=0 用默认 10。
+	UpstreamTimeoutSeconds int `yaml:"upstreamTimeoutSeconds" json:"upstreamTimeoutSeconds"`
+	// UpstreamConcurrency 是同时向上游拉取瓦片的最大请求数，避免压垮上游地图服务器。<=0 用默认 8。
+	UpstreamConcurrency int `yaml:"upstreamConcurrency" json:"upstreamConcurrency"`
+	// RenderJPEGQuality 是后端合成瓦片的 JPEG 编码质量（1~100；子瓦片都是 JPEG 时才编码为 JPEG，否则 PNG）。<=0 用默认 85。
+	RenderJPEGQuality int `yaml:"renderJpegQuality" json:"renderJpegQuality"`
+}
+
+// TileSourceConfig 是一个外部地图来源。
+type TileSourceConfig struct {
+	// ID 是来源标识（字母、数字、- 和 _），出现在瓦片代理路径中。
+	ID string `yaml:"id" json:"id"`
+	// Type 是来源类型，目前支持 dynmap。留空用 dynmap。
+	Type string `yaml:"type" json:"type"`
+	// URL 是网页地图前端地址，如 https://map.example.com/dynmap/。
+	URL string `yaml:"url" json:"url"`
+	// Map 可选：指定使用的地图名（dynmap 的 maps[].name，如 flat）；留空则自动选第一张俯视地图。
+	Map string `yaml:"map,omitempty" json:"map,omitempty"`
+}
+
 type AuthConfig struct {
 	Microsoft       MicrosoftConfig `yaml:"microsoft"`
 	JWTSecret       string          `yaml:"jwtSecret"`
@@ -97,14 +139,14 @@ type FrontendConfig struct {
 	DefaultWorld   string `yaml:"defaultWorld" json:"defaultWorld"`
 	CurrencyName   string `yaml:"currencyName" json:"currencyName"`
 	// 主题色（强调色），16 进制 #RRGGBB。留空用默认黄色 #ffd400。
-	ThemeColor        string                     `yaml:"themeColor" json:"themeColor"`
-	WorldTiles        map[string]WorldTileConfig `yaml:"worldTiles" json:"worldTiles"`
-	MapStyle          MapStyleConfig             `yaml:"mapStyle" json:"mapStyle"`
-	RouteDiagram      RouteDiagramConfig         `yaml:"routeDiagram" json:"routeDiagram"`
-	TrainIcons        TrainIconsConfig           `yaml:"trainIcons" json:"trainIcons"`
-	DefaultSystemLogo string                     `yaml:"defaultSystemLogo" json:"defaultSystemLogo"`
-	AvatarURLTemplate string                     `yaml:"avatarUrlTemplate" json:"avatarUrlTemplate"`
-	DefaultPricePerKm float64                    `yaml:"defaultPricePerKm" json:"defaultPricePerKm"`
+	ThemeColor string `yaml:"themeColor" json:"themeColor"`
+	// 世界底图（worldTiles）已移到 TilesConfig，由 GET /api/v1/config 合并下发。
+	MapStyle          MapStyleConfig     `yaml:"mapStyle" json:"mapStyle"`
+	RouteDiagram      RouteDiagramConfig `yaml:"routeDiagram" json:"routeDiagram"`
+	TrainIcons        TrainIconsConfig   `yaml:"trainIcons" json:"trainIcons"`
+	DefaultSystemLogo string             `yaml:"defaultSystemLogo" json:"defaultSystemLogo"`
+	AvatarURLTemplate string             `yaml:"avatarUrlTemplate" json:"avatarUrlTemplate"`
+	DefaultPricePerKm float64            `yaml:"defaultPricePerKm" json:"defaultPricePerKm"`
 	// 路线查询（前端请求 /api/v1/route/query）超时毫秒数，超时则中止请求并提示失败。<=0 用默认 10000。
 	RouteSearchTimeoutMs int `yaml:"routeSearchTimeoutMs" json:"routeSearchTimeoutMs"`
 }
@@ -147,6 +189,35 @@ type WorldTileConfig struct {
 	MapOffset     []float64 `yaml:"mapOffset,omitempty" json:"mapOffset,omitempty"`
 	// 进入页面时的初始镜头中心（游戏坐标 [x, z]）。未配置则回退到数据范围中心。
 	Center []float64 `yaml:"center,omitempty" json:"center,omitempty"`
+	// SynthZoomLevels 仅外部地图：在上游最粗一级之上由后端合成的层级数（每级由下一级 2×2 张拼接缩小），
+	// 使地图能缩得更远（MapLibre 不会把低于原生缩放下限的瓦片缩小显示）。每多一级，最远一级每张瓦片
+	// 需要的上游瓦片数 ×4。0 表示不合成；未配置用默认 DefaultSynthZoomLevels。
+	SynthZoomLevels *int `yaml:"synthZoomLevels,omitempty" json:"synthZoomLevels,omitempty"`
+	// SynthMarginBlocks 仅外部地图：合成层级只覆盖该世界线路 / 车站坐标范围向外扩展该方块数以内的区域，
+	// 范围外的合成瓦片直接返回空白、不访问上游。世界没有线路数据时不限制。<=0 用默认 DefaultSynthMarginBlocks。
+	SynthMarginBlocks int `yaml:"synthMarginBlocks,omitempty" json:"synthMarginBlocks,omitempty"`
+}
+
+// 外部地图合成层级的默认值（见 WorldTileConfig.SynthZoomLevels / SynthMarginBlocks）。
+const (
+	DefaultSynthZoomLevels   = 4
+	DefaultSynthMarginBlocks = 2000
+)
+
+// SynthLevels 返回生效的合成层级数。
+func (w WorldTileConfig) SynthLevels() int {
+	if w.SynthZoomLevels == nil {
+		return DefaultSynthZoomLevels
+	}
+	return *w.SynthZoomLevels
+}
+
+// SynthMargin 返回生效的合成范围边距（方块）。
+func (w WorldTileConfig) SynthMargin() float64 {
+	if w.SynthMarginBlocks <= 0 {
+		return DefaultSynthMarginBlocks
+	}
+	return float64(w.SynthMarginBlocks)
 }
 
 type MapStyleConfig struct {
@@ -208,6 +279,18 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg.Legacy = LegacySections{Frontend: legacy.Frontend, Route: legacy.Route, Realtime: legacy.Realtime}
+	// frontend.worldTiles 已移到 tiles 段（FrontendConfig 不再有该字段），单独解析。
+	var legacyTiles struct {
+		Frontend struct {
+			WorldTiles map[string]WorldTileConfig `yaml:"worldTiles"`
+		} `yaml:"frontend"`
+	}
+	if err := yaml.Unmarshal([]byte(expanded), &legacyTiles); err != nil {
+		return nil, err
+	}
+	if legacyTiles.Frontend.WorldTiles != nil {
+		cfg.Legacy.Tiles = &TilesConfig{WorldTiles: legacyTiles.Frontend.WorldTiles}
+	}
 	// plugin 段本身仍存在（sharedToken），只有出现了已迁移的键才视为旧段。
 	delete(legacy.Plugin, "sharedToken")
 	if len(legacy.Plugin) > 0 {
@@ -263,9 +346,6 @@ func ApplyFrontendDefaults(f *FrontendConfig) {
 	}
 	if f.DefaultWorld == "" {
 		f.DefaultWorld = "world1"
-	}
-	if f.WorldTiles == nil {
-		f.WorldTiles = map[string]WorldTileConfig{"world1": {Zoom: 14}}
 	}
 	if f.MapStyle.LineWidth <= 0 {
 		f.MapStyle.LineWidth = 3
@@ -403,5 +483,47 @@ func ApplyRealtimeDefaults(r *RealtimeConfig) {
 	}
 	if r.ClientSendBuffer <= 0 {
 		r.ClientSendBuffer = 64
+	}
+}
+
+// ApplyTilesDefaults 为世界底图配置中未配置 / 非法的字段填充默认值。
+func ApplyTilesDefaults(t *TilesConfig) {
+	if t.WorldTiles == nil {
+		t.WorldTiles = map[string]WorldTileConfig{"world1": {Zoom: 14}}
+	}
+	if t.Sources == nil {
+		t.Sources = []TileSourceConfig{}
+	}
+	for i := range t.Sources {
+		if t.Sources[i].Type == "" {
+			t.Sources[i].Type = "dynmap"
+		}
+	}
+	if t.CacheMaxMB <= 0 {
+		t.CacheMaxMB = 64
+	}
+	if t.CacheTTLSeconds <= 0 {
+		t.CacheTTLSeconds = 300
+	}
+	if t.SynthCacheTTLSeconds <= 0 {
+		t.SynthCacheTTLSeconds = 10800
+	}
+	if t.BlankCacheTTLSeconds <= 0 {
+		t.BlankCacheTTLSeconds = 10800
+	}
+	if t.BrowserCacheSeconds <= 0 {
+		t.BrowserCacheSeconds = 300
+	}
+	if t.DiscoveryRefreshSeconds <= 0 {
+		t.DiscoveryRefreshSeconds = 600
+	}
+	if t.UpstreamTimeoutSeconds <= 0 {
+		t.UpstreamTimeoutSeconds = 10
+	}
+	if t.UpstreamConcurrency <= 0 {
+		t.UpstreamConcurrency = 8
+	}
+	if t.RenderJPEGQuality <= 0 {
+		t.RenderJPEGQuality = 85
 	}
 }

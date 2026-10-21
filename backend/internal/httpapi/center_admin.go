@@ -16,6 +16,7 @@ import (
 	"railway-map-backend/internal/rbac"
 	"railway-map-backend/internal/settings"
 	"railway-map-backend/internal/store"
+	"railway-map-backend/internal/tilesource"
 )
 
 // --- 概览 ---
@@ -256,7 +257,18 @@ func (c *Center) GetSettings(w http.ResponseWriter, r *http.Request) {
 		"routeMeta":    cur.RouteMeta,
 		"pluginMeta":   cur.PluginMeta,
 		"realtimeMeta": cur.RealtimeMeta,
+		"tiles":        cur.Tiles,
+		"tilesMeta":    cur.TilesMeta,
 	})
+}
+
+// TileSourcesStatus 返回外部地图来源的发现状态与世界匹配情况（GET /admin/settings/tiles/status）。
+func (c *Center) TileSourcesStatus(w http.ResponseWriter, r *http.Request) {
+	if c.api.tiles == nil {
+		writeJSON(w, http.StatusOK, tilesource.Status{Sources: []tilesource.SourceStatus{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, c.api.tiles.Status())
 }
 
 // UpdateSettings 整段保存一段配置（PUT /admin/settings/{section}）。
@@ -300,6 +312,14 @@ func (c *Center) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		before, after = cur.Realtime, rt
 		err = c.settings.UpdateRealtime(rt, actor)
+	case settings.SectionTiles:
+		var tc config.TilesConfig
+		if json.NewDecoder(r.Body).Decode(&tc) != nil {
+			writeError(w, http.StatusBadRequest, "bad-request", "请求体无效")
+			return
+		}
+		before, after = cur.Tiles, tc
+		err = c.settings.UpdateTiles(tc, actor)
 	default:
 		writeError(w, http.StatusNotFound, "not-found", "未知的配置段")
 		return

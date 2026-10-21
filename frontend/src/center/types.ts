@@ -1,5 +1,5 @@
 /** 个人中心接口类型（与后端 internal/httpapi/center*.go、internal/model/admin.go 对应）。 */
-import type { FrontendConfig, Player } from '../types';
+import type { FrontendConfig, Player, WorldTileConfig } from '../types';
 
 export type { FrontendConfig };
 
@@ -188,7 +188,46 @@ export interface RealtimeSettings {
   clientSendBuffer: number;
 }
 
-export type SettingsSection = 'frontend' | 'route' | 'plugin' | 'realtime';
+/** 服务器配置的 frontend 段（世界底图在 tiles 段，GET /config 合并下发）。 */
+export type FrontendSettings = Omit<FrontendConfig, 'worldTiles' | 'testAuthEnabled' | 'testAuthUUIDs'>;
+
+export interface TileSourceSettings {
+  id: string;
+  type: string;
+  url: string;
+  map?: string;
+}
+
+export interface TileSourcesSettings {
+  worldTiles: Record<string, WorldTileConfig>;
+  sources: TileSourceSettings[];
+  cacheMaxMb: number;
+  cacheTtlSeconds: number;
+  synthCacheTtlSeconds: number;
+  blankCacheTtlSeconds: number;
+  browserCacheSeconds: number;
+  discoveryRefreshSeconds: number;
+  upstreamTimeoutSeconds: number;
+  upstreamConcurrency: number;
+  renderJpegQuality: number;
+}
+
+/** GET /admin/settings/tiles/status：外部地图来源发现状态。 */
+export interface TileSourcesStatus {
+  sources: {
+    id: string;
+    type: string;
+    url: string;
+    error?: string;
+    discoveredAt?: number;
+    /** tile：推导的底图参数（含合成层级的原生缩放 / 缩放范围），即世界参数留空时的取值。 */
+    worlds: { name: string; map?: string; skip?: string; tile?: WorldTileConfig }[];
+  }[];
+  cacheItems: number;
+  cacheBytes: number;
+}
+
+export type SettingsSection = 'frontend' | 'route' | 'plugin' | 'realtime' | 'tiles';
 
 export interface SettingsMeta {
   updatedBy?: string;
@@ -196,15 +235,23 @@ export interface SettingsMeta {
 }
 
 export interface SettingsResponse {
-  frontend: FrontendConfig;
+  frontend: FrontendSettings;
   route: RouteSettings;
   plugin: PluginSettings;
   realtime: RealtimeSettings;
-  defaults: { frontend: FrontendConfig; route: RouteSettings; plugin: PluginSettings; realtime: RealtimeSettings };
+  tiles: TileSourcesSettings;
+  defaults: {
+    frontend: FrontendSettings;
+    route: RouteSettings;
+    plugin: PluginSettings;
+    realtime: RealtimeSettings;
+    tiles: TileSourcesSettings;
+  };
   frontendMeta: SettingsMeta;
   routeMeta: SettingsMeta;
   pluginMeta: SettingsMeta;
   realtimeMeta: SettingsMeta;
+  tilesMeta: SettingsMeta;
 }
 
 export interface AuditEntry {

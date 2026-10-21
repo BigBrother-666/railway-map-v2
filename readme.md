@@ -44,6 +44,7 @@ npm run dev
 - `GET /api/v1/meta`：地图版本、插件在线状态、服务器时间。
 - `GET /api/v1/geojson`、`/lines`、`/systems`：地图、线路、铁路系统公开数据。
 - `GET /api/v1/trains`：当前列车快照。
+- `GET /api/v1/tiles/{source}/{world}/{z}/{x}/{y}`：外部地图（dynmap 等）瓦片代理。
 - `GET /api/v1/auth/login`、`/auth/callback`、`/auth/me`、`POST /auth/logout`：网页登录。
 - `POST /api/v1/auth/test-login`：测试登录。
 - `POST /api/v1/route/query`：路线/车票查询。
@@ -53,8 +54,15 @@ npm run dev
 - `GET /api/v1/me/profile`、`/me/overview`：个人中心身份、权限、侧栏系统列表与统计（需登录）。
 - `GET|PUT|DELETE /api/v1/me/systems/{id}`、`PUT|DELETE /me/systems/{id}/logo/{web|mc}`、`GET /me/systems/{id}/lines`、`PUT|DELETE /me/lines/{lineId}`：铁路系统与线路管理。
 - `GET /api/v1/me/station-aliases`、`PUT|DELETE /me/station-aliases/{station}`；`GET /me/station-groups`、`PUT|DELETE /me/station-groups/{group}`：车站别名 / 车站组。
-- `/api/v1/admin/rbac`、`/admin/settings`、`/admin/audit`：权限管理、服务器配置、操作日志。
+- `/api/v1/admin/rbac`、`/admin/settings`、`/admin/audit`：权限管理、服务器配置、操作日志；`GET /admin/settings/tiles/status` 查看外部地图来源的世界发现情况。
 - `GET /internal/plugin`：插件内部 WebSocket，需要 Bearer token 认证。
+
+## 世界底图
+
+- 外部地图来源：填写网页地图的前端地址（目前支持 dynmap，如 `https://map.example.com/dynmap/` ）。
+- 世界参数（静态瓦片）：每个世界填 `{z}/{x}/{y}` 瓦片 URL，用 `mapScale` / `mapOffset` 对齐线路。
+
+优先级：外部来源中有的世界优先使用外部地图。
 
 ## 降级行为
 
