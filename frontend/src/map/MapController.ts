@@ -4,6 +4,7 @@
  * 渲染与寻路分离——这里用完整几何渲染，寻路图在 routing/ 内单独构建。
  */
 import maplibregl from 'maplibre-gl';
+import type { ResolvedTheme } from '../theme';
 import type { FeatureCollection, LineStringProps, PointProps, RouteGeometry, Train } from '../types';
 import { gameToLngLat, gameLineToLngLat } from './coords';
 import { getConfig, CONTACT_SYSTEM_ID } from '../config';
@@ -16,8 +17,11 @@ const SRC_ENDPOINTS = 'route-endpoints';
 const SRC_HISTORY = 'history-route';
 const SRC_WORLD_TILES = 'world-tiles';
 const LAYER_WORLD_TILES = 'world-tiles-layer';
-/** 底图背景色（与 style 的 bg 图层一致）；淡化时把颜色混向它而非降透明度，避免重叠处 alpha 累加变实。 */
-const BG_COLOR: [number, number, number] = [0x0f, 0x11, 0x15];
+/** 地图画布与界面使用协调的暖灰浅色底，淡化线路混向当前背景。 */
+const MAP_COLORS = {
+  dark: { background: '#000000', text: '#eaeaea', station: '#ffffff', stroke: '#222222' },
+  light: { background: '#e8e5dc', text: '#303a3b', station: '#faf5e8', stroke: '#4b5552' },
+};
 
 interface TrainVisualState {
   train: Train;
@@ -63,7 +67,7 @@ export class MapController {
   private trainAnimFrame: number | null = null;
   private trainAnimLast = 0;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, private theme: ResolvedTheme = 'dark') {
     this.map = new maplibregl.Map({
       container,
       fadeDuration: 80,
@@ -81,7 +85,7 @@ export class MapController {
         // 纯色底图（无外部瓦片依赖；如配置了世界瓦片，可在此扩展 raster source）
         sources: {},
         layers: [
-          { id: 'bg', type: 'background', paint: { 'background-color': '#000000' } },
+          { id: 'bg', type: 'background', paint: { 'background-color': MAP_COLORS[this.theme].background } },
         ],
         glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
       },
@@ -97,8 +101,25 @@ export class MapController {
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
   }
 
+  setTheme(theme: ResolvedTheme) {
+    this.theme = theme;
+    // load 前只保存选择，图层创建时直接使用最新主题。
+    if (!this.map.getLayer('bg')) return;
+    const colors = MAP_COLORS[theme];
+    this.map.setPaintProperty('bg', 'background-color', colors.background);
+    if (!this.map.getLayer('stations-layer')) return;
+    this.map.setPaintProperty('stations-layer', 'circle-color', colors.station);
+    this.map.setPaintProperty('stations-layer', 'circle-stroke-color', colors.stroke);
+    this.map.setPaintProperty('stations-label', 'text-color', colors.text);
+    this.map.setPaintProperty('stations-label', 'text-halo-color', colors.background);
+    this.updateLineSource();
+  }
+
   onReady(cb: () => void) {
-    this.map.on('load', cb);
+    this.map.on('load', () => {
+      this.setTheme(this.theme);
+      cb();
+    });
   }
 
   setHandlers(
@@ -453,7 +474,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: 80,
+      padding: 50,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -720,8 +741,8 @@ export class MapController {
       source: SRC_STATIONS,
       paint: {
         'circle-radius': getConfig().mapStyle.stationRadius,
-        'circle-color': '#ffffff',
-        'circle-stroke-color': '#222222',
+        'circle-color': MAP_COLORS[this.theme].station,
+        'circle-stroke-color': MAP_COLORS[this.theme].stroke,
         'circle-stroke-width': getConfig().mapStyle.stationStrokeWidth,
         'circle-opacity': stationOpacity,
         'circle-stroke-opacity': stationOpacity,
@@ -743,8 +764,8 @@ export class MapController {
         'symbol-sort-key': ['case', ['get', 'dim'], 1, 0],
       },
       paint: {
-        'text-color': '#eaeaea',
-        'text-halo-color': '#000000',
+        'text-color': MAP_COLORS[this.theme].text,
+        'text-halo-color': MAP_COLORS[this.theme].background,
         'text-halo-width': 1.2,
         'text-opacity': stationOpacity,
       },
@@ -833,18 +854,23 @@ export class MapController {
   private refreshWorldData() {
     if (!this.fc) return;
     this.updateWorldTiles();
+    this.updateLineSource();
+    this.updateStationSource();
+    this.setHiddenLines(this.hidden);
+    this.renderHistoryGeometry();
+  }
+
+  private updateLineSource() {
+    if (!this.fc) return;
     const lineFeats = this.fc.features
       .filter((f) => f.geometry?.type === 'LineString' && (f.properties as LineStringProps).world === this.world)
       // 预计算淡化色：把线路本色按 dimOpacity 混向背景色。淡化时基础层用此不透明色，
       // 重叠处是不透明像素直接覆盖、不再累加 alpha，避免「半透明叠加变实」（改善项）。
       .map((f) => {
         const p = f.properties as LineStringProps;
-        return { ...f, properties: { ...p, dimColor: mixTowardBg(p.color, getConfig().mapStyle.dimOpacity) } };
+        return { ...f, properties: { ...p, dimColor: mixTowardBg(p.color, getConfig().mapStyle.dimOpacity, MAP_COLORS[this.theme].background) } };
       });
     (this.map.getSource(SRC_LINES) as maplibregl.GeoJSONSource)?.setData(this.toLngLatFC(lineFeats));
-    this.updateStationSource();
-    this.setHiddenLines(this.hidden);
-    this.renderHistoryGeometry();
   }
 
   private updateWorldTiles() {
@@ -1064,7 +1090,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: 0,
+      padding: 50,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -1088,7 +1114,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: 30,
+      padding: 50,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -1121,7 +1147,7 @@ export class MapController {
     bounds.extend(gameToLngLat(maxX + m, maxZ + m, this.world));
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: 30,
+      padding: 50,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -1202,14 +1228,15 @@ function angleDelta(from: number, to: number): number {
   return ((((to - from) % 360) + 540) % 360) - 180;
 }
 
-function mixTowardBg(hex: string | undefined, alpha: number): string {
+function mixTowardBg(hex: string | undefined, alpha: number, background: string): string {
+  const bg = parseHex(background)!;
   const rgb = parseHex(hex);
   if (!rgb) return '#888888';
   const a = Math.min(1, Math.max(0, alpha));
   const mix = (c: number, bg: number) => Math.round(c * a + bg * (1 - a));
-  const r = mix(rgb[0], BG_COLOR[0]);
-  const g = mix(rgb[1], BG_COLOR[1]);
-  const b = mix(rgb[2], BG_COLOR[2]);
+  const r = mix(rgb[0], bg[0]);
+  const g = mix(rgb[1], bg[1]);
+  const b = mix(rgb[2], bg[2]);
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
 

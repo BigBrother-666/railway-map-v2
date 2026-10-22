@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { ThemeToggle } from './ThemeToggle';
+import type { ThemeChoice } from '../theme';
 import { useStore } from '../store/useStore';
 import { api } from '../api/client';
 import { avatarUrl, getConfig } from '../config';
 
 /** 顶栏：标题、世界切换、插件在线状态、登录 / 玩家信息。 */
-export function TopBar() {
+export function TopBar({ themeChoice, setTheme }: { themeChoice: ThemeChoice; setTheme: (choice: ThemeChoice) => void }) {
   const worlds = useStore((s) => s.worlds);
   const currentWorld = useStore((s) => s.currentWorld);
   const setWorld = useStore((s) => s.setWorld);
@@ -53,6 +55,7 @@ export function TopBar() {
         </div>
       )}
       <div className="topbar-right">
+        <ThemeToggle className="theme-toggle" choice={themeChoice} onChange={setTheme} />
         {player ? (
           <div className="player-menu">
             <button className="avatar-btn" title={player.name} onClick={() => setMenuOpen((v) => !v)}>

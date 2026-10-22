@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapController } from '../map/MapController';
 import { useStore } from '../store/useStore';
+import type { ResolvedTheme } from '../theme';
 import { getConfig } from '../config';
 
 /** 左侧侧边栏宽度（与 styles.css 的 .sidebar 保持一致），用于扣除地图遮挡区域。 */
@@ -11,7 +12,7 @@ const MOBILE_QUERY = '(max-width: 640px)';
 const MOBILE_DRAWER_RATIO = 0.55;
 
 /** 地图视图：把 MapController 与全局状态连起来。 */
-export function MapView() {
+export function MapView({ theme }: { theme: ResolvedTheme }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<MapController | null>(null);
   const readyRef = useRef(false);
@@ -37,7 +38,7 @@ export function MapView() {
   // 初始化地图（一次）
   useEffect(() => {
     if (!containerRef.current) return;
-    const ctrl = new MapController(containerRef.current);
+    const ctrl = new MapController(containerRef.current, theme);
     ctrlRef.current = ctrl;
     ctrl.setHandlers(
       (name) => useStore.getState().clickStation(name),
@@ -57,6 +58,10 @@ export function MapView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    ctrlRef.current?.setTheme(theme);
+  }, [theme]);
 
   // 侧边栏遮挡区域：桌面端左侧固定宽度，手机端底部抽屉；关闭或折叠时为 0。
   // 放在镜头相关 effect 之前，保证同一次更新中框选 / 居中使用的是新遮挡区域；窗口尺寸变化（含横竖屏）时重算。
