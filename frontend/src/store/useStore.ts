@@ -118,7 +118,7 @@ interface AppState {
   clickLine: (lineId: string) => void;
   highlightLine: (lineId: string | null) => void;
   selectSearchLine: (lineId: string) => void;
-  focusStation: (world: string, x: number, z: number) => void;
+  focusStation: (world: string, name: string, x: number, z: number) => void;
   openRoutePanel: (presetEnd?: string) => void;
   setEndpoint: (role: Endpoint, name: string | null) => void;
   swapEndpoints: () => void;
@@ -323,9 +323,12 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
-  focusStation(world, x, z) {
-    // 搜索选中车站：仅移动镜头（缩放到 mapStyle.stationFocusZoom），不改侧栏；跨世界时先切世界。
+  focusStation(world, name, x, z) {
+    // 搜索选中车站：打开车站面板（同点击地图车站），并移动镜头（缩放到 mapStyle.stationFocusZoom）；跨世界时先切世界。
+    // 与 selectSearchLine 一致：路线查询中也生效（先关闭查询面板），而不是把车站填为起终点。
     if (world !== get().currentWorld) get().setWorld(world);
+    if (get().sidebar === 'route') get().closeSidebar();
+    get().clickStation(name);
     set({ stationFocus: { x, z, seq: (get().stationFocus?.seq ?? 0) + 1 } });
   },
 

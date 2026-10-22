@@ -86,7 +86,7 @@ export function MapSearch() {
     setOpen(false);
     inputRef.current?.blur(); // 手机端收起键盘，露出定位结果
     if (item.kind === 'line') selectSearchLine(item.lineId);
-    else focusStation(item.world, item.x, item.z);
+    else focusStation(item.world, item.name, item.x, item.z);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
