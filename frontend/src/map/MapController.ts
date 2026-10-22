@@ -650,7 +650,8 @@ export class MapController {
     if (performance.now() < this.trackingResumeAt) return;
     const state = this.trainStates.get(this.trackedTrainId);
     if (!state || state.world !== this.world) return;
-    this.map.jumpTo({ center: gameToLngLat(state.currentX, state.currentZ, this.world) });
+    // 打上标记：jumpTo 会同步触发 moveend，若 moveend 再调度居中会形成永不停止的 jumpTo 循环（内存持续升高、页面卡死）。
+    this.map.jumpTo({ center: gameToLngLat(state.currentX, state.currentZ, this.world) }, { trackingJump: true });
   }
 
   private ensureSources() {
@@ -817,8 +818,9 @@ export class MapController {
       this.updateStationSource();
       window.setTimeout(() => this.centerTrackedTrain(), 150);
     });
-    this.map.on('moveend', () => {
-      if (!this.trackedTrainId) return;
+    this.map.on('moveend', (e) => {
+      // 跟踪居中自身触发的 moveend 忽略，只在用户拖动 / 其它镜头动画结束后补一次居中。
+      if (!this.trackedTrainId || (e as { trackingJump?: boolean }).trackingJump) return;
       window.setTimeout(() => this.centerTrackedTrain(), 0);
     });
   }
