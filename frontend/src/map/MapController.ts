@@ -89,7 +89,10 @@ export class MapController {
       zoom: 14,
       maxZoom: 20,
       minZoom: 0,
-      attributionControl: false,
+      attributionControl: {
+        compact: true,
+        customAttribution: '© 2026 RailwayMap · by BigBrother'
+      },
     });
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
   }
