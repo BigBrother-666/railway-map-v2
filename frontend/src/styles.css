@@ -1497,6 +1497,132 @@ body,
   transition: transform 0.25s ease;
 }
 
+/* 地图搜索框（左上角）：左侧栏展开时移到侧栏右侧，折叠时让出露出的边条 */
+.map-search {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 300px;
+  z-index: 5;
+  transition: left 0.25s ease;
+}
+.sidebar-left + .map-search {
+  left: 332px;
+}
+.sidebar-left.collapsed + .map-search {
+  left: 26px;
+}
+.map-search-row {
+  display: flex;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.map-search-row:focus-within {
+  border-color: var(--accent);
+}
+.map-search-icon {
+  flex-shrink: 0;
+  margin-left: 12px;
+  color: var(--muted);
+}
+.map-search-row:focus-within .map-search-icon {
+  color: var(--accent);
+}
+.map-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 9px 10px;
+  font-size: 14px;
+  outline: none;
+}
+.map-search .icon-btn {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  align-self: stretch;
+}
+.map-search .icon-btn:hover {
+  color: var(--text);
+}
+.map-search-suggest,
+.map-search-empty {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 4px 0 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.map-search-suggest {
+  padding: 4px 0;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.map-search-suggest li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.map-search-suggest li.active {
+  background: var(--panel-2);
+}
+.map-search-swatch {
+  flex-shrink: 0;
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+}
+.map-search-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin: 0 2px;
+  border: 2px solid var(--text);
+  border-radius: 50%;
+  background: var(--panel);
+}
+.map-search-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.map-search-name,
+.map-search-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.map-search-name {
+  font-size: 14px;
+}
+.map-search-sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+.map-search-tag {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.map-search-empty {
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 @media (max-width: 640px) {
   .hide-mobile {
     display: none;
@@ -1604,6 +1730,15 @@ body,
   .sidebar-right-toggle {
     top: 8px;
     right: 8px;
+  }
+
+  /* 地图搜索框：左侧栏在手机端是底部抽屉，搜索框固定左上角，右侧给「线路」按钮留位 */
+  .map-search,
+  .sidebar-left + .map-search,
+  .sidebar-left.collapsed + .map-search {
+    top: 8px;
+    left: 8px;
+    width: calc(100% - 100px);
   }
 }
 /* 快速车路线图：中途站小圆点与站名（弱化显示） */

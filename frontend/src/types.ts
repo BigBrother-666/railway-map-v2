@@ -210,6 +210,8 @@ export interface FrontendConfig {
     stationMergePixelDistance: number;
     trainIconSize: number;
     trainFocusZoom: number;
+    /** 搜索选中车站后的地图缩放级别。 */
+    stationFocusZoom: number;
   };
   routeDiagram: {
     /** 列车坐标投影到线路的最大允许距离（游戏方块）。 */

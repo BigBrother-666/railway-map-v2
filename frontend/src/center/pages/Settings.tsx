@@ -67,6 +67,7 @@ const FRONTEND_GROUPS: GroupDef[] = [
       { path: 'mapStyle.stationMergePixelDistance', label: '车站合并像素距离', type: 'number', step: 1, min: 0 },
       { path: 'mapStyle.trainIconSize', label: '列车图标大小', type: 'number', step: 0.05, min: 0 },
       { path: 'mapStyle.trainFocusZoom', label: '聚焦列车时缩放级别', type: 'number', step: 0.5, min: 0 },
+      { path: 'mapStyle.stationFocusZoom', label: '搜索车站时缩放级别', type: 'number', step: 0.5, min: 0 },
     ],
   },
   {

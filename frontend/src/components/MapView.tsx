@@ -25,6 +25,8 @@ export function MapView() {
   const trainFocusMode = useStore((s) => s.trainFocusMode);
   const trainFocusSeq = useStore((s) => s.trainFocusSeq);
   const trackingTrainId = useStore((s) => s.trackingTrainId);
+  const lineFocusSeq = useStore((s) => s.lineFocusSeq);
+  const stationFocus = useStore((s) => s.stationFocus);
   const clickStation = useStore((s) => s.clickStation);
   const selectTrain = useStore((s) => s.selectTrain);
 
@@ -84,7 +86,7 @@ export function MapView() {
     ctrlRef.current.highlightLine(highlightLineId);
     ctrlRef.current.setLeftInset(sidebar !== 'idle' ? LEFT_SIDEBAR_WIDTH : 0);
     ctrlRef.current.fitToLine(highlightLineId);
-  }, [highlightLineId, sidebar]);
+  }, [highlightLineId, sidebar, lineFocusSeq]);
 
   // 高亮选中路线（联程票高亮各段并集）。线路高亮生效时跳过，避免互相覆盖。
   useEffect(() => {
@@ -122,6 +124,13 @@ export function MapView() {
     ctrlRef.current.setLeftInset(LEFT_SIDEBAR_WIDTH);
     ctrlRef.current.centerOnGame(train.head.x, train.head.z, getConfig().mapStyle.trainFocusZoom);
   }, [selectedTrainId, trainFocusMode, trainFocusSeq, currentWorld, sidebar]);
+
+  // 搜索选中车站：移动并缩放到车站位置（放在世界切换 effect 之后，跨世界时先切世界再定位）。
+  useEffect(() => {
+    if (!readyRef.current || !ctrlRef.current || !stationFocus) return;
+    ctrlRef.current.setLeftInset(useStore.getState().sidebar !== 'idle' ? LEFT_SIDEBAR_WIDTH : 0);
+    ctrlRef.current.centerOnGame(stationFocus.x, stationFocus.z, getConfig().mapStyle.stationFocusZoom);
+  }, [stationFocus]);
 
   // 列车
   useEffect(() => {

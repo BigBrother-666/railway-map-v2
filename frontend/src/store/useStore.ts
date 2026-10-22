@@ -91,6 +91,12 @@ interface AppState {
   /** 持续跟踪中的列车 id。 */
   trackingTrainId: string | null;
 
+  // --- 地图搜索 ---
+  /** 线路聚焦序号：搜索重复选中同一线路时也能让地图再次框选。 */
+  lineFocusSeq: number;
+  /** 搜索选中车站后的镜头目标（游戏坐标）；seq 变化触发地图移动。 */
+  stationFocus: { x: number; z: number; seq: number } | null;
+
   // --- 登录 ---
   player: Player | null;
   rideHistory: RideHistoryResponse | null;
@@ -109,6 +115,8 @@ interface AppState {
   clickStation: (name: string) => void;
   clickLine: (lineId: string) => void;
   highlightLine: (lineId: string | null) => void;
+  selectSearchLine: (lineId: string) => void;
+  focusStation: (world: string, x: number, z: number) => void;
   openRoutePanel: (presetEnd?: string) => void;
   setEndpoint: (role: Endpoint, name: string | null) => void;
   swapEndpoints: () => void;
@@ -169,6 +177,9 @@ export const useStore = create<AppState>((set, get) => ({
   trainFocusMode: 'route',
   trainFocusSeq: 0,
   trackingTrainId: null,
+
+  lineFocusSeq: 0,
+  stationFocus: null,
 
   player: null,
   rideHistory: null,
@@ -288,6 +299,26 @@ export const useStore = create<AppState>((set, get) => ({
 
   highlightLine(lineId) {
     set({ highlightLineId: lineId });
+  },
+
+  selectSearchLine(lineId) {
+    // 搜索选中线路：效果同点击地图线路；与 clickLine 不同的是路线查询中也生效（先关闭查询面板），
+    // 线路不在当前世界时先切到所属世界。
+    const world = get().lineWorlds.get(lineId) ?? get().currentWorld;
+    if (get().sidebar !== 'idle') get().closeSidebar();
+    set({
+      currentWorld: world,
+      sidebar: 'line',
+      selectedLineId: lineId,
+      highlightLineId: lineId,
+      lineFocusSeq: get().lineFocusSeq + 1,
+    });
+  },
+
+  focusStation(world, x, z) {
+    // 搜索选中车站：仅移动镜头（缩放到 mapStyle.stationFocusZoom），不改侧栏；跨世界时先切世界。
+    if (world !== get().currentWorld) get().setWorld(world);
+    set({ stationFocus: { x, z, seq: (get().stationFocus?.seq ?? 0) + 1 } });
   },
 
   openRoutePanel(presetEnd) {
