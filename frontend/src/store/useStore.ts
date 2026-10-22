@@ -69,6 +69,8 @@ interface AppState {
 
   // --- 侧栏 / 选择 ---
   sidebar: SidebarMode;
+  /** 左侧栏是否折叠（打开面板 / 点击地图要素时自动展开）。 */
+  sidebarCollapsed: boolean;
   selectedStation: string | null; // 点击车站面板显示的站名
   selectedLineId: string | null; // 点击线路面板显示的线路 id
   /** 需要高亮的线路 id（点击地图线路 / 线路面板 / 车站面板线路名时设置）。 */
@@ -123,6 +125,7 @@ interface AppState {
   computeRoutes: () => Promise<void>;
   selectRoute: (index: number | null) => void;
   closeSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
 
   upsertTrains: (trains: Train[]) => void;
   removeTrains: (ids: string[]) => void;
@@ -161,6 +164,7 @@ export const useStore = create<AppState>((set, get) => ({
   hiddenLines: new Set(),
 
   sidebar: 'idle',
+  sidebarCollapsed: false,
   selectedStation: null,
   selectedLineId: null,
   highlightLineId: null,
@@ -270,11 +274,13 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     if (state.sidebar === 'route') {
       // 路线查询中：点击车站设为「下一个待填」端点
+      set({ sidebarCollapsed: false });
       state.setEndpoint(state.nextPick, name);
       return;
     }
     set({
       sidebar: 'station',
+      sidebarCollapsed: false,
       selectedStation: name,
       selectedLineId: null,
       highlightLineId: null,
@@ -289,6 +295,7 @@ export const useStore = create<AppState>((set, get) => ({
     // 点击地图线路：打开线路详情并高亮该线路（任务 1）。
     set({
       sidebar: 'line',
+      sidebarCollapsed: false,
       selectedLineId: lineId,
       highlightLineId: lineId,
       selectedStation: null,
@@ -309,6 +316,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       currentWorld: world,
       sidebar: 'line',
+      sidebarCollapsed: false,
       selectedLineId: lineId,
       highlightLineId: lineId,
       lineFocusSeq: get().lineFocusSeq + 1,
@@ -324,6 +332,7 @@ export const useStore = create<AppState>((set, get) => ({
   openRoutePanel(presetEnd) {
     set({
       sidebar: 'route',
+      sidebarCollapsed: false,
       endStation: presetEnd ?? get().endStation,
       nextPick: 'start',
       candidates: [],
@@ -407,6 +416,7 @@ export const useStore = create<AppState>((set, get) => ({
   closeSidebar() {
     set({
       sidebar: 'idle',
+      sidebarCollapsed: false,
       selectedStation: null,
       selectedLineId: null,
       highlightLineId: null,
@@ -420,6 +430,10 @@ export const useStore = create<AppState>((set, get) => ({
       nextPick: 'start',
       selectedHistoryId: null,
     });
+  },
+
+  setSidebarCollapsed(collapsed) {
+    set({ sidebarCollapsed: collapsed });
   },
 
   upsertTrains(list) {
@@ -454,6 +468,7 @@ export const useStore = create<AppState>((set, get) => ({
       selectedTrainId: id,
       trainFocusMode: 'route',
       sidebar: id ? 'train' : get().sidebar,
+      sidebarCollapsed: id ? false : get().sidebarCollapsed,
       selectedLineId: null,
       highlightLineId: null,
       trackingTrainId: null,
@@ -463,6 +478,7 @@ export const useStore = create<AppState>((set, get) => ({
   openTrainList() {
     set({
       sidebar: 'trains',
+      sidebarCollapsed: false,
       selectedTrainId: null,
       trackingTrainId: null,
       candidates: [],
@@ -485,6 +501,7 @@ export const useStore = create<AppState>((set, get) => ({
       trainFocusSeq: get().trainFocusSeq + 1,
       trackingTrainId: null,
       sidebar: 'train',
+      sidebarCollapsed: false,
       selectedLineId: null,
       highlightLineId: null,
     });
@@ -501,6 +518,7 @@ export const useStore = create<AppState>((set, get) => ({
       trainFocusSeq: enabled ? get().trainFocusSeq + 1 : get().trainFocusSeq,
       trackingTrainId: enabled ? id : null,
       sidebar: 'train',
+      sidebarCollapsed: false,
       selectedLineId: null,
       highlightLineId: null,
     });
@@ -533,7 +551,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async openRideHistory() {
-    set({ sidebar: 'history', selectedTrainId: null, trackingTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null, selectedLineId: null, highlightLineId: null });
+    set({ sidebar: 'history', sidebarCollapsed: false, selectedTrainId: null, trackingTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null, selectedLineId: null, highlightLineId: null });
     await get().loadRideHistory(1);
   },
 

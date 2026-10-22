@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { StationSearch } from './StationSearch';
 import { RouteCard } from './RouteCard';
@@ -12,18 +11,16 @@ import type { LineStringProps, RideHistoryItem } from '../types';
 export function LeftSidebar() {
   const sidebar = useStore((s) => s.sidebar);
   // 折叠状态：折叠后侧栏滑出屏幕、只露出边缘按钮，避免手机上占屏过大。
-  const [collapsed, setCollapsed] = useState(false);
-  // 侧栏关闭后再次打开时恢复展开态，避免残留折叠状态。
-  useEffect(() => {
-    if (sidebar === 'idle') setCollapsed(false);
-  }, [sidebar]);
+  // 放在 store 中：打开面板 / 点击地图要素时由各 action 自动展开（关闭侧栏时也复位）。
+  const collapsed = useStore((s) => s.sidebarCollapsed);
+  const setCollapsed = useStore((s) => s.setSidebarCollapsed);
   if (sidebar === 'idle') return null;
 
   return (
     <div className={`sidebar sidebar-left ${collapsed ? 'collapsed' : ''}`}>
       <button
         className="sidebar-collapse-btn"
-        onClick={() => setCollapsed((v) => !v)}
+        onClick={() => setCollapsed(!collapsed)}
         aria-label={collapsed ? '展开侧边栏' : '折叠侧边栏'}
         title={collapsed ? '展开' : '折叠'}
       >
