@@ -10,7 +10,7 @@ type SearchItem =
   | { kind: 'line'; key: string; name: string; world: string; lineId: string; color: string; systemName?: string }
   | { kind: 'station'; key: string; name: string; nameEn?: string; world: string; x: number; z: number };
 
-const MAX_SUGGESTIONS = 8;
+const MAX_SUGGESTIONS = 20;
 
 /**
  * 地图左上角搜索框：按线路名 / 车站名 / 车站英文名模糊搜索，选中后定位到线路或车站。
