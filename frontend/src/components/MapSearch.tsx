@@ -75,7 +75,9 @@ export function MapSearch() {
   const results = useMemo(() => {
     const q = query.trim();
     if (!q) return [];
-    return fuse.search(q, { limit: MAX_SUGGESTIONS }).map((r) => r.item);
+    // 先按匹配度取前 N 条，再分组：车站在上、线路在下（组内保持匹配度顺序）。
+    const top = fuse.search(q, { limit: MAX_SUGGESTIONS }).map((r) => r.item);
+    return [...top.filter((i) => i.kind === 'station'), ...top.filter((i) => i.kind === 'line')];
   }, [query, fuse]);
 
   const showList = open && results.length > 0;
