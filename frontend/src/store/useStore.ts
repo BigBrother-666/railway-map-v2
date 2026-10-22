@@ -565,7 +565,10 @@ export const useStore = create<AppState>((set, get) => ({
     const intact = !graph || graph.hasAllEdges(item.nodeIds);
     const historyGeometry = !intact && item.geometry ? withLineColors(item.geometry, get().lines) : undefined;
     const nodeIds = intact || historyGeometry ? item.nodeIds : graph.repairPath(item.nodeIds);
+    // 历史不在当前世界时切到其所属世界（直接改 currentWorld，不走 setWorld，避免关闭历史面板）。
+    const world = historyWorld(item, get().geojson) ?? get().currentWorld;
     set({
+      currentWorld: world,
       selectedHistoryId: item.id,
       trackingTrainId: null,
       candidates: [{
@@ -624,6 +627,19 @@ function attachLineColors(fc: FeatureCollection, lines: Line[]): void {
 function withLineColors(geom: RouteGeometry, lines: Line[]): RouteGeometry {
   const colors = new Map(lines.map((l) => [l.id, l.color]));
   return { ...geom, segments: geom.segments.map((s) => ({ ...s, color: colors.get(s.lineId) || s.color })) };
+}
+
+/** 乘车历史所属世界：优先取坐标快照记录的世界，旧记录无快照时按节点在当前 geojson 中的世界反查。 */
+function historyWorld(item: RideHistoryItem, fc: FeatureCollection | null): string | undefined {
+  if (item.geometry?.world) return item.geometry.world;
+  if (!fc) return undefined;
+  const ids = new Set(item.nodeIds);
+  for (const f of fc.features) {
+    if (f.geometry?.type !== 'Point') continue;
+    const p = f.properties as PointProps | null;
+    if (p?.id && p.world && ids.has(p.id)) return p.world;
+  }
+  return undefined;
 }
 
 /** 从 geojson 提取所有出现过的世界名（按首次出现顺序，首个即默认世界兜底）。 */
