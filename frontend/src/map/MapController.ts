@@ -35,6 +35,8 @@ const TRAIN_SMOOTHING_EPSILON = 0.001;
 const TRAIN_FOCUS_ANIMATION_MS = 600;
 /** 侧边栏开合时跟踪镜头的过渡时长（与 styles.css 中 .sidebar-left 的 transition 一致）。 */
 const INSET_ANIMATION_MS = 250;
+/** 框选车站时在站台范围四周额外留出的游戏方块数：单站台不会被放大到最大缩放，周边线路也能入镜。 */
+const STATION_FOCUS_MARGIN_BLOCKS = 64;
 
 export class MapController {
   private map: maplibregl.Map;
@@ -1081,6 +1083,39 @@ export class MapController {
       }
     }
     if (!has) return;
+    const tile = getConfig().worldTiles[this.world];
+    this.map.fitBounds(bounds, {
+      padding: 30,
+      maxZoom: tile?.maxZoom ?? 18,
+      duration: 600,
+    });
+  }
+
+  /**
+   * 平滑缩放并移动到当前世界内全部同名站台的范围（用于搜索选中车站）。
+   * 同名站台可能相距很远，不能用平均坐标 + 固定缩放；按站台包围盒外扩 STATION_FOCUS_MARGIN_BLOCKS 后自动确定缩放。
+   */
+  fitToStation(name: string) {
+    if (!this.fc) return;
+    let minX = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxZ = -Infinity;
+    for (const f of this.fc.features) {
+      if (f.geometry?.type !== 'Point') continue;
+      const p = f.properties as PointProps;
+      if (p.type !== 'station' || p.name !== name || p.world !== this.world) continue;
+      const [x, z] = (f.geometry as GeoJSON.Point).coordinates;
+      minX = Math.min(minX, x);
+      minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x);
+      maxZ = Math.max(maxZ, z);
+    }
+    if (minX === Infinity) return;
+    const m = STATION_FOCUS_MARGIN_BLOCKS;
+    const bounds = new maplibregl.LngLatBounds();
+    bounds.extend(gameToLngLat(minX - m, minZ - m, this.world));
+    bounds.extend(gameToLngLat(maxX + m, maxZ + m, this.world));
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
       padding: 30,

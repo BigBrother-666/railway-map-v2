@@ -76,7 +76,6 @@ func ValidateFrontend(f config.FrontendConfig, tiles config.TilesConfig) FieldEr
 		"stationStrokeWidth": ms.StationStrokeWidth, "stationTextSize": ms.StationTextSize,
 		"stationEnTextSize": ms.StationEnTextSize, "stationMergePixelDistance": ms.StationMergePixelDistance,
 		"trainIconSize": ms.TrainIconSize, "trainFocusZoom": ms.TrainFocusZoom,
-		"stationFocusZoom": ms.StationFocusZoom,
 	} {
 		v.nonNegative("mapStyle."+field, x)
 	}

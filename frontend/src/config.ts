@@ -23,7 +23,6 @@ const DEFAULT_CONFIG: FrontendConfig = {
     stationMergePixelDistance: 28,
     trainIconSize: 0.6,
     trainFocusZoom: 6,
-    stationFocusZoom: 6,
   },
   routeDiagram: {
     projectionThresholdBlocks: 25,

@@ -143,10 +143,10 @@ export function MapView() {
     ctrlRef.current.centerOnGame(train.head.x, train.head.z, getConfig().mapStyle.trainFocusZoom);
   }, [selectedTrainId, trainFocusMode, trainFocusSeq, currentWorld, sidebar]);
 
-  // 搜索选中车站：移动并缩放到车站位置（放在世界切换 effect 之后，跨世界时先切世界再定位）。
+  // 搜索选中车站：框选全部同名站台（放在世界切换 effect 之后，跨世界时先切世界再定位）。
   useEffect(() => {
     if (!readyRef.current || !ctrlRef.current || !stationFocus) return;
-    ctrlRef.current.centerOnGame(stationFocus.x, stationFocus.z, getConfig().mapStyle.stationFocusZoom);
+    ctrlRef.current.fitToStation(stationFocus.name);
   }, [stationFocus]);
 
   // 列车

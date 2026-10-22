@@ -96,8 +96,8 @@ interface AppState {
   // --- 地图搜索 ---
   /** 线路聚焦序号：搜索重复选中同一线路时也能让地图再次框选。 */
   lineFocusSeq: number;
-  /** 搜索选中车站后的镜头目标（游戏坐标）；seq 变化触发地图移动。 */
-  stationFocus: { x: number; z: number; seq: number } | null;
+  /** 搜索选中车站后的镜头目标（站名，当前世界内框选全部同名站台）；seq 变化触发地图移动。 */
+  stationFocus: { name: string; seq: number } | null;
 
   // --- 登录 ---
   player: Player | null;
@@ -118,7 +118,7 @@ interface AppState {
   clickLine: (lineId: string) => void;
   highlightLine: (lineId: string | null) => void;
   selectSearchLine: (lineId: string) => void;
-  focusStation: (world: string, name: string, x: number, z: number) => void;
+  focusStation: (world: string, name: string) => void;
   openRoutePanel: (presetEnd?: string) => void;
   setEndpoint: (role: Endpoint, name: string | null) => void;
   swapEndpoints: () => void;
@@ -323,13 +323,13 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
-  focusStation(world, name, x, z) {
-    // 搜索选中车站：打开车站面板（同点击地图车站），并移动镜头（缩放到 mapStyle.stationFocusZoom）；跨世界时先切世界。
+  focusStation(world, name) {
+    // 搜索选中车站：打开车站面板（同点击地图车站），并框选该世界内全部同名站台（自动确定缩放）；跨世界时先切世界。
     // 与 selectSearchLine 一致：路线查询中也生效（先关闭查询面板），而不是把车站填为起终点。
     if (world !== get().currentWorld) get().setWorld(world);
     if (get().sidebar === 'route') get().closeSidebar();
     get().clickStation(name);
-    set({ stationFocus: { x, z, seq: (get().stationFocus?.seq ?? 0) + 1 } });
+    set({ stationFocus: { name, seq: (get().stationFocus?.seq ?? 0) + 1 } });
   },
 
   openRoutePanel(presetEnd) {

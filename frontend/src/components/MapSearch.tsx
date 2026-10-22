@@ -5,10 +5,10 @@ import { useStore } from '../store/useStore';
 import { CONTACT_SYSTEM_ID } from '../config';
 import type { PointProps } from '../types';
 
-/** 搜索候选项：线路或车站（车站按「站名 + 世界」聚合，坐标取该世界内各站台节点的中心）。 */
+/** 搜索候选项：线路或车站（车站按「站名 + 世界」聚合，定位时由地图框选该世界内全部同名站台）。 */
 type SearchItem =
   | { kind: 'line'; key: string; name: string; world: string; lineId: string; color: string; systemName?: string }
-  | { kind: 'station'; key: string; name: string; nameEn?: string; world: string; x: number; z: number };
+  | { kind: 'station'; key: string; name: string; nameEn?: string; world: string };
 
 const MAX_SUGGESTIONS = 20;
 
@@ -48,22 +48,15 @@ export function MapSearch() {
         systemName: systemMap.get(l.systemId)?.name,
       });
     }
-    const stations = new Map<string, { name: string; nameEn?: string; world: string; sx: number; sz: number; n: number }>();
+    const stations = new Map<string, SearchItem>();
     for (const f of geojson?.features ?? []) {
       if (f.geometry?.type !== 'Point') continue;
       const p = f.properties as PointProps | null;
       if (!p || p.type !== 'station' || !p.name) continue;
-      const c = (f.geometry as GeoJSON.Point).coordinates;
       const key = `station|${p.world}|${p.name}`;
-      const acc = stations.get(key) ?? { name: p.name, nameEn: p.nameEn, world: p.world, sx: 0, sz: 0, n: 0 };
-      acc.sx += c[0];
-      acc.sz += c[1];
-      acc.n++;
-      stations.set(key, acc);
+      if (!stations.has(key)) stations.set(key, { kind: 'station', key, name: p.name, nameEn: p.nameEn, world: p.world });
     }
-    for (const [key, s] of stations) {
-      out.push({ kind: 'station', key, name: s.name, nameEn: s.nameEn, world: s.world, x: s.sx / s.n, z: s.sz / s.n });
-    }
+    out.push(...stations.values());
     return out;
   }, [geojson, lines, lineWorlds, systemMap]);
 
@@ -88,7 +81,7 @@ export function MapSearch() {
     setOpen(false);
     inputRef.current?.blur(); // 手机端收起键盘，露出定位结果
     if (item.kind === 'line') selectSearchLine(item.lineId);
-    else focusStation(item.world, item.name, item.x, item.z);
+    else focusStation(item.world, item.name);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

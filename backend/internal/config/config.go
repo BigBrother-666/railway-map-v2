@@ -286,7 +286,6 @@ type MapStyleConfig struct {
 	StationMergePixelDistance float64 `yaml:"stationMergePixelDistance" json:"stationMergePixelDistance"`
 	TrainIconSize             float64 `yaml:"trainIconSize" json:"trainIconSize"`
 	TrainFocusZoom            float64 `yaml:"trainFocusZoom" json:"trainFocusZoom"`
-	StationFocusZoom          float64 `yaml:"stationFocusZoom" json:"stationFocusZoom"` // 搜索选中车站后的地图缩放级别
 }
 
 type RouteDiagramConfig struct {
@@ -434,9 +433,6 @@ func ApplyFrontendDefaults(f *FrontendConfig) {
 	}
 	if f.MapStyle.TrainFocusZoom <= 0 {
 		f.MapStyle.TrainFocusZoom = 16
-	}
-	if f.MapStyle.StationFocusZoom <= 0 {
-		f.MapStyle.StationFocusZoom = 16
 	}
 	if f.RouteDiagram.ProjectionThresholdBlocks <= 0 {
 		f.RouteDiagram.ProjectionThresholdBlocks = 40
