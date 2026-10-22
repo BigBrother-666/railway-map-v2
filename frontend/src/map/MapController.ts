@@ -33,6 +33,8 @@ interface TrainVisualState {
 const TRAIN_SMOOTHING_MS = 180;
 const TRAIN_SMOOTHING_EPSILON = 0.001;
 const TRAIN_FOCUS_ANIMATION_MS = 600;
+/** 侧边栏开合时跟踪镜头的过渡时长（与 styles.css 中 .sidebar-left 的 transition 一致）。 */
+const INSET_ANIMATION_MS = 250;
 
 export class MapController {
   private map: maplibregl.Map;
@@ -50,8 +52,8 @@ export class MapController {
   private onStationClick?: (name: string) => void;
   private onTrainClick?: (id: string) => void;
   private onLineClick?: (lineId: string) => void;
-  /** 左侧被侧边栏遮挡的像素宽度，框选时作为左侧内边距，避免内容落在侧边栏下方。 */
-  private leftInset = 0;
+  /** 被侧边栏遮挡的区域（桌面端左侧 / 手机端底部抽屉），作为地图常驻 padding，居中与框选都以剩余可见区域为准。 */
+  private inset: maplibregl.PaddingOptions = { top: 0, right: 0, bottom: 0, left: 0 };
   private trackedTrainId: string | null = null;
   private trackingResumeAt = 0;
   private trackingZooming = false;
@@ -104,9 +106,31 @@ export class MapController {
     this.onLineClick = onLineClick;
   }
 
-  /** 设置左侧侧边栏遮挡宽度（0 表示未打开），供框选时留出左侧内边距。 */
-  setLeftInset(px: number) {
-    this.leftInset = Math.max(0, px);
+  /**
+   * 设置侧边栏遮挡区域（0 表示未遮挡）。通过地图常驻 padding 生效：jumpTo / easeTo 不再单独传 padding，
+   * 否则 maplibre 会把残留的 padding 与 fitBounds 的 padding 叠加，手机端可用区域变负导致框选失败、目标落在画面外。
+   * 跟踪列车时镜头移到新可见区域中心；否则保持画面不动，避免开合侧栏时地图跳动。
+   */
+  setInset(left: number, bottom: number) {
+    const next = { top: 0, right: 0, bottom: Math.max(0, bottom), left: Math.max(0, left) };
+    if (next.left === this.inset.left && next.bottom === this.inset.bottom) return;
+    this.inset = next;
+    const tracked = this.trackedTrainId ? this.trainStates.get(this.trackedTrainId) : undefined;
+    if (tracked && tracked.world === this.world) {
+      this.map.easeTo({
+        center: gameToLngLat(tracked.currentX, tracked.currentZ, this.world),
+        padding: next,
+        duration: INSET_ANIMATION_MS,
+      });
+      return;
+    }
+    // 新 padding 下的中心取「新可见区域中心」当前对应的地理位置，画面保持不动。
+    const container = this.map.getContainer();
+    const center = this.map.unproject([
+      next.left + (container.clientWidth - next.left - next.right) / 2,
+      next.top + (container.clientHeight - next.top - next.bottom) / 2,
+    ]);
+    this.map.jumpTo({ center, padding: next });
   }
 
   setTrackingTrainId(id: string | null) {
@@ -424,7 +448,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: { top: 80, bottom: 80, right: 80, left: 80 + this.leftInset },
+      padding: 80,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -626,10 +650,7 @@ export class MapController {
     if (performance.now() < this.trackingResumeAt) return;
     const state = this.trainStates.get(this.trackedTrainId);
     if (!state || state.world !== this.world) return;
-    this.map.jumpTo({
-      center: gameToLngLat(state.currentX, state.currentZ, this.world),
-      padding: { top: 0, bottom: 0, right: 0, left: this.leftInset },
-    });
+    this.map.jumpTo({ center: gameToLngLat(state.currentX, state.currentZ, this.world) });
   }
 
   private ensureSources() {
@@ -999,10 +1020,10 @@ export class MapController {
         : has
           ? bounds.getCenter()
           : null;
-    const padding = { top: 60, bottom: 60, right: 60, left: 60 + this.leftInset };
+    const padding = 60;
     if (tile?.zoom !== undefined) {
       // 配置了初始缩放：用配置的 zoom 级别定位到指定/数据中心（不自动框选整片范围）。
-      if (center) this.map.jumpTo({ center, zoom: tile.zoom, padding });
+      if (center) this.map.jumpTo({ center, zoom: tile.zoom });
       else this.map.setZoom(tile.zoom);
     } else if (has) {
       // 未配置 zoom：按数据范围自动框选缩放，maxZoom 兜底避免压成一个点。
@@ -1036,7 +1057,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: { top: 0, bottom: 0, right: 0, left: 0 + this.leftInset },
+      padding: 0,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -1060,7 +1081,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: { top: 0, bottom: 0, right: 0, left: 0 + this.leftInset },
+      padding: 0,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -1068,14 +1089,13 @@ export class MapController {
 
   /**
    * 平滑移动镜头，把给定游戏坐标居中显示（用于点击实时列车卡片跳转到列车位置）。
-   * 保持当前缩放，仅平移；左侧留出侧边栏遮挡宽度，使列车落在可见区域中央。
+   * 未传 zoom 时保持当前缩放，仅平移；常驻 padding 已扣除侧边栏遮挡，目标落在可见区域中央。
    */
   centerOnGame(x: number, z: number, zoom?: number) {
     const center = gameToLngLat(x, z, this.world);
     this.map.easeTo({
       center,
       zoom: zoom === undefined ? this.map.getZoom() : this.clampZoom(zoom),
-      padding: { top: 0, bottom: 0, right: 0, left: this.leftInset },
       duration: TRAIN_FOCUS_ANIMATION_MS,
     });
   }
