@@ -120,8 +120,8 @@ func TestSynthesizedLevels(t *testing.T) {
 
 	levels := 2
 	cfg := config.TilesConfig{
-		Sources:    []config.TileSourceConfig{{ID: "a", Type: "dynmap", URL: up.URL + "/map"}},
-		WorldTiles: map[string]config.WorldTileConfig{"Paralon": {SynthZoomLevels: &levels}},
+		Sources: []config.TileSourceConfig{{ID: "a", Type: "dynmap", URL: up.URL + "/map"}},
+		Worlds:  map[string][]config.WorldLayerConfig{"Paralon": {{External: &config.ExternalLayerConfig{Source: "a", SynthZoomLevels: &levels}}}},
 	}
 	config.ApplyTilesDefaults(&cfg)
 	s := New(func() config.TilesConfig { return cfg }, nil, quiet)
@@ -160,8 +160,8 @@ func TestSynthesisExtent(t *testing.T) {
 	up := newSynthUpstream(t, &hits, nil)
 	levels := 2
 	cfg := config.TilesConfig{
-		Sources:    []config.TileSourceConfig{{ID: "a", Type: "dynmap", URL: up.URL + "/map"}},
-		WorldTiles: map[string]config.WorldTileConfig{"Paralon": {SynthZoomLevels: &levels, SynthMarginBlocks: 100}},
+		Sources: []config.TileSourceConfig{{ID: "a", Type: "dynmap", URL: up.URL + "/map"}},
+		Worlds:  map[string][]config.WorldLayerConfig{"Paralon": {{External: &config.ExternalLayerConfig{Source: "a", SynthZoomLevels: &levels, SynthMarginBlocks: 100}}}},
 	}
 	config.ApplyTilesDefaults(&cfg)
 	bounds := map[string]geo.Bounds{"Paralon": {MinX: 0, MinZ: 0, MaxX: 10, MaxZ: 10}}

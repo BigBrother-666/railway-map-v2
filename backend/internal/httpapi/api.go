@@ -187,7 +187,7 @@ func (a *API) Tile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		a.logger.Warn("Tile proxy failed", "err", err, "path", r.URL.Path)
+		// 不记日志：瓦片请求量大，上游抖动时会刷屏；上游整体不可用由来源发现日志体现
 		writeError(w, http.StatusBadGateway, "upstream-error", "上游地图不可用")
 		return
 	}

@@ -10,7 +10,6 @@ import (
 	"image/png"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -189,62 +188,126 @@ func (s *Service) get(ctx context.Context, rawURL string, limit int64) ([]byte, 
 	return body, resp.Header.Get("Content-Type"), resp.StatusCode, nil
 }
 
-// WorldTiles 返回下发前端的世界底图：以配置中的 worldTiles 为基础，外部来源提供的世界优先使用外部地图
-// （同一世界取第一个来源），只沿用静态配置中的视图参数 zoom / center / opacity / minZoom / maxZoom
-// （minZoom 不低于有底图的推导下限，否则缩小后底图消失）；外部来源没有的世界使用静态瓦片。
-// 返回新 map，不修改配置。
+// WorldTiles 返回下发前端的世界底图：每个世界按 EffectiveLayers 的顺序取第一个可用的底图。
+// 外部地图在来源最近一次读取成功、且来源中有该世界的俯视地图时可用；静态瓦片始终可用。
 func (s *Service) WorldTiles() map[string]config.WorldTileConfig {
-	static := s.settings().WorldTiles
-	out := maps.Clone(static)
-	if out == nil {
-		out = map[string]config.WorldTileConfig{}
-	}
-	done := map[string]bool{}
-	for _, ss := range s.state.Load().sources {
-		for _, w := range ss.worlds {
-			if w.Layer == nil || done[w.Name] {
-				continue
+	cfg := s.settings()
+	st := s.state.Load()
+	out := map[string]config.WorldTileConfig{}
+	for world, layers := range EffectiveLayers(cfg, st.discovered()) {
+		for _, l := range layers {
+			if l.Static != nil {
+				out[world] = *l.Static
+				break
 			}
-			done[w.Name] = true
-			t := s.effectiveTile(w.Name, w.Layer)
-			t.TileURL = ProxyPath + "/" + url.PathEscape(ss.cfg.ID) + "/" + url.PathEscape(w.Name) + "/{z}/{x}/{y}"
-			if own, ok := static[w.Name]; ok {
-				t.Zoom, t.Opacity, t.Center = own.Zoom, own.Opacity, own.Center
-				if own.MinZoom != 0 {
-					t.MinZoom = max(own.MinZoom, t.MinZoom)
-				}
-				if own.MaxZoom != 0 {
-					t.MaxZoom = own.MaxZoom
-				}
+			if t, ok := s.externalTile(st, world, *l.External); ok {
+				out[world] = t
+				break
 			}
-			out[w.Name] = t
 		}
 	}
 	return out
 }
 
-// effectiveTile 返回外部地图的对齐参数，原生缩放下限扩展到该世界配置的合成层级（不低于 z0）。
-func (s *Service) effectiveTile(world string, l Layer) config.WorldTileConfig {
-	t := l.Tile()
-	n := min(float64(s.settings().WorldTiles[world].SynthLevels()), t.MinNativeZoom)
+// discovered 返回各来源（按来源顺序）当前可用的世界；最近一次读取失败的来源视为不可用。
+func (st *state) discovered() []SourceWorlds {
+	var out []SourceWorlds
+	for _, ss := range st.sources {
+		if ss.err != "" {
+			continue
+		}
+		sw := SourceWorlds{Source: ss.cfg.ID}
+		for _, w := range ss.worlds {
+			if w.Layer != nil {
+				sw.Worlds = append(sw.Worlds, w.Name)
+			}
+		}
+		out = append(out, sw)
+	}
+	return out
+}
+
+// SourceWorlds 是某来源当前可用的世界列表。
+type SourceWorlds struct {
+	Source string
+	Worlds []string
+}
+
+// EffectiveLayers 返回各世界生效的底图列表：已保存的列表（顺序即用户设定的优先级），末尾追加来源发现了、
+// 但列表中还没有的外部地图条目（按来源顺序，参数全为默认）。前端配置页按同样规则展示（见 Settings.tsx）。
+func EffectiveLayers(cfg config.TilesConfig, discovered []SourceWorlds) map[string][]config.WorldLayerConfig {
+	out := make(map[string][]config.WorldLayerConfig, len(cfg.Worlds))
+	for w, ls := range cfg.Worlds {
+		out[w] = ls
+	}
+	for _, sw := range discovered {
+		for _, w := range sw.Worlds {
+			if !hasExternal(out[w], sw.Source) {
+				out[w] = append(out[w][:len(out[w]):len(out[w])], config.WorldLayerConfig{External: &config.ExternalLayerConfig{Source: sw.Source}})
+			}
+		}
+	}
+	return out
+}
+
+func hasExternal(layers []config.WorldLayerConfig, source string) bool {
+	for _, l := range layers {
+		if l.External != nil && l.External.Source == source {
+			return true
+		}
+	}
+	return false
+}
+
+// externalTile 返回某世界使用某外部来源时下发前端的底图参数；来源不可用或没有该世界时返回 false。
+func (s *Service) externalTile(st *state, world string, ext config.ExternalLayerConfig) (config.WorldTileConfig, bool) {
+	ss, w := st.find(ext.Source, world)
+	if ss == nil || ss.err != "" {
+		return config.WorldTileConfig{}, false
+	}
+	t := synthTile(w.Layer.Tile(), ext.SynthLevels())
+	t.TileURL = ProxyPath + "/" + url.PathEscape(ext.Source) + "/" + url.PathEscape(world) + "/{z}/{x}/{y}"
+	t.Zoom, t.Opacity, t.Center = ext.Zoom, ext.Opacity, ext.Center
+	if ext.MinZoom != 0 {
+		t.MinZoom = max(ext.MinZoom, t.MinZoom) // 低于推导下限没有底图
+	}
+	if ext.MaxZoom != 0 {
+		t.MaxZoom = ext.MaxZoom
+	}
+	return t, true
+}
+
+// synthTile 把原生缩放下限扩展到后端合成的层级（不低于 z0）。
+func synthTile(t config.WorldTileConfig, levels int) config.WorldTileConfig {
+	n := min(float64(levels), t.MinNativeZoom)
 	t.MinNativeZoom -= n
 	t.MinZoom -= n
 	return t
 }
 
-// layer 查找某来源某世界的底图。
-func (s *Service) layer(sourceID, world string) (string, Layer, bool) {
-	for _, ss := range s.state.Load().sources {
+// externalConfig 返回某世界使用某外部来源的配置（未保存过时为默认值）。
+func externalConfig(cfg config.TilesConfig, sourceID, world string) config.ExternalLayerConfig {
+	for _, l := range cfg.Worlds[world] {
+		if l.External != nil && l.External.Source == sourceID {
+			return *l.External
+		}
+	}
+	return config.ExternalLayerConfig{Source: sourceID}
+}
+
+// find 查找某来源中的某世界（只返回有可用底图的世界）。
+func (st *state) find(sourceID, world string) (*sourceState, *World) {
+	for _, ss := range st.sources {
 		if ss.cfg.ID != sourceID {
 			continue
 		}
-		for _, w := range ss.worlds {
-			if w.Name == world && w.Layer != nil {
-				return w.Map, w.Layer, true
+		for i := range ss.worlds {
+			if w := &ss.worlds[i]; w.Name == world && w.Layer != nil {
+				return ss, w
 			}
 		}
 	}
-	return "", nil, false
+	return nil, nil
 }
 
 // Tile 是一张代理瓦片。
@@ -260,14 +323,15 @@ func (s *Service) Fetch(ctx context.Context, sourceID, world string, z, x, y int
 	if z < 0 || z > maxZoomLevel || x < 0 || y < 0 || x >= 1<<z || y >= 1<<z {
 		return Tile{}, ErrNotFound
 	}
-	mapName, layer, ok := s.layer(sourceID, world)
-	if !ok {
+	// 来源读取失败时仍用上次的结果代理（前端已切到其他底图，这里只服务仍在使用旧地址的页面）
+	_, w := s.state.Load().find(sourceID, world)
+	if w == nil {
 		return Tile{}, ErrNotFound
 	}
-	own := s.settings().WorldTiles[world]
+	ext := externalConfig(s.settings(), sourceID, world)
 	req := &tileRequest{
-		prefix: sourceID + "\x00" + world + "\x00" + mapName, layer: layer, native: layer.Tile(),
-		synthLevels: own.SynthLevels(), margin: own.SynthMargin(),
+		prefix: sourceID + "\x00" + world + "\x00" + w.Map, layer: w.Layer, native: w.Layer.Tile(),
+		synthLevels: ext.SynthLevels(), margin: ext.SynthMargin(),
 	}
 	if s.worldBounds != nil {
 		if b, ok := s.worldBounds()[world]; ok {
@@ -359,11 +423,7 @@ func (s *Service) fetchTile(ctx context.Context, req *tileRequest, z, x, y int) 
 	if e, stale, ok := s.cache.get(key, time.Now()); ok {
 		if stale {
 			// 先返回旧瓦片，后台刷新（singleflight 折叠重复刷新；失败时保留旧瓦片，下次访问再试）。
-			go func() {
-				if _, err, _ := s.flight.Do(key, load); err != nil {
-					s.logger.Debug("Tile refresh failed", "err", err)
-				}
-			}()
+			go func() { _, _, _ = s.flight.Do(key, load) }()
 		}
 		return Tile{Data: e.data, ContentType: e.contentType}, nil
 	}
@@ -471,7 +531,7 @@ type WorldStatus struct {
 	Name string `json:"name"`
 	Map  string `json:"map,omitempty"`
 	Skip string `json:"skip,omitempty"`
-	// Tile 是推导的底图参数（含合成层级后的原生缩放、缩放范围），供配置页展示默认值；不可用时为 nil。
+	// Tile 是上游原生底图参数（未含合成层级），配置页据此展示推导值；不可用时为 nil。
 	Tile *config.WorldTileConfig `json:"tile,omitempty"`
 }
 
@@ -486,7 +546,7 @@ func (s *Service) Status() Status {
 		for _, w := range ss.worlds {
 			ws := WorldStatus{Name: w.Name, Map: w.Map, Skip: w.Skip}
 			if w.Layer != nil {
-				t := s.effectiveTile(w.Name, w.Layer)
+				t := w.Layer.Tile()
 				ws.Tile = &t
 			}
 			src.Worlds = append(src.Worlds, ws)

@@ -198,8 +198,27 @@ export interface TileSourceSettings {
   map?: string;
 }
 
+/** 某世界使用某外部来源时的参数（对齐参数由外部地图推导）。 */
+export interface ExternalLayerSettings {
+  source: string;
+  zoom?: number;
+  opacity?: number;
+  minZoom?: number;
+  maxZoom?: number;
+  center?: [number, number];
+  synthZoomLevels?: number;
+  synthMarginBlocks?: number;
+}
+
+/** 某世界的一个底图配置：static 与 external 恰有一个。 */
+export interface WorldLayerSettings {
+  static?: WorldTileConfig;
+  external?: ExternalLayerSettings;
+}
+
 export interface TileSourcesSettings {
-  worldTiles: Record<string, WorldTileConfig>;
+  /** 每个世界的底图列表，顺序即优先级。 */
+  worlds: Record<string, WorldLayerSettings[]>;
   sources: TileSourceSettings[];
   cacheMaxMb: number;
   cacheTtlSeconds: number;
@@ -220,7 +239,7 @@ export interface TileSourcesStatus {
     url: string;
     error?: string;
     discoveredAt?: number;
-    /** tile：推导的底图参数（含合成层级的原生缩放 / 缩放范围），即世界参数留空时的取值。 */
+    /** tile：上游原生底图参数（未含合成层级），用于展示推导值。 */
     worlds: { name: string; map?: string; skip?: string; tile?: WorldTileConfig }[];
   }[];
   cacheItems: number;

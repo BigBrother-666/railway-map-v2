@@ -110,7 +110,7 @@ func (s *Service) migrateWorldTiles() error {
 		return err
 	}
 	var old struct {
-		WorldTiles map[string]config.WorldTileConfig `json:"worldTiles"`
+		WorldTiles map[string]config.LegacyWorldTileConfig `json:"worldTiles"`
 	}
 	if err := json.Unmarshal(row.Payload, &old); err != nil {
 		return fmt.Errorf("解析数据库中的 %s 配置失败: %w", SectionFrontend, err)

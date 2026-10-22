@@ -281,6 +281,11 @@ func (r *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// 地图瓦片请求量大，不记访问日志
+			if strings.HasPrefix(r.URL.Path, tilesource.ProxyPath+"/") {
+				next.ServeHTTP(w, r)
+				return
+			}
 			start := time.Now()
 			rec := &responseRecorder{ResponseWriter: w}
 			next.ServeHTTP(rec, r)
@@ -292,11 +297,7 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 				message = "WebSocket request completed"
 			}
-			level := slog.LevelInfo
-			if strings.HasPrefix(r.URL.Path, tilesource.ProxyPath+"/") {
-				level = slog.LevelDebug // 地图瓦片请求量大，避免刷屏
-			}
-			logger.Log(r.Context(), level, message,
+			logger.Info(message,
 				"method", r.Method,
 				"path", r.URL.RequestURI(),
 				"status", status,
