@@ -73,12 +73,15 @@ type RealtimeConfig struct {
 	ClientSendBuffer int `yaml:"clientSendBuffer" json:"clientSendBuffer"`
 }
 
-// TilesConfig 是世界底图配置：静态瓦片（worldTiles）与外部网页地图（dynmap 等）来源。后端发现各来源的世界，
-// 与 worldTiles 合并后经 GET /api/v1/config 的 worldTiles 下发；外部瓦片经后端代理（GET /api/v1/tiles/...）并缓存。
+// TilesConfig 是世界底图配置：每个世界一组按优先级排序的底图（静态瓦片 / 外部网页地图），以及外部地图来源。
+// 后端为每个世界选出第一个可用的底图，经 GET /api/v1/config 的 worldTiles 下发；外部瓦片经后端代理
+// （GET /api/v1/tiles/...）并缓存。
 type TilesConfig struct {
-	// WorldTiles 是每个世界的底图参数。外部来源提供了该世界时优先用外部地图（只沿用这里的视图参数
-	// zoom / center / opacity / minZoom / maxZoom）；否则用这里的静态瓦片。
-	WorldTiles map[string]WorldTileConfig `yaml:"worldTiles" json:"worldTiles"`
+	// Worlds 是每个世界的底图列表，顺序即优先级。外部来源发现的世界会自动出现对应的外部地图条目
+	// （未保存过时排在最前，按来源顺序）；外部来源最近一次读取失败时跳过，使用下一个。
+	Worlds map[string][]WorldLayerConfig `yaml:"worlds" json:"worlds"`
+	// WorldTiles 是旧版每世界单一配置，只用于迁移（ApplyTilesDefaults 转换为 Worlds 后清空）。
+	WorldTiles map[string]LegacyWorldTileConfig `yaml:"worldTiles,omitempty" json:"worldTiles,omitempty"`
 	// Sources 按顺序生效：同一世界出现在多个来源时取第一个。
 	Sources []TileSourceConfig `yaml:"sources" json:"sources"`
 	// CacheMaxMB 是后端瓦片内存缓存上限（MB）。<=0 用默认 64。
@@ -99,6 +102,86 @@ type TilesConfig struct {
 	UpstreamConcurrency int `yaml:"upstreamConcurrency" json:"upstreamConcurrency"`
 	// RenderJPEGQuality 是后端合成瓦片的 JPEG 编码质量（1~100；子瓦片都是 JPEG 时才编码为 JPEG，否则 PNG）。<=0 用默认 85。
 	RenderJPEGQuality int `yaml:"renderJpegQuality" json:"renderJpegQuality"`
+}
+
+// WorldLayerConfig 是某世界的一个底图配置，Static 与 External 恰有一个非空。
+type WorldLayerConfig struct {
+	Static   *WorldTileConfig     `yaml:"static,omitempty" json:"static,omitempty"`
+	External *ExternalLayerConfig `yaml:"external,omitempty" json:"external,omitempty"`
+}
+
+// ExternalLayerConfig 是某世界使用某外部来源时的参数（对齐参数由外部地图推导，这里只有视图与合成参数）。
+type ExternalLayerConfig struct {
+	// Source 是外部来源 ID（TileSourceConfig.ID）。
+	Source string `yaml:"source" json:"source"`
+	// 视图参数，含义同 WorldTileConfig；0 / 空表示使用外部地图推导值。minZoom 不会低于有底图的推导下限。
+	Zoom    float64   `yaml:"zoom,omitempty" json:"zoom,omitempty"`
+	Opacity float64   `yaml:"opacity,omitempty" json:"opacity,omitempty"`
+	MinZoom float64   `yaml:"minZoom,omitempty" json:"minZoom,omitempty"`
+	MaxZoom float64   `yaml:"maxZoom,omitempty" json:"maxZoom,omitempty"`
+	Center  []float64 `yaml:"center,omitempty" json:"center,omitempty"`
+	// SynthZoomLevels 是在上游最粗一级之上由后端合成的层级数（每级由下一级 2×2 张拼接缩小），
+	// 使地图能缩得更远（MapLibre 不会把低于原生缩放下限的瓦片缩小显示）。每多一级，最远一级每张瓦片
+	// 需要的上游瓦片数 ×4。0 表示不合成；未配置用默认 DefaultSynthZoomLevels。
+	SynthZoomLevels *int `yaml:"synthZoomLevels,omitempty" json:"synthZoomLevels,omitempty"`
+	// SynthMarginBlocks：合成层级只覆盖该世界线路 / 车站坐标范围向外扩展该方块数以内的区域，
+	// 范围外的合成瓦片直接返回空白、不访问上游。世界没有线路数据时不限制。<=0 用默认 DefaultSynthMarginBlocks。
+	SynthMarginBlocks int `yaml:"synthMarginBlocks,omitempty" json:"synthMarginBlocks,omitempty"`
+}
+
+// 外部地图合成层级的默认值（见 ExternalLayerConfig.SynthZoomLevels / SynthMarginBlocks）。
+const (
+	DefaultSynthZoomLevels   = 4
+	DefaultSynthMarginBlocks = 2000
+)
+
+// SynthLevels 返回生效的合成层级数。
+func (e ExternalLayerConfig) SynthLevels() int {
+	if e.SynthZoomLevels == nil {
+		return DefaultSynthZoomLevels
+	}
+	return *e.SynthZoomLevels
+}
+
+// SynthMargin 返回生效的合成范围边距（方块）。
+func (e ExternalLayerConfig) SynthMargin() float64 {
+	if e.SynthMarginBlocks <= 0 {
+		return DefaultSynthMarginBlocks
+	}
+	return float64(e.SynthMarginBlocks)
+}
+
+// LegacyWorldTileConfig 是旧版 worldTiles 条目（静态瓦片参数，曾兼作外部地图的视图 / 合成参数），只用于迁移。
+type LegacyWorldTileConfig struct {
+	WorldTileConfig   `yaml:",inline"`
+	SynthZoomLevels   *int `yaml:"synthZoomLevels,omitempty" json:"synthZoomLevels,omitempty"`
+	SynthMarginBlocks int  `yaml:"synthMarginBlocks,omitempty" json:"synthMarginBlocks,omitempty"`
+}
+
+// migrateLegacyWorldTiles 把旧版 worldTiles 转为 Worlds，保持旧版优先级「外部地图优先，其次静态瓦片」：
+// 每个来源一条外部地图条目（沿用旧条目的视图 / 合成参数；来源中没有该世界时运行时自动跳过），
+// 有 tileUrl 或没有任何来源时再加一条静态瓦片。
+func migrateLegacyWorldTiles(t *TilesConfig) {
+	if len(t.WorldTiles) == 0 || t.Worlds != nil {
+		t.WorldTiles = nil
+		return
+	}
+	t.Worlds = map[string][]WorldLayerConfig{}
+	for name, old := range t.WorldTiles {
+		var layers []WorldLayerConfig
+		for _, src := range t.Sources {
+			layers = append(layers, WorldLayerConfig{External: &ExternalLayerConfig{
+				Source: src.ID, Zoom: old.Zoom, Opacity: old.Opacity, MinZoom: old.MinZoom, MaxZoom: old.MaxZoom,
+				Center: old.Center, SynthZoomLevels: old.SynthZoomLevels, SynthMarginBlocks: old.SynthMarginBlocks,
+			}})
+		}
+		if old.TileURL != "" || len(t.Sources) == 0 {
+			static := old.WorldTileConfig
+			layers = append(layers, WorldLayerConfig{Static: &static})
+		}
+		t.Worlds[name] = layers
+	}
+	t.WorldTiles = nil
 }
 
 // TileSourceConfig 是一个外部地图来源。
@@ -189,35 +272,6 @@ type WorldTileConfig struct {
 	MapOffset     []float64 `yaml:"mapOffset,omitempty" json:"mapOffset,omitempty"`
 	// 进入页面时的初始镜头中心（游戏坐标 [x, z]）。未配置则回退到数据范围中心。
 	Center []float64 `yaml:"center,omitempty" json:"center,omitempty"`
-	// SynthZoomLevels 仅外部地图：在上游最粗一级之上由后端合成的层级数（每级由下一级 2×2 张拼接缩小），
-	// 使地图能缩得更远（MapLibre 不会把低于原生缩放下限的瓦片缩小显示）。每多一级，最远一级每张瓦片
-	// 需要的上游瓦片数 ×4。0 表示不合成；未配置用默认 DefaultSynthZoomLevels。
-	SynthZoomLevels *int `yaml:"synthZoomLevels,omitempty" json:"synthZoomLevels,omitempty"`
-	// SynthMarginBlocks 仅外部地图：合成层级只覆盖该世界线路 / 车站坐标范围向外扩展该方块数以内的区域，
-	// 范围外的合成瓦片直接返回空白、不访问上游。世界没有线路数据时不限制。<=0 用默认 DefaultSynthMarginBlocks。
-	SynthMarginBlocks int `yaml:"synthMarginBlocks,omitempty" json:"synthMarginBlocks,omitempty"`
-}
-
-// 外部地图合成层级的默认值（见 WorldTileConfig.SynthZoomLevels / SynthMarginBlocks）。
-const (
-	DefaultSynthZoomLevels   = 4
-	DefaultSynthMarginBlocks = 2000
-)
-
-// SynthLevels 返回生效的合成层级数。
-func (w WorldTileConfig) SynthLevels() int {
-	if w.SynthZoomLevels == nil {
-		return DefaultSynthZoomLevels
-	}
-	return *w.SynthZoomLevels
-}
-
-// SynthMargin 返回生效的合成范围边距（方块）。
-func (w WorldTileConfig) SynthMargin() float64 {
-	if w.SynthMarginBlocks <= 0 {
-		return DefaultSynthMarginBlocks
-	}
-	return float64(w.SynthMarginBlocks)
 }
 
 type MapStyleConfig struct {
@@ -282,7 +336,7 @@ func Load(path string) (*Config, error) {
 	// frontend.worldTiles 已移到 tiles 段（FrontendConfig 不再有该字段），单独解析。
 	var legacyTiles struct {
 		Frontend struct {
-			WorldTiles map[string]WorldTileConfig `yaml:"worldTiles"`
+			WorldTiles map[string]LegacyWorldTileConfig `yaml:"worldTiles"`
 		} `yaml:"frontend"`
 	}
 	if err := yaml.Unmarshal([]byte(expanded), &legacyTiles); err != nil {
@@ -488,11 +542,12 @@ func ApplyRealtimeDefaults(r *RealtimeConfig) {
 
 // ApplyTilesDefaults 为世界底图配置中未配置 / 非法的字段填充默认值。
 func ApplyTilesDefaults(t *TilesConfig) {
-	if t.WorldTiles == nil {
-		t.WorldTiles = map[string]WorldTileConfig{"world1": {Zoom: 14}}
-	}
 	if t.Sources == nil {
 		t.Sources = []TileSourceConfig{}
+	}
+	migrateLegacyWorldTiles(t)
+	if t.Worlds == nil {
+		t.Worlds = map[string][]WorldLayerConfig{"world1": {{Static: &WorldTileConfig{Zoom: 14}}}}
 	}
 	for i := range t.Sources {
 		if t.Sources[i].Type == "" {

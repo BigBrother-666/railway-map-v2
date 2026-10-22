@@ -2,13 +2,23 @@ import { useEffect } from 'react';
 import { useStore } from './store/useStore';
 import { useRealtime } from './api/realtime';
 import { MapView } from './components/MapView';
+import { MapSearch } from './components/MapSearch';
 import { TopBar } from './components/TopBar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { RightSidebar } from './components/RightSidebar';
 import { Toast } from './components/Toast';
+import { useTheme } from './theme';
 import { consumeLoginResult } from './login';
 
 export function App() {
+  const { choice, setChoice, theme } = useTheme();
+
+  useEffect(() => {
+    document.documentElement.dataset.mapTheme = theme;
+    return () => {
+      delete document.documentElement.dataset.mapTheme;
+    };
+  }, [theme]);
   const init = useStore((s) => s.init);
   const loading = useStore((s) => s.loading);
   const loadError = useStore((s) => s.loadError);
@@ -33,10 +43,12 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar />
+      <TopBar themeChoice={choice} setTheme={setChoice} />
       <div className="app-body">
-        <MapView />
+        <MapView theme={theme} />
         <LeftSidebar />
+        {/* 紧跟左侧栏：CSS 用兄弟选择器按侧栏展开/折叠避让；在右侧栏之前，展开的右侧栏可盖住它 */}
+        <MapSearch />
         <RightSidebar />
         {loading && <div className="overlay">加载中…</div>}
         {loadError && <div className="overlay error">加载失败：{loadError}</div>}

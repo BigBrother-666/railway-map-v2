@@ -187,6 +187,10 @@ func TestServiceDiscoverAndProxy(t *testing.T) {
 	}
 }
 
+func staticLayer(url string) config.WorldLayerConfig {
+	return config.WorldLayerConfig{Static: &config.WorldTileConfig{TileURL: url}}
+}
+
 func TestWorldTiles(t *testing.T) {
 	up, _ := newTestUpstream(t, "")
 	cfg := config.TilesConfig{Sources: []config.TileSourceConfig{
@@ -197,46 +201,76 @@ func TestWorldTiles(t *testing.T) {
 	s := New(func() config.TilesConfig { return cfg }, nil, quiet)
 	s.refresh(context.Background())
 
+	// 未保存过：发现的外部地图自动排在最前，按来源顺序
 	got := s.WorldTiles()
-	p := got["Paralon"]
-	if p.TileURL != ProxyPath+"/a/Paralon/{z}/{x}/{y}" || p.TileSize != 128 || p.MapScale != 4 {
+	if p := got["Paralon"]; p.TileURL != ProxyPath+"/a/Paralon/{z}/{x}/{y}" || p.TileSize != 128 || p.MapScale != 4 {
 		t.Errorf("Paralon = %+v (first source should win)", p)
 	}
 	if _, ok := got["iso_only"]; ok {
-		t.Error("world without top-down map should not be merged")
+		t.Error("world without top-down map should not be listed")
 	}
-	if _, ok := got["world1"]; !ok || len(cfg.WorldTiles) != 1 {
-		t.Error("static world lost or config modified")
+	if _, ok := got["world1"]; !ok {
+		t.Error("static world lost")
+	}
+	auto := EffectiveLayers(cfg, s.state.Load().discovered())["Paralon"]
+	if len(auto) != 2 || auto[0].External.Source != "a" || auto[1].External.Source != "b" {
+		t.Errorf("auto layers = %+v", auto)
 	}
 
-	// 外部地图优先于静态 tileUrl，只沿用静态配置的视图参数。
-	cfg.WorldTiles = map[string]config.WorldTileConfig{
-		"Paralon":  {TileURL: "https://static/{z}/{x}/{y}.png", MapScale: 2, Zoom: 12, Center: []float64{1, 2}, MinZoom: 1, MaxZoom: 20},
-		"iso_only": {TileURL: "https://static/{z}/{x}/{y}.png"},
+	// 用户排序：静态在前则用静态；外部地图参数各自独立，minZoom 不低于推导下限
+	cfg.Worlds = map[string][]config.WorldLayerConfig{
+		"Paralon": {
+			staticLayer("https://static/{z}/{x}/{y}.png"),
+			{External: &config.ExternalLayerConfig{Source: "b", Zoom: 12, Center: []float64{1, 2}, MinZoom: 1, MaxZoom: 20}},
+		},
+		"iso_only": {staticLayer("https://iso/{z}/{x}/{y}.png")},
 	}
 	got = s.WorldTiles()
-	if g := got["Paralon"]; g.TileURL != ProxyPath+"/a/Paralon/{z}/{x}/{y}" || g.MapScale != 4 ||
+	if got["Paralon"].TileURL != "https://static/{z}/{x}/{y}.png" {
+		t.Errorf("user order ignored: %+v", got["Paralon"])
+	}
+	cfg.Worlds["Paralon"] = []config.WorldLayerConfig{cfg.Worlds["Paralon"][1], cfg.Worlds["Paralon"][0]}
+	got = s.WorldTiles()
+	if g := got["Paralon"]; g.TileURL != ProxyPath+"/b/Paralon/{z}/{x}/{y}" || g.MapScale != 4 ||
 		g.Zoom != 12 || len(g.Center) != 2 || g.MaxZoom != 20 || g.MinZoom != dynmapNativeZoom-7-4 || g.MinNativeZoom != dynmapNativeZoom-5-4 {
 		t.Errorf("Paralon = %+v", g)
 	}
-	if got["iso_only"].TileURL != "https://static/{z}/{x}/{y}.png" {
+	// 已保存的列表不含来源 a：a 追加在末尾，不打乱用户顺序
+	if l := EffectiveLayers(cfg, s.state.Load().discovered())["Paralon"]; len(l) != 3 || l[2].External.Source != "a" || len(cfg.Worlds["Paralon"]) != 2 {
+		t.Errorf("effective = %+v", l)
+	}
+	if got["iso_only"].TileURL != "https://iso/{z}/{x}/{y}.png" {
 		t.Errorf("static fallback lost: %+v", got["iso_only"])
 	}
 }
 
-// 上游失败时沿用上一次成功的发现结果。
-func TestRefreshKeepsLastGood(t *testing.T) {
+// 来源读取失败：该来源的外部地图不再下发，改用下一个底图；代理仍可用上次结果服务旧页面。
+func TestDiscoveryFailureFallsBack(t *testing.T) {
 	up, _ := newTestUpstream(t, "")
-	s := newTestService([]config.TileSourceConfig{{ID: "a", Type: "dynmap", URL: up.URL + "/map"}}, 64)
+	cfg := config.TilesConfig{
+		Sources: []config.TileSourceConfig{{ID: "a", Type: "dynmap", URL: up.URL + "/map"}},
+		Worlds: map[string][]config.WorldLayerConfig{"Paralon": {
+			{External: &config.ExternalLayerConfig{Source: "a"}},
+			staticLayer("https://static/{z}/{x}/{y}.png"),
+		}},
+	}
+	config.ApplyTilesDefaults(&cfg)
+	s := New(func() config.TilesConfig { return cfg }, nil, quiet)
 	s.refresh(context.Background())
+	if g := s.WorldTiles()["Paralon"]; g.TileURL != ProxyPath+"/a/Paralon/{z}/{x}/{y}" {
+		t.Fatalf("external not used: %+v", g)
+	}
 	up.Close()
 	s.refresh(context.Background())
 	st := s.Status().Sources[0]
 	if st.Error == "" || len(st.Worlds) != 2 {
 		t.Errorf("status = %+v", st)
 	}
-	if _, ok := s.WorldTiles()["Paralon"]; !ok {
-		t.Error("last good discovery dropped")
+	if g := s.WorldTiles()["Paralon"]; g.TileURL != "https://static/{z}/{x}/{y}.png" {
+		t.Errorf("should fall back to static: %+v", g)
+	}
+	if _, err := s.Fetch(context.Background(), "a", "Paralon", 3, 0, 0); err == ErrNotFound {
+		t.Error("proxy should still know last good worlds")
 	}
 }
 

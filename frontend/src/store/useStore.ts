@@ -69,6 +69,8 @@ interface AppState {
 
   // --- 侧栏 / 选择 ---
   sidebar: SidebarMode;
+  /** 左侧栏是否折叠（打开面板 / 点击地图要素时自动展开）。 */
+  sidebarCollapsed: boolean;
   selectedStation: string | null; // 点击车站面板显示的站名
   selectedLineId: string | null; // 点击线路面板显示的线路 id
   /** 需要高亮的线路 id（点击地图线路 / 线路面板 / 车站面板线路名时设置）。 */
@@ -91,6 +93,12 @@ interface AppState {
   /** 持续跟踪中的列车 id。 */
   trackingTrainId: string | null;
 
+  // --- 地图搜索 ---
+  /** 线路聚焦序号：搜索重复选中同一线路时也能让地图再次框选。 */
+  lineFocusSeq: number;
+  /** 搜索选中车站后的镜头目标（站名，当前世界内框选全部同名站台）；seq 变化触发地图移动。 */
+  stationFocus: { name: string; seq: number } | null;
+
   // --- 登录 ---
   player: Player | null;
   rideHistory: RideHistoryResponse | null;
@@ -109,12 +117,15 @@ interface AppState {
   clickStation: (name: string) => void;
   clickLine: (lineId: string) => void;
   highlightLine: (lineId: string | null) => void;
+  selectSearchLine: (lineId: string) => void;
+  focusStation: (world: string, name: string) => void;
   openRoutePanel: (presetEnd?: string) => void;
   setEndpoint: (role: Endpoint, name: string | null) => void;
   swapEndpoints: () => void;
   computeRoutes: () => Promise<void>;
   selectRoute: (index: number | null) => void;
   closeSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
 
   upsertTrains: (trains: Train[]) => void;
   removeTrains: (ids: string[]) => void;
@@ -153,6 +164,7 @@ export const useStore = create<AppState>((set, get) => ({
   hiddenLines: new Set(),
 
   sidebar: 'idle',
+  sidebarCollapsed: false,
   selectedStation: null,
   selectedLineId: null,
   highlightLineId: null,
@@ -169,6 +181,9 @@ export const useStore = create<AppState>((set, get) => ({
   trainFocusMode: 'route',
   trainFocusSeq: 0,
   trackingTrainId: null,
+
+  lineFocusSeq: 0,
+  stationFocus: null,
 
   player: null,
   rideHistory: null,
@@ -259,11 +274,13 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     if (state.sidebar === 'route') {
       // 路线查询中：点击车站设为「下一个待填」端点
+      set({ sidebarCollapsed: false });
       state.setEndpoint(state.nextPick, name);
       return;
     }
     set({
       sidebar: 'station',
+      sidebarCollapsed: false,
       selectedStation: name,
       selectedLineId: null,
       highlightLineId: null,
@@ -278,6 +295,7 @@ export const useStore = create<AppState>((set, get) => ({
     // 点击地图线路：打开线路详情并高亮该线路（任务 1）。
     set({
       sidebar: 'line',
+      sidebarCollapsed: false,
       selectedLineId: lineId,
       highlightLineId: lineId,
       selectedStation: null,
@@ -290,9 +308,34 @@ export const useStore = create<AppState>((set, get) => ({
     set({ highlightLineId: lineId });
   },
 
+  selectSearchLine(lineId) {
+    // 搜索选中线路：效果同点击地图线路；与 clickLine 不同的是路线查询中也生效（先关闭查询面板），
+    // 线路不在当前世界时先切到所属世界。
+    const world = get().lineWorlds.get(lineId) ?? get().currentWorld;
+    if (get().sidebar !== 'idle') get().closeSidebar();
+    set({
+      currentWorld: world,
+      sidebar: 'line',
+      sidebarCollapsed: false,
+      selectedLineId: lineId,
+      highlightLineId: lineId,
+      lineFocusSeq: get().lineFocusSeq + 1,
+    });
+  },
+
+  focusStation(world, name) {
+    // 搜索选中车站：打开车站面板（同点击地图车站），并框选该世界内全部同名站台（自动确定缩放）；跨世界时先切世界。
+    // 与 selectSearchLine 一致：路线查询中也生效（先关闭查询面板），而不是把车站填为起终点。
+    if (world !== get().currentWorld) get().setWorld(world);
+    if (get().sidebar === 'route') get().closeSidebar();
+    get().clickStation(name);
+    set({ stationFocus: { name, seq: (get().stationFocus?.seq ?? 0) + 1 } });
+  },
+
   openRoutePanel(presetEnd) {
     set({
       sidebar: 'route',
+      sidebarCollapsed: false,
       endStation: presetEnd ?? get().endStation,
       nextPick: 'start',
       candidates: [],
@@ -376,6 +419,7 @@ export const useStore = create<AppState>((set, get) => ({
   closeSidebar() {
     set({
       sidebar: 'idle',
+      sidebarCollapsed: false,
       selectedStation: null,
       selectedLineId: null,
       highlightLineId: null,
@@ -389,6 +433,10 @@ export const useStore = create<AppState>((set, get) => ({
       nextPick: 'start',
       selectedHistoryId: null,
     });
+  },
+
+  setSidebarCollapsed(collapsed) {
+    set({ sidebarCollapsed: collapsed });
   },
 
   upsertTrains(list) {
@@ -423,6 +471,7 @@ export const useStore = create<AppState>((set, get) => ({
       selectedTrainId: id,
       trainFocusMode: 'route',
       sidebar: id ? 'train' : get().sidebar,
+      sidebarCollapsed: id ? false : get().sidebarCollapsed,
       selectedLineId: null,
       highlightLineId: null,
       trackingTrainId: null,
@@ -432,6 +481,7 @@ export const useStore = create<AppState>((set, get) => ({
   openTrainList() {
     set({
       sidebar: 'trains',
+      sidebarCollapsed: false,
       selectedTrainId: null,
       trackingTrainId: null,
       candidates: [],
@@ -454,6 +504,7 @@ export const useStore = create<AppState>((set, get) => ({
       trainFocusSeq: get().trainFocusSeq + 1,
       trackingTrainId: null,
       sidebar: 'train',
+      sidebarCollapsed: false,
       selectedLineId: null,
       highlightLineId: null,
     });
@@ -470,6 +521,7 @@ export const useStore = create<AppState>((set, get) => ({
       trainFocusSeq: enabled ? get().trainFocusSeq + 1 : get().trainFocusSeq,
       trackingTrainId: enabled ? id : null,
       sidebar: 'train',
+      sidebarCollapsed: false,
       selectedLineId: null,
       highlightLineId: null,
     });
@@ -502,7 +554,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async openRideHistory() {
-    set({ sidebar: 'history', selectedTrainId: null, trackingTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null, selectedLineId: null, highlightLineId: null });
+    set({ sidebar: 'history', sidebarCollapsed: false, selectedTrainId: null, trackingTrainId: null, candidates: [], selectedRouteIndex: null, selectedHistoryId: null, searching: false, searchError: null, selectedLineId: null, highlightLineId: null });
     await get().loadRideHistory(1);
   },
 
@@ -513,7 +565,10 @@ export const useStore = create<AppState>((set, get) => ({
     const intact = !graph || graph.hasAllEdges(item.nodeIds);
     const historyGeometry = !intact && item.geometry ? withLineColors(item.geometry, get().lines) : undefined;
     const nodeIds = intact || historyGeometry ? item.nodeIds : graph.repairPath(item.nodeIds);
+    // 历史不在当前世界时切到其所属世界（直接改 currentWorld，不走 setWorld，避免关闭历史面板）。
+    const world = historyWorld(item, get().geojson) ?? get().currentWorld;
     set({
+      currentWorld: world,
       selectedHistoryId: item.id,
       trackingTrainId: null,
       candidates: [{
@@ -572,6 +627,19 @@ function attachLineColors(fc: FeatureCollection, lines: Line[]): void {
 function withLineColors(geom: RouteGeometry, lines: Line[]): RouteGeometry {
   const colors = new Map(lines.map((l) => [l.id, l.color]));
   return { ...geom, segments: geom.segments.map((s) => ({ ...s, color: colors.get(s.lineId) || s.color })) };
+}
+
+/** 乘车历史所属世界：优先取坐标快照记录的世界，旧记录无快照时按节点在当前 geojson 中的世界反查。 */
+function historyWorld(item: RideHistoryItem, fc: FeatureCollection | null): string | undefined {
+  if (item.geometry?.world) return item.geometry.world;
+  if (!fc) return undefined;
+  const ids = new Set(item.nodeIds);
+  for (const f of fc.features) {
+    if (f.geometry?.type !== 'Point') continue;
+    const p = f.properties as PointProps | null;
+    if (p?.id && p.world && ids.has(p.id)) return p.world;
+  }
+  return undefined;
 }
 
 /** 从 geojson 提取所有出现过的世界名（按首次出现顺序，首个即默认世界兜底）。 */

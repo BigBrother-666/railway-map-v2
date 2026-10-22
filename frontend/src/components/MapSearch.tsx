@@ -1,0 +1,202 @@
+import { useId, useMemo, useRef, useState } from 'react';
+import Fuse from 'fuse.js';
+import { Search, X } from 'lucide-react';
+import { useStore } from '../store/useStore';
+import { CONTACT_SYSTEM_ID } from '../config';
+import type { PointProps } from '../types';
+
+/** 搜索候选项：线路或车站（车站按「站名 + 世界」聚合，定位时由地图框选该世界内全部同名站台）。 */
+type SearchItem =
+  | { kind: 'line'; key: string; name: string; world: string; lineId: string; color: string; systemName?: string }
+  | { kind: 'station'; key: string; name: string; nameEn?: string; world: string };
+
+const MAX_SUGGESTIONS = 20;
+
+/**
+ * 地图左上角搜索框：按线路名 / 车站名 / 车站英文名模糊搜索，选中后定位到线路或车站。
+ * 手机端（≤640px）未使用时收起为一个搜索图标，点击后展开并聚焦；失焦且没有输入时再收起（见 styles.css .map-search.collapsed）。
+ */
+export function MapSearch() {
+  const geojson = useStore((s) => s.geojson);
+  const lines = useStore((s) => s.lines);
+  const lineWorlds = useStore((s) => s.lineWorlds);
+  const systemMap = useStore((s) => s.systemMap);
+  const worlds = useStore((s) => s.worlds);
+  const selectSearchLine = useStore((s) => s.selectSearchLine);
+  const focusStation = useStore((s) => s.focusStation);
+
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+
+  const items = useMemo<SearchItem[]>(() => {
+    const out: SearchItem[] = [];
+    // 联络线不在线路栏列出，搜索同样排除；无 geojson 段（lineWorlds 中没有）的线路无法定位，也排除。
+    for (const l of lines) {
+      const world = lineWorlds.get(l.id);
+      if (!world || l.systemId === CONTACT_SYSTEM_ID) continue;
+      out.push({
+        kind: 'line',
+        key: `line|${l.id}`,
+        name: l.name || l.id,
+        world,
+        lineId: l.id,
+        color: l.color,
+        systemName: systemMap.get(l.systemId)?.name,
+      });
+    }
+    const stations = new Map<string, SearchItem>();
+    for (const f of geojson?.features ?? []) {
+      if (f.geometry?.type !== 'Point') continue;
+      const p = f.properties as PointProps | null;
+      if (!p || p.type !== 'station' || !p.name) continue;
+      const key = `station|${p.world}|${p.name}`;
+      if (!stations.has(key)) stations.set(key, { kind: 'station', key, name: p.name, nameEn: p.nameEn, world: p.world });
+    }
+    out.push(...stations.values());
+    return out;
+  }, [geojson, lines, lineWorlds, systemMap]);
+
+  const fuse = useMemo(
+    () => new Fuse(items, { keys: ['name', 'nameEn'], threshold: 0.4, ignoreLocation: true }),
+    [items],
+  );
+
+  const results = useMemo(() => {
+    const q = query.trim();
+    if (!q) return [];
+    // 先按匹配度取前 N 条，再分组：车站在上、线路在下（组内保持匹配度顺序）。
+    const top = fuse.search(q, { limit: MAX_SUGGESTIONS }).map((r) => r.item);
+    return [...top.filter((i) => i.kind === 'station'), ...top.filter((i) => i.kind === 'line')];
+  }, [query, fuse]);
+
+  const showList = open && results.length > 0;
+  const multiWorld = worlds.length > 1;
+
+  function choose(item: SearchItem) {
+    setQuery(item.name);
+    setOpen(false);
+    inputRef.current?.blur(); // 手机端收起键盘，露出定位结果
+    if (item.kind === 'line') selectSearchLine(item.lineId);
+    else focusStation(item.world, item.name);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!results.length) return;
+      e.preventDefault();
+      setOpen(true);
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive((i) => (i + step + results.length) % results.length);
+    } else if (e.key === 'Enter') {
+      // 回车：选中当前高亮的提示（默认第一条）
+      const item = results[Math.min(active, results.length - 1)];
+      if (item) {
+        e.preventDefault();
+        choose(item);
+      }
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+      inputRef.current?.blur();
+    }
+  }
+
+  return (
+    <div className={`map-search ${expanded || query ? '' : 'collapsed'}`}>
+      <button
+        type="button"
+        className="map-search-toggle"
+        aria-label="搜索线路或车站"
+        onClick={() => {
+          setExpanded(true);
+          // 展开后再聚焦（输入框在收起状态下为 display: none，无法聚焦）
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+      >
+        <Search size={18} strokeWidth={2.25} aria-hidden="true" />
+      </button>
+      <div className="map-search-row">
+        <Search className="map-search-icon" size={16} strokeWidth={2.25} aria-hidden="true" />
+        <input
+          ref={inputRef}
+          type="text"
+          role="combobox"
+          aria-label="搜索线路或车站"
+          aria-autocomplete="list"
+          aria-expanded={showList}
+          aria-controls={listId}
+          aria-activedescendant={showList ? `${listId}-${active}` : undefined}
+          value={query}
+          placeholder="搜索线路 / 车站"
+          onFocus={() => {
+            setOpen(true);
+            setExpanded(true);
+          }}
+          onBlur={() =>
+            setTimeout(() => {
+              setOpen(false);
+              setExpanded(false); // 有输入时仍展开（className 判断 query）
+            }, 150)
+          }
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setActive(0);
+            setOpen(true);
+          }}
+          onKeyDown={onKeyDown}
+        />
+        {query && (
+          <button
+            className="icon-btn"
+            title="清除"
+            aria-label="清除搜索"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setQuery('');
+              setActive(0);
+            }}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      {showList && (
+        <ul className="map-search-suggest" id={listId} role="listbox">
+          {results.map((item, i) => (
+            <li
+              key={item.key}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              className={i === active ? 'active' : ''}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => {
+                e.preventDefault(); // 保持输入框焦点，避免 blur 先关闭列表
+                choose(item);
+              }}
+            >
+              {item.kind === 'line' ? (
+                <span className="map-search-swatch" style={{ background: item.color }} aria-hidden="true" />
+              ) : (
+                <span className="map-search-dot" aria-hidden="true" />
+              )}
+              <span className="map-search-text">
+                <span className="map-search-name">{item.name}</span>
+                {item.kind === 'station' && item.nameEn && <span className="map-search-sub">{item.nameEn}</span>}
+                {item.kind === 'line' && item.systemName && <span className="map-search-sub">{item.systemName}</span>}
+              </span>
+              <span className="map-search-tag">
+                {item.kind === 'line' ? '线路' : '车站'}
+                {multiWorld && ` · ${item.world}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && query.trim() && results.length === 0 && <div className="map-search-empty">无匹配的线路或车站</div>}
+    </div>
+  );
+}

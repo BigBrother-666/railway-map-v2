@@ -6,16 +6,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { centerApi, type FieldError } from '../api';
 import type {
-  FrontendConfig,
   FrontendSettings,
   PluginSettings,
   RealtimeSettings,
   RouteSettings,
   SettingsResponse,
   SettingsSection,
+  ExternalLayerSettings,
   TileSourceSettings,
   TileSourcesSettings,
   TileSourcesStatus,
+  WorldLayerSettings,
 } from '../types';
 import type { WorldTileConfig } from '../../types';
 import { Card, ConfirmModal, ErrorState, formatTime, Loading, PageHeader, toCenterError, useAsync, useNotice } from '../ui';
@@ -467,7 +468,8 @@ function SettingField({
   );
 }
 
-const TILE_FIELDS: FieldDef[] = [
+/** 静态瓦片参数（坐标偏移 / 镜头中心另行编辑）。 */
+const STATIC_FIELDS: FieldDef[] = [
   { path: 'tileUrl', label: '瓦片 URL', type: 'text', help: '含 {z}/{x}/{y}，留空则无底图' },
   { path: 'scheme', label: '瓦片坐标方案', type: 'text', help: 'xyz 或 tms' },
   { path: 'zoom', label: '初始缩放', type: 'number', step: 0.5 },
@@ -480,64 +482,80 @@ const TILE_FIELDS: FieldDef[] = [
   { path: 'mapScale', label: '缩放比例', type: 'number', step: 0.1, help: '1 方块对应的原生瓦片像素' },
 ];
 
-/** 仅外部地图的世界显示的参数（后端合成更低层级）。 */
-const SYNTH_TILE_FIELDS: FieldDef[] = [
+/** 外部地图参数（对齐参数由外部地图推导；镜头中心另行编辑）。 */
+const EXTERNAL_FIELDS: FieldDef[] = [
+  { path: 'zoom', label: '初始缩放', type: 'number', step: 0.5 },
+  { path: 'opacity', label: '不透明度', type: 'number', step: 0.05, min: 0, max: 1 },
+  { path: 'minZoom', label: '最小缩放', type: 'number', step: 0.5 },
+  { path: 'maxZoom', label: '最大缩放', type: 'number', step: 0.5 },
   { path: 'synthZoomLevels', label: '合成缩小层级数', type: 'number', step: 1, min: 0, max: 6, help: '在外部地图最粗一级之上由后端拼接合成的层级数，越大地图能缩得越远（每多一级，最远一级需要的上游瓦片 ×4）；0 不合成，留空为 4' },
   { path: 'synthMarginBlocks', label: '合成范围边距（方块）', type: 'number', step: 500, min: 0, help: '只合成线路 / 车站范围向外扩展该距离以内的区域，范围外的缩小层级显示为空白；留空为 2000' },
 ];
 
-/** 使用外部地图的世界只显示这些视图参数（对齐参数由外部地图推导，静态瓦片参数不生效）。 */
-const EXTERNAL_TILE_FIELDS = new Set(['zoom', 'opacity', 'minZoom', 'maxZoom']);
+const DEFAULT_SYNTH_LEVELS = 4;
 
 type TilesEditorProps = { value: TileSourcesSettings; set: (v: TileSourcesSettings) => void };
-/** 某世界实际使用的外部地图：来源标签 + 上游推导的底图参数。 */
-type ExternalWorld = { label: string; tile: WorldTileConfig };
+type SourceStatus = TileSourcesStatus['sources'][number];
 
-/** 外部地图推导值提示（留空时使用）。 */
-function derivedHelp(tile: WorldTileConfig, path: string): string {
-  const v = getPath(tile, path);
-  if (v === undefined) return '留空使用默认';
-  return path === 'minZoom' ? `留空使用推导值 ${v}；不能低于它（再缩小没有底图）` : `留空使用外部地图推导值 ${v}`;
+/** 外部地图推导值（与后端 externalTile 一致：原生缩放下限按合成层级扩展），用于提示留空时的取值。 */
+function derivedExternal(native: WorldTileConfig | undefined, ext: ExternalLayerSettings): WorldTileConfig | undefined {
+  if (!native) return undefined;
+  const n = Math.min(ext.synthZoomLevels ?? DEFAULT_SYNTH_LEVELS, native.minNativeZoom ?? 0);
+  return { ...native, minZoom: (native.minZoom ?? 0) - n };
 }
 
-/** 外部地图实际生效的范围摘要。 */
-function externalSummary(e: ExternalWorld): string {
-  const t = e.tile;
-  return `外部地图 ${e.label}${t.minZoom !== undefined ? ` · 有底图缩放 ≥ ${t.minZoom}` : ''}`;
+function externalHelp(derived: WorldTileConfig | undefined, f: FieldDef): string | undefined {
+  const v = derived ? getPath(derived, f.path) : undefined;
+  if (v === undefined) return f.help;
+  return f.path === 'minZoom' ? `留空使用推导值 ${v}；不能低于它（再缩小没有底图）` : `留空使用外部地图推导值 ${v}`;
 }
 
-/** 世界底图页：外部地图来源 + 每个世界的参数，共用一份来源发现状态。 */
+/**
+ * 各世界生效的底图列表：已保存的列表，末尾追加来源发现了、但列表中还没有的外部地图（按来源顺序）。
+ * 与后端 tilesource.EffectiveLayers 一致；做任何编辑后，自动追加的条目会一并保存。
+ */
+function effectiveLayers(worlds: TileSourcesSettings['worlds'], status: TileSourcesStatus | null | undefined) {
+  const out: TileSourcesSettings['worlds'] = { ...worlds };
+  for (const src of status?.sources ?? []) {
+    if (src.error) continue;
+    for (const w of src.worlds) {
+      if (!w.map) continue;
+      const layers = out[w.name] ?? [];
+      if (!layers.some((l) => l.external?.source === src.id)) out[w.name] = [...layers, { external: { source: src.id } }];
+    }
+  }
+  return out;
+}
+
+/** 世界底图页：外部地图来源 + 每个世界的底图列表，共用一份来源发现状态。 */
 function TilesEditors(props: TilesEditorProps) {
   const { data: status, reload } = useAsync(() => centerApi.tilesStatus(), []);
-  // 各世界实际使用的外部来源（与后端规则一致：取第一个提供该世界的来源）
-  const external = useMemo(() => {
-    const m = new Map<string, ExternalWorld>();
-    for (const src of status?.sources ?? []) {
-      for (const w of src.worlds) if (w.map && !m.has(w.name)) m.set(w.name, { label: `${src.id} / ${w.map}`, tile: w.tile ?? {} });
-    }
-    return m;
-  }, [status]);
   return (
     <>
       <TileSourcesEditor {...props} status={status} reload={reload} />
-      <WorldTilesEditor {...props} external={external} />
+      <WorldTilesEditor {...props} status={status} />
     </>
   );
 }
 
-/** 每个世界的底图参数：可增删世界（mapOffset / center 为 [x, z]）。 */
-function WorldTilesEditor({ value, set, external }: TilesEditorProps & { external: Map<string, ExternalWorld> }) {
-  const tiles = value.worldTiles ?? {};
+/** 每个世界的底图列表：静态瓦片手动添加，外部地图按来源自动出现；上下顺序即优先级。 */
+function WorldTilesEditor({ value, set, status }: TilesEditorProps & { status: TileSourcesStatus | null | undefined }) {
+  const worlds = useMemo(() => effectiveLayers(value.worlds ?? {}, status), [value.worlds, status]);
+  const names = Object.keys(worlds).sort();
   const [newName, setNewName] = useState('');
-  // 外部来源发现、尚未在这里配置的世界也列出，便于调初始缩放 / 镜头中心
-  const names = useMemo(() => [...new Set([...Object.keys(tiles), ...external.keys()])].sort(), [tiles, external]);
-  const update = (next: FrontendConfig['worldTiles']) => set({ ...value, worldTiles: next });
-  const tileOf = (w: string) => tiles[w] ?? {};
-  const pair = (v?: number[]) => (v && v.length === 2 ? `${v[0]}, ${v[1]}` : '');
-  const parsePair = (s: string): [number, number] | undefined => {
-    const parts = s.split(/[,\s]+/).filter(Boolean).map(Number);
-    return parts.length === 2 && parts.every(Number.isFinite) ? [parts[0], parts[1]] : undefined;
+  // 展开状态受控：新添加的世界 / 静态瓦片所在世界自动展开，否则新条目落在折叠的世界里看不到
+  const [opened, setOpened] = useState<Set<string>>(() => new Set(names.length === 1 ? names : []));
+  const openWorld = (w: string) => setOpened((o) => new Set(o).add(w));
+  const setLayers = (w: string, layers: WorldLayerSettings[]) => {
+    const next = { ...worlds, [w]: layers };
+    if (layers.length === 0) delete next[w];
+    set({ ...value, worlds: next });
   };
+  const addStatic = (w: string) => {
+    setLayers(w, [...(worlds[w] ?? []), { static: { zoom: 14 } }]);
+    openWorld(w);
+  };
+  const sourceOf = (id: string) => status?.sources.find((s) => s.id === id);
   return (
     <Card
       title="世界参数"
@@ -547,79 +565,172 @@ function WorldTilesEditor({ value, set, external }: TilesEditorProps & { externa
           onSubmit={(e) => {
             e.preventDefault();
             const n = newName.trim();
-            if (!n || tiles[n]) return;
-            update({ ...tiles, [n]: { zoom: 14 } });
+            if (!n) return;
+            if (worlds[n]) openWorld(n);
+            else addStatic(n);
             setNewName('');
           }}
         >
-          <input className="c-input" placeholder="新世界名" value={newName} onChange={(e) => setNewName(e.target.value)} aria-label="新世界名" />
-          <button className="c-btn small" type="submit">
+          <input
+            className="c-input"
+            style={{ width: 160 }}
+            placeholder="新世界名"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            aria-label="新世界名"
+          />
+          <button className="c-btn small" type="submit" disabled={!newName.trim()}>
             添加世界
           </button>
         </form>
       }
     >
       <p className="c-help">
-        外部地图来源中有的世界优先使用外部地图，只需设置初始缩放、镜头中心、不透明度、最小 / 最大缩放（留空用外部地图推导值）；其余世界使用静态瓦片 URL 及对齐参数。
+        每个世界可以有多个底图配置，从上到下依次尝试，使用第一个可用的：外部地图在来源读取失败或来源中没有该世界时跳过，静态瓦片始终可用。外部地图按来源自动出现，静态瓦片在世界中手动添加；两类配置各自独立保存。来源中没有的世界可以用「添加世界」新建。
       </p>
       {names.map((w) => (
-        <details key={w} className="c-world" open={names.length === 1}>
+        <details
+          key={w}
+          className="c-world"
+          open={opened.has(w)}
+          onToggle={(e) => {
+            const isOpen = e.currentTarget.open;
+            setOpened((o) => {
+              const next = new Set(o);
+              if (isOpen) next.add(w);
+              else next.delete(w);
+              return next;
+            });
+          }}
+        >
           <summary>
             <b>{w}</b>
-            <span className="c-muted c-ellipsis">
-              {' '}
-              {external.has(w) ? externalSummary(external.get(w)!) : tileOf(w).tileUrl || '无底图'}
-            </span>
+            <span className="c-muted c-ellipsis"> {worlds[w].map((l) => layerLabel(l)).join(' → ')}</span>
           </summary>
-          <div className="c-settings-grid">
-            {[...TILE_FIELDS.filter((f) => !external.has(w) || EXTERNAL_TILE_FIELDS.has(f.path)), ...(external.has(w) ? SYNTH_TILE_FIELDS : [])].map((f) => (
-              <SettingField
-                key={f.path}
-                def={{ ...f, optional: true, ...(external.has(w) && EXTERNAL_TILE_FIELDS.has(f.path) ? { help: derivedHelp(external.get(w)!.tile, f.path) } : {}) }}
-                value={getPath(tileOf(w), f.path)}
-                defaultValue={undefined}
-                changed={false}
-                onChange={(v) => update({ ...tiles, [w]: { ...tileOf(w), [f.path]: v === '' ? undefined : v } })}
-              />
-            ))}
-            {!external.has(w) && (
-              <div className="c-setting">
-                <label className="c-label">坐标偏移 [x, z]</label>
-                <input
-                  className="c-input"
-                  defaultValue={pair(tileOf(w).mapOffset)}
-                  placeholder="0, 0"
-                  onBlur={(e) => update({ ...tiles, [w]: { ...tileOf(w), mapOffset: parsePair(e.target.value) } })}
-                />
-              </div>
-            )}
-            <div className="c-setting">
-              <label className="c-label">初始镜头中心 [x, z]</label>
-              <input
-                className="c-input"
-                defaultValue={pair(tileOf(w).center)}
-                placeholder="留空则使用数据范围中心"
-                onBlur={(e) => update({ ...tiles, [w]: { ...tileOf(w), center: parsePair(e.target.value) } })}
-              />
-            </div>
-          </div>
-          {tiles[w] && (
-            <button
-              className="c-btn small danger-ghost"
-              type="button"
-              disabled={Object.keys(tiles).length <= 1}
-              onClick={() => {
-                const next = { ...tiles };
-                delete next[w];
-                update(next);
-              }}
-            >
-              {external.has(w) ? `清除 ${w} 的参数` : `删除世界 ${w}`}
-            </button>
-          )}
+          {worlds[w].map((layer, i) => (
+            <LayerEditor
+              key={layer.external ? `ext-${layer.external.source}` : `static-${i}`}
+              layer={layer}
+              index={i}
+              source={layer.external ? sourceOf(layer.external.source) : undefined}
+              world={w}
+              onChange={(l) => setLayers(w, worlds[w].map((x, j) => (j === i ? l : x)))}
+              onMove={(to) => setLayers(w, move(worlds[w], i, to))}
+              onDelete={() => setLayers(w, worlds[w].filter((_, j) => j !== i))}
+              count={worlds[w].length}
+            />
+          ))}
+          <button className="c-btn small" type="button" onClick={() => addStatic(w)}>
+            添加静态瓦片
+          </button>
         </details>
       ))}
     </Card>
+  );
+}
+
+function layerLabel(l: WorldLayerSettings): string {
+  return l.external ? `外部地图 ${l.external.source}` : `静态瓦片${l.static?.tileUrl ? '' : '（无 URL）'}`;
+}
+
+/** 单个底图配置：标题行（类型、状态、排序 / 删除）+ 参数。 */
+function LayerEditor({
+  layer,
+  index,
+  count,
+  source,
+  world,
+  onChange,
+  onMove,
+  onDelete,
+}: {
+  layer: WorldLayerSettings;
+  index: number;
+  count: number;
+  source?: SourceStatus;
+  world: string;
+  onChange: (l: WorldLayerSettings) => void;
+  onMove: (to: number) => void;
+  onDelete: () => void;
+}) {
+  const ext = layer.external;
+  const params: Record<string, unknown> = (ext ?? layer.static ?? {}) as Record<string, unknown>;
+  const patch = (key: string, v: unknown) => {
+    const next = { ...params, [key]: v === '' ? undefined : v };
+    onChange(ext ? { external: next as unknown as ExternalLayerSettings } : { static: next as WorldTileConfig });
+  };
+  const sw = ext ? source?.worlds.find((x) => x.name === world) : undefined;
+  const derived = ext ? derivedExternal(sw?.tile, ext) : undefined;
+  // 外部地图状态：与后端选择规则一致（来源读取失败或没有该世界的俯视地图时跳过）
+  const extState = !ext
+    ? null
+    : !source
+      ? { cls: 'warn', text: '状态未知（保存后刷新状态）' }
+      : source.error
+        ? { cls: 'err', text: '来源读取失败，跳过' }
+        : sw?.map
+          ? { cls: 'ok', text: `可用 · 地图 ${sw.map}` }
+          : { cls: 'err', text: sw ? `不可用（${sw.skip}），跳过` : '来源中没有该世界，跳过' };
+  const pair = (v?: number[]) => (v && v.length === 2 ? `${v[0]}, ${v[1]}` : '');
+  const parsePair = (s: string): [number, number] | undefined => {
+    const parts = s.split(/[,\s]+/).filter(Boolean).map(Number);
+    return parts.length === 2 && parts.every(Number.isFinite) ? [parts[0], parts[1]] : undefined;
+  };
+  return (
+    <div className="c-world">
+      <div className="c-inline">
+        <b>
+          {index + 1}. {ext ? `外部地图 · ${ext.source}` : '静态瓦片'}
+        </b>
+        {extState && <span className={`c-tag ${extState.cls}`}>{extState.text}</span>}
+        <span style={{ flex: 1 }} />
+        <button className="c-btn small" type="button" disabled={index === 0} onClick={() => onMove(index - 1)} aria-label="上移">
+          上移
+        </button>
+        <button className="c-btn small" type="button" disabled={index === count - 1} onClick={() => onMove(index + 1)} aria-label="下移">
+          下移
+        </button>
+        {!ext && (
+          <button className="c-btn small danger-ghost" type="button" onClick={onDelete}>
+            删除
+          </button>
+        )}
+      </div>
+      <div className="c-settings-grid">
+        {(ext ? EXTERNAL_FIELDS : STATIC_FIELDS).map((f) => (
+          <SettingField
+            key={f.path}
+            def={{ ...f, optional: true, help: ext ? externalHelp(derived, f) : f.help }}
+            value={params[f.path]}
+            defaultValue={undefined}
+            changed={false}
+            onChange={(v) => patch(f.path, v)}
+          />
+        ))}
+        {!ext && (
+          <div className="c-setting">
+            <label className="c-label">坐标偏移 [x, z]</label>
+            <input
+              key={pair(params.mapOffset as number[] | undefined)} // 排序后值变化时重新挂载（非受控输入）
+              className="c-input"
+              defaultValue={pair(params.mapOffset as number[] | undefined)}
+              placeholder="0, 0"
+              onBlur={(e) => patch('mapOffset', parsePair(e.target.value))}
+            />
+          </div>
+        )}
+        <div className="c-setting">
+          <label className="c-label">初始镜头中心 [x, z]</label>
+          <input
+            key={pair(params.center as number[] | undefined)}
+            className="c-input"
+            defaultValue={pair(params.center as number[] | undefined)}
+            placeholder="留空则使用数据范围中心"
+            onBlur={(e) => patch('center', parsePair(e.target.value))}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -635,6 +746,17 @@ function TileSourcesEditor({
   const sources = value.sources ?? [];
   const update = (i: number, patch: Partial<TileSourceSettings>) =>
     set({ ...value, sources: sources.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
+  // 世界参数中引用来源 ID 的外部地图配置随来源改名 / 删除同步（rename 为 null 表示删除）
+  const remapWorlds = (from: string, to: string | null) => {
+    const worlds: TileSourcesSettings['worlds'] = {};
+    for (const [w, layers] of Object.entries(value.worlds ?? {})) {
+      const next = layers.flatMap((l) =>
+        l.external?.source !== from ? [l] : to === null ? [] : [{ external: { ...l.external, source: to } }],
+      );
+      if (next.length) worlds[w] = next;
+    }
+    return worlds;
+  };
   const nextId = () => {
     for (let n = sources.length + 1; ; n++) if (!sources.some((s) => s.id === `map${n}`)) return `map${n}`;
   };
@@ -648,7 +770,7 @@ function TileSourcesEditor({
       }
     >
       <p className="c-help">
-        填写网页地图的前端地址（如 dynmap 页面地址），后端自动读取其中的世界，并按世界名与线路数据对应；对应上的世界优先使用外部地图。多个来源包含同一世界时取靠前的来源。只使用正南朝上的俯视地图（如 dynmap 的 flat），等距视角地图无法与线路对齐。
+        填写网页地图的前端地址（如 dynmap 页面地址），后端自动读取其中的世界，按世界名与线路数据对应，并在下方「世界参数」中为这些世界自动添加外部地图配置。只使用正南朝上的俯视地图（如 dynmap 的 flat），等距视角地图无法与线路对齐。
       </p>
       {sources.length === 0 && <p className="c-muted">未配置外部地图来源。</p>}
       {sources.map((src, i) => (
@@ -668,7 +790,10 @@ function TileSourcesEditor({
             </div>
             <div className="c-setting">
               <label className="c-label" htmlFor={`tile-src-${i}-id`}>标识</label>
-              <input id={`tile-src-${i}-id`} className="c-input c-mono" value={src.id} onChange={(e) => update(i, { id: e.target.value.trim() })} />
+              <input id={`tile-src-${i}-id`} className="c-input c-mono" value={src.id} onChange={(e) => {
+                  const id = e.target.value.trim();
+                  set({ ...value, sources: sources.map((s, j) => (j === i ? { ...s, id } : s)), worlds: remapWorlds(src.id, id) });
+                }} />
               <span className="c-help">字母、数字、- 和 _，出现在瓦片代理地址中</span>
             </div>
             <div className="c-setting">
@@ -678,10 +803,11 @@ function TileSourcesEditor({
           </div>
           <SourceStatusView status={status?.sources.find((s) => s.id === src.id && s.url === src.url)} />
           <div className="c-inline">
-            <button className="c-btn small" type="button" disabled={i === 0} onClick={() => set({ ...value, sources: move(sources, i, i - 1) })}>
-              上移
-            </button>
-            <button className="c-btn small danger-ghost" type="button" onClick={() => set({ ...value, sources: sources.filter((_, j) => j !== i) })}>
+            <button
+              className="c-btn small danger-ghost"
+              type="button"
+              onClick={() => set({ ...value, sources: sources.filter((_, j) => j !== i), worlds: remapWorlds(src.id, null) })}
+            >
               删除来源
             </button>
           </div>

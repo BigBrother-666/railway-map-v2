@@ -184,10 +184,6 @@ export interface WorldTileConfig {
   mapOffset?: [number, number];
   /** 进入页面时的初始镜头中心（游戏坐标 [x, z]）。未配置则回退到数据范围中心。 */
   center?: [number, number];
-  /** 仅外部地图：后端在上游最粗一级之上合成的层级数（服务器配置用，地图页不读取）。 */
-  synthZoomLevels?: number;
-  /** 仅外部地图：合成范围边距（方块）。 */
-  synthMarginBlocks?: number;
 }
 
 export interface FrontendConfig {

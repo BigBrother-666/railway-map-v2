@@ -110,6 +110,35 @@ func ValidateRoute(r config.RouteConfig) FieldErrors {
 	return v.errs
 }
 
+func validateStaticLayer(v *validator, p string, w config.WorldTileConfig) {
+	validateView(v, p, w.Opacity, w.MinZoom, w.MaxZoom, w.Center)
+	if w.Scheme != "" && w.Scheme != "xyz" && w.Scheme != "tms" {
+		v.add(p+".scheme", "只能是 xyz 或 tms")
+	}
+	if w.TileSize < 0 {
+		v.add(p+".tileSize", "不能为负数")
+	}
+	if w.MinNativeZoom != 0 && w.MaxNativeZoom != 0 && w.MinNativeZoom > w.MaxNativeZoom {
+		v.add(p+".minNativeZoom", "不能大于 maxNativeZoom")
+	}
+	if len(w.MapOffset) != 0 && len(w.MapOffset) != 2 {
+		v.add(p+".mapOffset", "必须是 [x, z] 两个数")
+	}
+}
+
+// validateView 校验静态瓦片与外部地图共有的视图参数。
+func validateView(v *validator, p string, opacity, minZoom, maxZoom float64, center []float64) {
+	if opacity != 0 {
+		v.between(p+".opacity", opacity, 0, 1)
+	}
+	if minZoom != 0 && maxZoom != 0 && minZoom > maxZoom {
+		v.add(p+".minZoom", "不能大于 maxZoom")
+	}
+	if len(center) != 0 && len(center) != 2 {
+		v.add(p+".center", "必须是 [x, z] 两个数")
+	}
+}
+
 // sortErrors 让 map 遍历产生的错误顺序稳定。
 func sortErrors(errs FieldErrors) {
 	for i := 1; i < len(errs); i++ {
@@ -147,51 +176,54 @@ func ValidateRealtime(r config.RealtimeConfig) FieldErrors {
 	return v.errs
 }
 
-// defaultWorldKnown 报告 defaultWorld 是否可用：配置了外部来源时世界由来源自动发现，不强制写进 worldTiles。
+// defaultWorldKnown 报告 defaultWorld 是否可用：配置了外部来源时世界由来源自动发现，不强制写进 worlds。
 func defaultWorldKnown(world string, t config.TilesConfig) bool {
-	if world == "" || len(t.WorldTiles) == 0 || len(t.Sources) > 0 {
+	if world == "" || len(t.Worlds) == 0 || len(t.Sources) > 0 {
 		return true
 	}
-	_, ok := t.WorldTiles[world]
+	_, ok := t.Worlds[world]
 	return ok
 }
 
 // ValidateTiles 校验世界底图配置；数值 0 表示使用默认值。defaultWorld 为当前前端配置的默认世界。
 func ValidateTiles(t config.TilesConfig, defaultWorld string) FieldErrors {
 	v := &validator{}
-	for name, w := range t.WorldTiles {
-		p := "worldTiles." + name
+	sourceIDs := map[string]bool{}
+	for _, src := range t.Sources {
+		sourceIDs[src.ID] = true
+	}
+	for name, layers := range t.Worlds {
 		if strings.TrimSpace(name) == "" {
-			v.add("worldTiles", "世界名不能为空")
+			v.add("worlds", "世界名不能为空")
 		}
-		if w.Opacity != 0 {
-			v.between(p+".opacity", w.Opacity, 0, 1)
+		usedSources := map[string]bool{}
+		for i, l := range layers {
+			p := fmt.Sprintf("worlds.%s.%d", name, i)
+			switch {
+			case (l.Static == nil) == (l.External == nil):
+				v.add(p, "必须是静态瓦片或外部地图之一")
+			case l.Static != nil:
+				validateStaticLayer(v, p+".static", *l.Static)
+			default:
+				e := *l.External
+				p += ".external"
+				switch {
+				case !sourceIDs[e.Source]:
+					v.add(p+".source", "外部来源 %s 不存在", e.Source)
+				case usedSources[e.Source]:
+					v.add(p+".source", "同一世界不能重复使用外部来源 %s", e.Source)
+				}
+				usedSources[e.Source] = true
+				validateView(v, p, e.Opacity, e.MinZoom, e.MaxZoom, e.Center)
+				if n := e.SynthZoomLevels; n != nil && (*n < 0 || *n > 6) {
+					v.add(p+".synthZoomLevels", "取值范围 0 ~ 6")
+				}
+				v.nonNegative(p+".synthMarginBlocks", float64(e.SynthMarginBlocks))
+			}
 		}
-		if w.Scheme != "" && w.Scheme != "xyz" && w.Scheme != "tms" {
-			v.add(p+".scheme", "只能是 xyz 或 tms")
-		}
-		if w.TileSize < 0 {
-			v.add(p+".tileSize", "不能为负数")
-		}
-		if w.MinZoom != 0 && w.MaxZoom != 0 && w.MinZoom > w.MaxZoom {
-			v.add(p+".minZoom", "不能大于 maxZoom")
-		}
-		if w.MinNativeZoom != 0 && w.MaxNativeZoom != 0 && w.MinNativeZoom > w.MaxNativeZoom {
-			v.add(p+".minNativeZoom", "不能大于 maxNativeZoom")
-		}
-		if len(w.MapOffset) != 0 && len(w.MapOffset) != 2 {
-			v.add(p+".mapOffset", "必须是 [x, z] 两个数")
-		}
-		if len(w.Center) != 0 && len(w.Center) != 2 {
-			v.add(p+".center", "必须是 [x, z] 两个数")
-		}
-		if n := w.SynthZoomLevels; n != nil && (*n < 0 || *n > 6) {
-			v.add(p+".synthZoomLevels", "取值范围 0 ~ 6")
-		}
-		v.nonNegative(p+".synthMarginBlocks", float64(w.SynthMarginBlocks))
 	}
 	if !defaultWorldKnown(defaultWorld, t) {
-		v.add("worldTiles", "缺少默认世界 %s（可先在「前端显示」中修改默认世界）", defaultWorld)
+		v.add("worlds", "缺少默认世界 %s（可先在「前端显示」中修改默认世界）", defaultWorld)
 	}
 	seen := map[string]bool{}
 	for i, src := range t.Sources {

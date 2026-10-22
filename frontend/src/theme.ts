@@ -1,5 +1,5 @@
 /**
- * 个人中心明暗主题：light / dark / auto（跟随系统，默认）。只作用于个人中心，不影响地图页。
+ * 地图与个人中心共用的明暗主题：light / dark / auto（跟随系统，默认）。
  */
 import { useEffect, useState } from 'react';
 

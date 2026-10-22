@@ -4,7 +4,8 @@ import { api } from '../api/client';
 import { avatarUrl, getConfig, setRuntimeConfig } from '../config';
 import { centerApi } from './api';
 import { navigate, onLinkClick, parseRoute, usePath, type Route } from './router';
-import { useTheme, type ThemeChoice } from './theme';
+import { useTheme, type ThemeChoice } from '../theme';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { PERM, type Profile } from './types';
 import { Empty, ErrorState, Loading, useAsync } from './ui';
 import { OverviewPage } from './pages/Overview';
@@ -254,9 +255,6 @@ function Sidebar({ profile, route }: { profile: Profile; route: Route }) {
   );
 }
 
-const THEME_LABEL: Record<ThemeChoice, string> = { auto: '跟随系统', light: '浅色', dark: '深色' };
-const THEME_ICON: Record<ThemeChoice, string> = { auto: '◐', light: '☀', dark: '☾' };
-
 function TopBar({
   profile,
   route,
@@ -272,7 +270,6 @@ function TopBar({
 }) {
   const [menu, setMenu] = useState(false);
   const crumb = useMemo(() => breadcrumb(route, profile), [route, profile]);
-  const next: Record<ThemeChoice, ThemeChoice> = { auto: 'light', light: 'dark', dark: 'auto' };
   const logout = async () => {
     await api.logout();
     location.href = '/';
@@ -291,14 +288,7 @@ function TopBar({
         ))}
       </div>
       <div className="c-topbar-right">
-        <button
-          className="c-icon-btn"
-          onClick={() => setTheme(next[themeChoice])}
-          title={`主题：${THEME_LABEL[themeChoice]}（点击切换）`}
-          aria-label={`主题：${THEME_LABEL[themeChoice]}，点击切换`}
-        >
-          {THEME_ICON[themeChoice]}
-        </button>
+        <ThemeToggle className="c-icon-btn" choice={themeChoice} onChange={setTheme} />
         <div className="c-user">
           <button className="c-avatar" onClick={() => setMenu((v) => !v)} aria-haspopup="menu" aria-expanded={menu}>
             <img src={avatarUrl(profile.player.uuid || profile.player.name)} alt="" />

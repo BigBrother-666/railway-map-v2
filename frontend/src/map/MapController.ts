@@ -4,6 +4,7 @@
  * 渲染与寻路分离——这里用完整几何渲染，寻路图在 routing/ 内单独构建。
  */
 import maplibregl from 'maplibre-gl';
+import type { ResolvedTheme } from '../theme';
 import type { FeatureCollection, LineStringProps, PointProps, RouteGeometry, Train } from '../types';
 import { gameToLngLat, gameLineToLngLat } from './coords';
 import { getConfig, CONTACT_SYSTEM_ID } from '../config';
@@ -16,8 +17,11 @@ const SRC_ENDPOINTS = 'route-endpoints';
 const SRC_HISTORY = 'history-route';
 const SRC_WORLD_TILES = 'world-tiles';
 const LAYER_WORLD_TILES = 'world-tiles-layer';
-/** 底图背景色（与 style 的 bg 图层一致）；淡化时把颜色混向它而非降透明度，避免重叠处 alpha 累加变实。 */
-const BG_COLOR: [number, number, number] = [0x0f, 0x11, 0x15];
+/** 地图画布与界面使用协调的暖灰浅色底，淡化线路混向当前背景。 */
+const MAP_COLORS = {
+  dark: { background: '#000000', text: '#eaeaea', station: '#ffffff', stroke: '#222222' },
+  light: { background: '#e8e5dc', text: '#303a3b', station: '#faf5e8', stroke: '#4b5552' },
+};
 
 interface TrainVisualState {
   train: Train;
@@ -33,6 +37,10 @@ interface TrainVisualState {
 const TRAIN_SMOOTHING_MS = 180;
 const TRAIN_SMOOTHING_EPSILON = 0.001;
 const TRAIN_FOCUS_ANIMATION_MS = 600;
+/** 侧边栏开合时跟踪镜头的过渡时长（与 styles.css 中 .sidebar-left 的 transition 一致）。 */
+const INSET_ANIMATION_MS = 250;
+/** 框选车站时在站台范围四周额外留出的游戏方块数：单站台不会被放大到最大缩放，周边线路也能入镜。 */
+const STATION_FOCUS_MARGIN_BLOCKS = 64;
 
 export class MapController {
   private map: maplibregl.Map;
@@ -50,8 +58,8 @@ export class MapController {
   private onStationClick?: (name: string) => void;
   private onTrainClick?: (id: string) => void;
   private onLineClick?: (lineId: string) => void;
-  /** 左侧被侧边栏遮挡的像素宽度，框选时作为左侧内边距，避免内容落在侧边栏下方。 */
-  private leftInset = 0;
+  /** 被侧边栏遮挡的区域（桌面端左侧 / 手机端底部抽屉），作为地图常驻 padding，居中与框选都以剩余可见区域为准。 */
+  private inset: maplibregl.PaddingOptions = { top: 0, right: 0, bottom: 0, left: 0 };
   private trackedTrainId: string | null = null;
   private trackingResumeAt = 0;
   private trackingZooming = false;
@@ -59,7 +67,7 @@ export class MapController {
   private trainAnimFrame: number | null = null;
   private trainAnimLast = 0;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, private theme: ResolvedTheme = 'dark') {
     this.map = new maplibregl.Map({
       container,
       fadeDuration: 80,
@@ -77,7 +85,7 @@ export class MapController {
         // 纯色底图（无外部瓦片依赖；如配置了世界瓦片，可在此扩展 raster source）
         sources: {},
         layers: [
-          { id: 'bg', type: 'background', paint: { 'background-color': '#0f1115' } },
+          { id: 'bg', type: 'background', paint: { 'background-color': MAP_COLORS[this.theme].background } },
         ],
         glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
       },
@@ -85,13 +93,33 @@ export class MapController {
       zoom: 14,
       maxZoom: 20,
       minZoom: 0,
-      attributionControl: false,
+      attributionControl: {
+        compact: true,
+        customAttribution: '© 2026 RailwayMap · by BigBrother'
+      },
     });
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
   }
 
+  setTheme(theme: ResolvedTheme) {
+    this.theme = theme;
+    // load 前只保存选择，图层创建时直接使用最新主题。
+    if (!this.map.getLayer('bg')) return;
+    const colors = MAP_COLORS[theme];
+    this.map.setPaintProperty('bg', 'background-color', colors.background);
+    if (!this.map.getLayer('stations-layer')) return;
+    this.map.setPaintProperty('stations-layer', 'circle-color', colors.station);
+    this.map.setPaintProperty('stations-layer', 'circle-stroke-color', colors.stroke);
+    this.map.setPaintProperty('stations-label', 'text-color', colors.text);
+    this.map.setPaintProperty('stations-label', 'text-halo-color', colors.background);
+    this.updateLineSource();
+  }
+
   onReady(cb: () => void) {
-    this.map.on('load', cb);
+    this.map.on('load', () => {
+      this.setTheme(this.theme);
+      cb();
+    });
   }
 
   setHandlers(
@@ -104,9 +132,31 @@ export class MapController {
     this.onLineClick = onLineClick;
   }
 
-  /** 设置左侧侧边栏遮挡宽度（0 表示未打开），供框选时留出左侧内边距。 */
-  setLeftInset(px: number) {
-    this.leftInset = Math.max(0, px);
+  /**
+   * 设置侧边栏遮挡区域（0 表示未遮挡）。通过地图常驻 padding 生效：jumpTo / easeTo 不再单独传 padding，
+   * 否则 maplibre 会把残留的 padding 与 fitBounds 的 padding 叠加，手机端可用区域变负导致框选失败、目标落在画面外。
+   * 跟踪列车时镜头移到新可见区域中心；否则保持画面不动，避免开合侧栏时地图跳动。
+   */
+  setInset(left: number, bottom: number) {
+    const next = { top: 0, right: 0, bottom: Math.max(0, bottom), left: Math.max(0, left) };
+    if (next.left === this.inset.left && next.bottom === this.inset.bottom) return;
+    this.inset = next;
+    const tracked = this.trackedTrainId ? this.trainStates.get(this.trackedTrainId) : undefined;
+    if (tracked && tracked.world === this.world) {
+      this.map.easeTo({
+        center: gameToLngLat(tracked.currentX, tracked.currentZ, this.world),
+        padding: next,
+        duration: INSET_ANIMATION_MS,
+      });
+      return;
+    }
+    // 新 padding 下的中心取「新可见区域中心」当前对应的地理位置，画面保持不动。
+    const container = this.map.getContainer();
+    const center = this.map.unproject([
+      next.left + (container.clientWidth - next.left - next.right) / 2,
+      next.top + (container.clientHeight - next.top - next.bottom) / 2,
+    ]);
+    this.map.jumpTo({ center, padding: next });
   }
 
   setTrackingTrainId(id: string | null) {
@@ -424,7 +474,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: { top: 80, bottom: 80, right: 80, left: 80 + this.leftInset },
+      padding: 50,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -626,10 +676,8 @@ export class MapController {
     if (performance.now() < this.trackingResumeAt) return;
     const state = this.trainStates.get(this.trackedTrainId);
     if (!state || state.world !== this.world) return;
-    this.map.jumpTo({
-      center: gameToLngLat(state.currentX, state.currentZ, this.world),
-      padding: { top: 0, bottom: 0, right: 0, left: this.leftInset },
-    });
+    // 打上标记：jumpTo 会同步触发 moveend，若 moveend 再调度居中会形成永不停止的 jumpTo 循环（内存持续升高、页面卡死）。
+    this.map.jumpTo({ center: gameToLngLat(state.currentX, state.currentZ, this.world) }, { trackingJump: true });
   }
 
   private ensureSources() {
@@ -693,8 +741,8 @@ export class MapController {
       source: SRC_STATIONS,
       paint: {
         'circle-radius': getConfig().mapStyle.stationRadius,
-        'circle-color': '#ffffff',
-        'circle-stroke-color': '#222222',
+        'circle-color': MAP_COLORS[this.theme].station,
+        'circle-stroke-color': MAP_COLORS[this.theme].stroke,
         'circle-stroke-width': getConfig().mapStyle.stationStrokeWidth,
         'circle-opacity': stationOpacity,
         'circle-stroke-opacity': stationOpacity,
@@ -716,8 +764,8 @@ export class MapController {
         'symbol-sort-key': ['case', ['get', 'dim'], 1, 0],
       },
       paint: {
-        'text-color': '#eaeaea',
-        'text-halo-color': '#000000',
+        'text-color': MAP_COLORS[this.theme].text,
+        'text-halo-color': MAP_COLORS[this.theme].background,
         'text-halo-width': 1.2,
         'text-opacity': stationOpacity,
       },
@@ -796,8 +844,9 @@ export class MapController {
       this.updateStationSource();
       window.setTimeout(() => this.centerTrackedTrain(), 150);
     });
-    this.map.on('moveend', () => {
-      if (!this.trackedTrainId) return;
+    this.map.on('moveend', (e) => {
+      // 跟踪居中自身触发的 moveend 忽略，只在用户拖动 / 其它镜头动画结束后补一次居中。
+      if (!this.trackedTrainId || (e as { trackingJump?: boolean }).trackingJump) return;
       window.setTimeout(() => this.centerTrackedTrain(), 0);
     });
   }
@@ -805,18 +854,23 @@ export class MapController {
   private refreshWorldData() {
     if (!this.fc) return;
     this.updateWorldTiles();
+    this.updateLineSource();
+    this.updateStationSource();
+    this.setHiddenLines(this.hidden);
+    this.renderHistoryGeometry();
+  }
+
+  private updateLineSource() {
+    if (!this.fc) return;
     const lineFeats = this.fc.features
       .filter((f) => f.geometry?.type === 'LineString' && (f.properties as LineStringProps).world === this.world)
       // 预计算淡化色：把线路本色按 dimOpacity 混向背景色。淡化时基础层用此不透明色，
       // 重叠处是不透明像素直接覆盖、不再累加 alpha，避免「半透明叠加变实」（改善项）。
       .map((f) => {
         const p = f.properties as LineStringProps;
-        return { ...f, properties: { ...p, dimColor: mixTowardBg(p.color, getConfig().mapStyle.dimOpacity) } };
+        return { ...f, properties: { ...p, dimColor: mixTowardBg(p.color, getConfig().mapStyle.dimOpacity, MAP_COLORS[this.theme].background) } };
       });
     (this.map.getSource(SRC_LINES) as maplibregl.GeoJSONSource)?.setData(this.toLngLatFC(lineFeats));
-    this.updateStationSource();
-    this.setHiddenLines(this.hidden);
-    this.renderHistoryGeometry();
   }
 
   private updateWorldTiles() {
@@ -999,10 +1053,10 @@ export class MapController {
         : has
           ? bounds.getCenter()
           : null;
-    const padding = { top: 60, bottom: 60, right: 60, left: 60 + this.leftInset };
+    const padding = 60;
     if (tile?.zoom !== undefined) {
       // 配置了初始缩放：用配置的 zoom 级别定位到指定/数据中心（不自动框选整片范围）。
-      if (center) this.map.jumpTo({ center, zoom: tile.zoom, padding });
+      if (center) this.map.jumpTo({ center, zoom: tile.zoom });
       else this.map.setZoom(tile.zoom);
     } else if (has) {
       // 未配置 zoom：按数据范围自动框选缩放，maxZoom 兜底避免压成一个点。
@@ -1036,7 +1090,7 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: { top: 0, bottom: 0, right: 0, left: 0 + this.leftInset },
+      padding: 50,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -1060,7 +1114,40 @@ export class MapController {
     if (!has) return;
     const tile = getConfig().worldTiles[this.world];
     this.map.fitBounds(bounds, {
-      padding: { top: 0, bottom: 0, right: 0, left: 0 + this.leftInset },
+      padding: 50,
+      maxZoom: tile?.maxZoom ?? 18,
+      duration: 600,
+    });
+  }
+
+  /**
+   * 平滑缩放并移动到当前世界内全部同名站台的范围（用于搜索选中车站）。
+   * 同名站台可能相距很远，不能用平均坐标 + 固定缩放；按站台包围盒外扩 STATION_FOCUS_MARGIN_BLOCKS 后自动确定缩放。
+   */
+  fitToStation(name: string) {
+    if (!this.fc) return;
+    let minX = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxZ = -Infinity;
+    for (const f of this.fc.features) {
+      if (f.geometry?.type !== 'Point') continue;
+      const p = f.properties as PointProps;
+      if (p.type !== 'station' || p.name !== name || p.world !== this.world) continue;
+      const [x, z] = (f.geometry as GeoJSON.Point).coordinates;
+      minX = Math.min(minX, x);
+      minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x);
+      maxZ = Math.max(maxZ, z);
+    }
+    if (minX === Infinity) return;
+    const m = STATION_FOCUS_MARGIN_BLOCKS;
+    const bounds = new maplibregl.LngLatBounds();
+    bounds.extend(gameToLngLat(minX - m, minZ - m, this.world));
+    bounds.extend(gameToLngLat(maxX + m, maxZ + m, this.world));
+    const tile = getConfig().worldTiles[this.world];
+    this.map.fitBounds(bounds, {
+      padding: 50,
       maxZoom: tile?.maxZoom ?? 18,
       duration: 600,
     });
@@ -1068,14 +1155,13 @@ export class MapController {
 
   /**
    * 平滑移动镜头，把给定游戏坐标居中显示（用于点击实时列车卡片跳转到列车位置）。
-   * 保持当前缩放，仅平移；左侧留出侧边栏遮挡宽度，使列车落在可见区域中央。
+   * 未传 zoom 时保持当前缩放，仅平移；常驻 padding 已扣除侧边栏遮挡，目标落在可见区域中央。
    */
   centerOnGame(x: number, z: number, zoom?: number) {
     const center = gameToLngLat(x, z, this.world);
     this.map.easeTo({
       center,
       zoom: zoom === undefined ? this.map.getZoom() : this.clampZoom(zoom),
-      padding: { top: 0, bottom: 0, right: 0, left: this.leftInset },
       duration: TRAIN_FOCUS_ANIMATION_MS,
     });
   }
@@ -1142,14 +1228,15 @@ function angleDelta(from: number, to: number): number {
   return ((((to - from) % 360) + 540) % 360) - 180;
 }
 
-function mixTowardBg(hex: string | undefined, alpha: number): string {
+function mixTowardBg(hex: string | undefined, alpha: number, background: string): string {
+  const bg = parseHex(background)!;
   const rgb = parseHex(hex);
   if (!rgb) return '#888888';
   const a = Math.min(1, Math.max(0, alpha));
   const mix = (c: number, bg: number) => Math.round(c * a + bg * (1 - a));
-  const r = mix(rgb[0], BG_COLOR[0]);
-  const g = mix(rgb[1], BG_COLOR[1]);
-  const b = mix(rgb[2], BG_COLOR[2]);
+  const r = mix(rgb[0], bg[0]);
+  const g = mix(rgb[1], bg[1]);
+  const b = mix(rgb[2], bg[2]);
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
