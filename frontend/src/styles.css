@@ -1497,7 +1497,11 @@ body,
   transition: transform 0.25s ease;
 }
 
-/* 地图搜索框（左上角）：左侧栏展开时移到侧栏右侧，折叠时让出露出的边条 */
+/* 地图搜索框（左上角）：左侧栏展开时移到侧栏右侧，折叠时让出露出的边条。
+   .map-search-toggle 只在手机端收起时显示（见下方 @media）。 */
+.map-search-toggle {
+  display: none;
+}
 .map-search {
   position: absolute;
   top: 12px;
@@ -1739,6 +1743,33 @@ body,
     top: 8px;
     left: 8px;
     width: calc(100% - 100px);
+  }
+  /* 未使用时收起为图标按钮，少挡地图 */
+  .map-search.collapsed {
+    width: auto;
+  }
+  .map-search.collapsed .map-search-row,
+  .map-search.collapsed .map-search-suggest,
+  .map-search.collapsed .map-search-empty {
+    display: none;
+  }
+  .map-search.collapsed .map-search-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+  }
+  .map-search.collapsed .map-search-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 /* 快速车路线图：中途站小圆点与站名（弱化显示） */

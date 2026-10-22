@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import Fuse from 'fuse.js';
 import { Search, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
@@ -12,7 +12,10 @@ type SearchItem =
 
 const MAX_SUGGESTIONS = 8;
 
-/** 地图左上角搜索框：按线路名 / 车站名 / 车站英文名模糊搜索，选中后定位到线路或车站。 */
+/**
+ * 地图左上角搜索框：按线路名 / 车站名 / 车站英文名模糊搜索，选中后定位到线路或车站。
+ * 手机端（≤640px）未使用时收起为一个搜索图标，点击后展开并聚焦；失焦且没有输入时再收起（见 styles.css .map-search.collapsed）。
+ */
 export function MapSearch() {
   const geojson = useStore((s) => s.geojson);
   const lines = useStore((s) => s.lines);
@@ -25,6 +28,8 @@ export function MapSearch() {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
   const items = useMemo<SearchItem[]>(() => {
@@ -79,6 +84,7 @@ export function MapSearch() {
   function choose(item: SearchItem) {
     setQuery(item.name);
     setOpen(false);
+    inputRef.current?.blur(); // 手机端收起键盘，露出定位结果
     if (item.kind === 'line') selectSearchLine(item.lineId);
     else focusStation(item.world, item.x, item.z);
   }
@@ -99,14 +105,28 @@ export function MapSearch() {
       }
     } else if (e.key === 'Escape') {
       setOpen(false);
+      inputRef.current?.blur();
     }
   }
 
   return (
-    <div className="map-search">
+    <div className={`map-search ${expanded || query ? '' : 'collapsed'}`}>
+      <button
+        type="button"
+        className="map-search-toggle"
+        aria-label="搜索线路或车站"
+        onClick={() => {
+          setExpanded(true);
+          // 展开后再聚焦（输入框在收起状态下为 display: none，无法聚焦）
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+      >
+        <Search size={18} strokeWidth={2.25} aria-hidden="true" />
+      </button>
       <div className="map-search-row">
         <Search className="map-search-icon" size={16} strokeWidth={2.25} aria-hidden="true" />
         <input
+          ref={inputRef}
           type="text"
           role="combobox"
           aria-label="搜索线路或车站"
@@ -116,8 +136,16 @@ export function MapSearch() {
           aria-activedescendant={showList ? `${listId}-${active}` : undefined}
           value={query}
           placeholder="搜索线路 / 车站"
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onFocus={() => {
+            setOpen(true);
+            setExpanded(true);
+          }}
+          onBlur={() =>
+            setTimeout(() => {
+              setOpen(false);
+              setExpanded(false); // 有输入时仍展开（className 判断 query）
+            }, 150)
+          }
           onChange={(e) => {
             setQuery(e.target.value);
             setActive(0);
