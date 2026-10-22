@@ -81,7 +81,7 @@ export class MapController {
         // 纯色底图（无外部瓦片依赖；如配置了世界瓦片，可在此扩展 raster source）
         sources: {},
         layers: [
-          { id: 'bg', type: 'background', paint: { 'background-color': '#0f1115' } },
+          { id: 'bg', type: 'background', paint: { 'background-color': '#000000' } },
         ],
         glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
       },
