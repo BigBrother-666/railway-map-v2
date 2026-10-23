@@ -38,7 +38,13 @@ func ComputeCandidates(ctx context.Context, g *Graph, input ComputeInput) []mode
 	if cfg.MaxDistanceResults > 0 && cfg.MaxPriceResults > 0 {
 		directPool = cfg.MaxDistanceResults + cfg.MaxPriceResults
 	}
-	directRaw := FindByStation(ctx, g, input.StartStation, input.EndStation, directPool, input.IsReverse)
+	// 直达与联程票共享同一个 searcher：以终点站为终点的 A* 启发式（直达 + 全部联程第二段）只算一次
+	s := newSearcher(ctx, g, input.IsReverse)
+	// 联程票求改善阈值要用每站台 kspSafetyCap 条直达；先按两者较大值算一遍，较小的一次直接取缓存前缀
+	if directPool > 0 && directPool < kspSafetyCap {
+		s.findByStation(input.StartStation, input.EndStation, 0)
+	}
+	directRaw := s.findByStation(input.StartStation, input.EndStation, directPool)
 	directCandidates := make([]model.RoutePath, len(directRaw))
 	for i, p := range directRaw {
 		p = withFare(p)
@@ -48,7 +54,7 @@ func ComputeCandidates(ctx context.Context, g *Graph, input ComputeInput) []mode
 	}
 
 	// 联程票候选：限方案数（换乘站用站名级缩合矩阵枚举全部，不再截断候选）
-	journeys := FindTransferJourneys(ctx, g, input.StartStation, input.EndStation, cfg.MaxTransferResults, cfg.TransferMinImprovement, input.IsReverse, input.GroupMembers)
+	journeys := s.findTransferJourneys(input.StartStation, input.EndStation, cfg.MaxTransferResults, cfg.TransferMinImprovement, input.GroupMembers)
 	throughCandidates := make([]model.RoutePath, 0, len(journeys))
 	for _, j := range journeys {
 		legs := make([]model.RoutePath, len(j.Legs))

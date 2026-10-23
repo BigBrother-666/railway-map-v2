@@ -8,6 +8,8 @@ package routing
 
 import (
 	"encoding/json"
+	"math"
+	"sync"
 
 	"railway-map-backend/internal/model"
 )
@@ -44,14 +46,19 @@ type Node struct {
 	X, Y, Z   float64
 }
 
-// Graph 是寻路图：节点表 + 出边邻接表 + 车站名索引。
+// Graph 是寻路图：节点表 + 出边邻接表 + 车站名索引。由 BuildFromGeoJSON 构建完成后只读，
+// 下面的派生缓存都用 sync.Once 惰性构建一次，可被多个查询并发使用。
 type Graph struct {
 	Nodes      map[string]*Node
 	adjacency  map[string][]Link
 	stationIdx map[string][]string // 车站名 → 该名下所有 station 节点 id（一个车站可能多站台）
 
-	stationDistCache    map[string]map[string]float64 // stationDirectDistances 的惰性缓存
-	mainlineSwitchCache map[string]string             // mainlineSwitchStations 的惰性缓存
+	ixOnce              sync.Once
+	ix                  *searchIndex      // 寻路热路径用的整数化索引，见 index.go
+	mainlineSwitchCache map[string]string // 「进站道岔|lineId → 停靠线车站名」，随 ix 一起构建
+
+	distOnce         sync.Once
+	stationDistCache map[string]map[string]float64 // stationDirectDistances 的缓存
 }
 
 func newGraph() *Graph {
@@ -167,7 +174,6 @@ func (g *Graph) addNode(n *Node) {
 }
 
 func (g *Graph) addLink(l Link) {
-	g.mainlineSwitchCache = nil
 	g.adjacency[l.From] = append(g.adjacency[l.From], l)
 	if n, ok := g.Nodes[l.From]; ok {
 		n.LineIDs[l.LineID] = struct{}{}
@@ -207,11 +213,14 @@ func (g *Graph) platformNameOfMainlineSwitch(nodeID, lineID string) string {
 	return g.mainlineSwitchStations()[nodeID+"|"+lineID]
 }
 
-// mainlineSwitchStations 惰性构建「进站道岔|lineId → 停靠线车站名」索引，加边时失效。
+// mainlineSwitchStations 返回「进站道岔|lineId → 停靠线车站名」索引（随寻路索引一起惰性构建一次）。
 func (g *Graph) mainlineSwitchStations() map[string]string {
-	if g.mainlineSwitchCache != nil {
-		return g.mainlineSwitchCache
-	}
+	g.index()
+	return g.mainlineSwitchCache
+}
+
+// buildMainlineSwitchStations 构建「进站道岔|lineId → 停靠线车站名」索引。
+func (g *Graph) buildMainlineSwitchStations() map[string]string {
 	result := make(map[string]string)
 	for from, links := range g.adjacency {
 		for i := range links {
@@ -223,7 +232,6 @@ func (g *Graph) mainlineSwitchStations() map[string]string {
 			}
 		}
 	}
-	g.mainlineSwitchCache = result
 	return result
 }
 
@@ -258,56 +266,53 @@ func (g *Graph) sidingStationFrom(switchID, lineID string) string {
 // stationDirectDistances 站名级「直达可达」缩合距离矩阵：起点站名 → 终点站名 → 一趟快速车的最短距离（km）。
 // 复刻 RouteGraph.stationDirectDistances：口径为下界估计（忽略 enterFace / 折返 / 停靠线中途站约束），
 // 只用于 FindTransferJourneys 筛选候选，最终每段仍由 FindByStation 权威实体化施加全部约束。
+// 首次调用时构建（并发安全，只构建一次）。
 func (g *Graph) stationDirectDistances() map[string]map[string]float64 {
-	if g.stationDistCache != nil {
-		return g.stationDistCache
-	}
+	g.distOnce.Do(func() { g.stationDistCache = g.buildStationDirectDistances() })
+	return g.stationDistCache
+}
+
+func (g *Graph) buildStationDirectDistances() map[string]map[string]float64 {
+	ix := g.index()
+	dist := make([]float64, len(ix.nodeIDs))
+	h := &idxHeap{}
 	matrix := make(map[string]map[string]float64, len(g.stationIdx))
 	for startName, platforms := range g.stationIdx {
 		row := make(map[string]float64)
 		for _, platformID := range platforms {
-			g.accumulateShortestToStations(platformID, row)
+			ix.accumulateShortestToStations(ix.nodeIdx[platformID], row, dist, h)
 		}
 		delete(row, startName) // 起点到自身不算直达候选
 		matrix[startName] = row
 	}
-	g.stationDistCache = matrix
 	return matrix
 }
 
 // accumulateShortestToStations 从单一起点节点做普通 Dijkstra（边权 = 段长，米），
-// 把到达各站名的最短距离（km）并入 out（取更小值）。
-func (g *Graph) accumulateShortestToStations(startNodeID string, out map[string]float64) {
-	dist := map[string]float64{startNodeID: 0}
-	type qItem struct {
-		id string
-		d  float64
+// 把到达各站名的最短距离（km）并入 out（取更小值）。dist / h 是调用方复用的缓冲区。
+func (ix *searchIndex) accumulateShortestToStations(start int32, out map[string]float64, dist []float64, h *idxHeap) {
+	for i := range dist {
+		dist[i] = math.Inf(1)
 	}
-	queue := []qItem{{id: startNodeID, d: 0}}
-	for len(queue) > 0 {
-		mi := 0
-		for i := 1; i < len(queue); i++ {
-			if queue[i].d < queue[mi].d {
-				mi = i
-			}
-		}
-		cur := queue[mi]
-		queue = append(queue[:mi], queue[mi+1:]...)
-		if known, ok := dist[cur.id]; ok && cur.d > known {
+	h.items = h.items[:0]
+	dist[start] = 0
+	h.push(idxItem{i: start, d: 0})
+	for h.size() > 0 {
+		cur := h.pop()
+		if cur.d > dist[cur.i] {
 			continue
 		}
-		node := g.Nodes[cur.id]
-		if node != nil && node.Type == "station" && node.Name != "" && cur.d > 0 {
+		if name := ix.nodeName[cur.i]; name >= 0 && cur.d > 0 {
 			km := cur.d / 1000
-			if prev, ok := out[node.Name]; !ok || km < prev {
-				out[node.Name] = km
+			if prev, ok := out[ix.names[name]]; !ok || km < prev {
+				out[ix.names[name]] = km
 			}
 		}
-		for _, link := range g.Links(cur.id) {
-			nd := cur.d + link.Distance
-			if old, ok := dist[link.To]; !ok || nd < old {
-				dist[link.To] = nd
-				queue = append(queue, qItem{id: link.To, d: nd})
+		for _, li := range ix.out[cur.i] {
+			to := ix.linkTo[li]
+			if nd := cur.d + ix.links[li].Distance; nd < dist[to] {
+				dist[to] = nd
+				h.push(idxItem{i: to, d: nd})
 			}
 		}
 	}
