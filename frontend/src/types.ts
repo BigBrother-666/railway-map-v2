@@ -118,6 +118,10 @@ export interface RoutePath {
    * 地图改用快照折线高亮。
    */
   historyGeometry?: RouteGeometry;
+  /**
+   * 路线可能经过的线路（乘车历史结算时记录）：无逐段 lineIdSequence 时，共线段只在这些线路里选边。
+   */
+  allowedLineIds?: string[];
 }
 
 /**
@@ -253,6 +257,10 @@ export interface RideHistoryItem {
   endStation: string;
   paidFare?: number;
   nodeIds: string[];
+  /** 本次乘车经过的线路（去重，按首次经过顺序）；旧记录可能为空。 */
+  lineIds?: string[];
+  /** 逐段 lineId（与 nodeIds 相邻对一一对应，快速车由购票路线给出）；旧记录 / 普通车无此字段。 */
+  segmentLineIds?: string[];
   /** 结算时截取的线路坐标快照；旧记录无此字段。geojson 更新后节点对不上时用它渲染。 */
   geometry?: RouteGeometry;
 }
@@ -297,6 +305,8 @@ export interface Train {
   secondsLived?: number;
   destination?: string;
   routeNodeIds?: string[];
+  /** 快速车逐段 lineId（与 routeNodeIds 相邻对一一对应）；旧版插件不下发。 */
+  routeLineIds?: string[];
   [key: string]: unknown; // 可扩展字段
 }
 

@@ -16,8 +16,9 @@ type edgeGeom struct {
 }
 
 // geoIndex 是由 geojson 解析出的「from__to → 轨道段」与「节点 id → 坐标」索引。
+// 共线段（同一物理轨道上有多条线路）在 geojson 里每条线路各一个 from/to 相同的要素，故 edges 为一对多。
 type geoIndex struct {
-	edges map[string]edgeGeom
+	edges map[string][]edgeGeom
 	nodes map[string][]float64
 }
 
@@ -42,7 +43,7 @@ type rawFeature struct {
 // @param payload geojson FeatureCollection 原始 JSON
 // @return 索引；解析失败返回空索引
 func buildGeoIndex(payload []byte) *geoIndex {
-	idx := &geoIndex{edges: map[string]edgeGeom{}, nodes: map[string][]float64{}}
+	idx := &geoIndex{edges: map[string][]edgeGeom{}, nodes: map[string][]float64{}}
 	var fc struct {
 		Features []rawFeature `json:"features"`
 	}
@@ -68,9 +69,13 @@ func buildGeoIndex(payload []byte) *geoIndex {
 					coords = append(coords, []float64{c[0], c[1]})
 				}
 			}
-			idx.edges[p.From+"__"+p.To] = edgeGeom{
-				lineID: p.LineID, world: p.World, length: p.Length, coords: coords,
+			key := p.From + "__" + p.To
+			if hasLine(idx.edges[key], p.LineID) {
+				continue // 同一条边被两个遍历单元各产出一份
 			}
+			idx.edges[key] = append(idx.edges[key], edgeGeom{
+				lineID: p.LineID, world: p.World, length: p.Length, coords: coords,
+			})
 		}
 	}
 	return idx
@@ -102,8 +107,10 @@ func (c *Cache) index() *geoIndex {
 // 用于乘车历史：即使之后 geojson 更新（中间增删节点、线路删除），历史仍可按当时的线形显示。
 //
 // @param nodeIDs 路线节点 id 序列
+// @param segmentLineIDs 逐段 lineId（可空，与 nodeIDs 相邻对一一对应）：命中候选时共线段直接取该线路
+// @param lineIDs 本次乘车经过的线路（可空）：无逐段信息时共线段只在这些线路里选边
 // @return geom 坐标快照（一段都找不到时为 nil）；meters 找到的轨道段总长；complete 是否所有相邻节点对都找到了轨道段
-func (c *Cache) RouteGeometry(nodeIDs []string) (geom *model.RouteGeometry, meters float64, complete bool) {
+func (c *Cache) RouteGeometry(nodeIDs, segmentLineIDs, lineIDs []string) (geom *model.RouteGeometry, meters float64, complete bool) {
 	if len(nodeIDs) < 2 {
 		return nil, 0, false
 	}
@@ -112,9 +119,8 @@ func (c *Cache) RouteGeometry(nodeIDs []string) (geom *model.RouteGeometry, mete
 	g := &model.RouteGeometry{}
 	complete = true
 	var cur *model.RouteGeometrySegment
-	for i := 0; i < len(nodeIDs)-1; i++ {
-		e, ok := idx.edges[nodeIDs[i]+"__"+nodeIDs[i+1]]
-		if !ok || len(e.coords) < 2 {
+	for _, e := range pickRouteEdges(idx, nodeIDs, segmentLineIDs, lineIDs) {
+		if e == nil || len(e.coords) < 2 {
 			complete = false
 			cur = nil // 缺段处断开折线，避免直线连接跨越未知区域
 			continue
@@ -141,6 +147,83 @@ func (c *Cache) RouteGeometry(nodeIDs []string) (geom *model.RouteGeometry, mete
 	g.Start = idx.nodes[nodeIDs[0]]
 	g.End = idx.nodes[nodeIDs[len(nodeIDs)-1]]
 	return g, meters, complete
+}
+
+// pickRouteEdges 为节点序列的每一段选一条轨道段（与前端 routing/routeEdges.ts 的 resolveRouteEdges 同一规则）：
+// hints 第 i 项命中第 i 段候选时直接取该线路；否则在候选里选「从本段起能沿路线连续覆盖最多段」的线路，
+// 平手沿用上一段的线路；lineIDs 非空且候选中有命中时只在命中者里选。缺段返回 nil。
+func pickRouteEdges(idx *geoIndex, nodeIDs, hints, lineIDs []string) []*edgeGeom {
+	n := len(nodeIDs) - 1
+	if n <= 0 {
+		return nil
+	}
+	if len(hints) != n {
+		hints = nil // 长度对不上节点序列的提示无法逐段对齐，整体忽略
+	}
+	cands := make([][]edgeGeom, n)
+	for i := 0; i < n; i++ {
+		c := idx.edges[nodeIDs[i]+"__"+nodeIDs[i+1]]
+		if len(lineIDs) > 0 && len(c) > 1 {
+			var filtered []edgeGeom
+			for _, e := range c {
+				if contains(lineIDs, e.lineID) {
+					filtered = append(filtered, e)
+				}
+			}
+			if len(filtered) > 0 {
+				c = filtered
+			}
+		}
+		cands[i] = c
+	}
+	// runs[i]：lineID → 从第 i 段起该线路连续出现在候选中的段数（倒序递推）
+	runs := make([]map[string]int, n+1)
+	runs[n] = map[string]int{}
+	for i := n - 1; i >= 0; i-- {
+		runs[i] = make(map[string]int, len(cands[i]))
+		for _, e := range cands[i] {
+			runs[i][e.lineID] = 1 + runs[i+1][e.lineID]
+		}
+	}
+	out := make([]*edgeGeom, n)
+	prev := ""
+	for i := 0; i < n; i++ {
+		best, bestRun := -1, -1
+		for j, e := range cands[i] {
+			if hints != nil && hints[i] != "" && e.lineID == hints[i] {
+				best = j
+				break
+			}
+			run := runs[i][e.lineID]
+			if run > bestRun || (run == bestRun && e.lineID == prev) {
+				best, bestRun = j, run
+			}
+		}
+		if best < 0 {
+			continue
+		}
+		out[i] = &cands[i][best]
+		prev = out[i].lineID
+	}
+	return out
+}
+
+func hasLine(edges []edgeGeom, lineID string) bool {
+	for _, e := range edges {
+		if e.lineID == lineID {
+			return true
+		}
+	}
+	return false
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultLineColor 是线路配置中找不到线路时的兜底颜色（与插件 LineConfig.getColor 一致）。

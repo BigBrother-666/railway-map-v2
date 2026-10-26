@@ -128,9 +128,13 @@ export function MapView({ theme }: { theme: ResolvedTheme }) {
       ctrlRef.current.fitToGeometry(route.historyGeometry);
       return;
     }
-    const legs =
-      route.kind === 'through' && route.journey ? route.journey.legs.map((l) => l.nodeIds) : [route.nodeIds];
-    ctrlRef.current.highlightRoute(legs, route.expressRoute ?? false);
+    const legPaths = route.kind === 'through' && route.journey ? route.journey.legs : [route];
+    const legs = legPaths.map((l) => l.nodeIds);
+    // 逐段 lineId 用于共线段选边（快速车 / 乘车历史无逐段信息，为空数组，由控制器按连续性推断）
+    ctrlRef.current.highlightRoute(legs, route.expressRoute ?? false, {
+      lineHints: legPaths.map((l) => l.lineIdSequence),
+      allowedLines: route.allowedLineIds,
+    });
     // 镜头联动：缩放并移动到选中线路（路线卡片 / 乘车历史通用）；
     // 侧边栏遮挡区域已作为地图常驻 padding 扣除，线路不会落在侧边栏下方。
     // 列车列表点击（center 模式）：镜头由专门的居中 effect 处理，这里不框选整条路线。

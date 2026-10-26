@@ -22,6 +22,7 @@ export function TrainInfo() {
     train?.express && train.routeNodeIds && train.routeNodeIds.length > 1
       ? train.routeNodeIds.join(',')
       : '';
+  const lineKey = routeKey ? train?.routeLineIds?.join(',') ?? '' : '';
   useEffect(() => {
     if (routeKey) {
       useStore.setState({
@@ -29,7 +30,8 @@ export function TrainInfo() {
           {
             stations: [],
             nodeIds: routeKey.split(','),
-            lineIdSequence: [],
+            // 逐段 lineId：共线段按实际线路取色（旧版插件不下发时由地图按连续性推断）
+            lineIdSequence: lineKey ? lineKey.split(',') : [],
             distance: 0,
             segments: [],
             estimatedFare: 0,
@@ -44,7 +46,7 @@ export function TrainInfo() {
         useStore.setState({ candidates: [], selectedRouteIndex: null });
       }
     };
-  }, [trainId, routeKey]);
+  }, [trainId, routeKey, lineKey]);
 
   if (!train) return null;
 

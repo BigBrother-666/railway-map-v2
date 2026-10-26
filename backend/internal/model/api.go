@@ -142,6 +142,8 @@ type RidePaymentData struct {
 	Player       Player   `json:"player"`
 	Express      bool     `json:"express"`
 	RouteNodeIDs []string `json:"routeNodeIds"`
+	// RouteLineIDs 是逐段 lineId（与 RouteNodeIDs 相邻对一一对应）；旧版插件不带此字段。
+	RouteLineIDs []string `json:"routeLineIds,omitempty"`
 	StartStation string   `json:"startStation"`
 	EndStation   string   `json:"endStation"`
 	Distance     float64  `json:"distance"`
@@ -161,6 +163,10 @@ type RideHistoryItem struct {
 	EndStation   string   `json:"endStation"`
 	PaidFare     float64  `json:"paidFare,omitempty"`
 	NodeIDs      []string `json:"nodeIds"`
+	// LineIDs 是本次乘车经过的线路（去重，按首次经过顺序），前端用于共线段选色；旧记录可能为空。
+	LineIDs []string `json:"lineIds,omitempty"`
+	// SegmentLineIDs 是逐段 lineId（与 NodeIDs 相邻对一一对应，快速车由购票路线给出）；旧记录 / 普通车为空。
+	SegmentLineIDs []string `json:"segmentLineIds,omitempty"`
 	// Geometry 是结算时截取的线路坐标快照；旧记录或结算时缺少 geojson 时为 nil。
 	Geometry *RouteGeometry `json:"geometry,omitempty"`
 }

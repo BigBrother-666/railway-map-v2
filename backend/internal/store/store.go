@@ -32,7 +32,7 @@ type Store struct {
 
 // RouteGeometryProvider 按节点序列截取线路坐标快照（由 geo.Cache 实现，接口注入避免 store→geo 循环依赖）。
 type RouteGeometryProvider interface {
-	RouteGeometry(nodeIDs []string) (geom *model.RouteGeometry, meters float64, complete bool)
+	RouteGeometry(nodeIDs, segmentLineIDs, lineIDs []string) (geom *model.RouteGeometry, meters float64, complete bool)
 }
 
 // SetGeometryProvider 注入线路坐标快照提供者。
@@ -399,12 +399,18 @@ func (s *Store) migrateSQLite() error {
 //
 // @param geomType   ride_history.geometry 列类型
 // @param eventIDType ride_events.event_id 列类型
-// @param lineIDsType ride_history.line_ids 列类型
+// @param lineIDsType ride_history.line_ids / segment_line_ids、ride_payments.route_line_ids 列类型
 func (s *Store) migrateCommon(geomType, eventIDType, lineIDsType string) error {
 	if err := s.ensureColumn("ride_history", "geometry", geomType); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("ride_history", "line_ids", lineIDsType); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("ride_history", "segment_line_ids", lineIDsType); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("ride_payments", "route_line_ids", lineIDsType); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("ride_events", "event_id", eventIDType); err != nil {

@@ -135,3 +135,38 @@ describe('buildExpressAxis 正线判定', () => {
     expect(axis.midStations).toEqual([{ name: 'P', progress: 0.5 }]);
   });
 });
+
+describe('buildExpressAxis 共线段', () => {
+  // a→s→b 为 L1 / L2 共线（L2 要素在前），b→c 仅 L1：共线段应取 L1 颜色
+  const sharedLine = (from: string, to: string, x1: number, x2: number, color: string, lineId: string) => {
+    const f = line(from, to, x1, x2, color, lineId);
+    return { ...f, properties: { ...f.properties, id: `${from}-${to}-${lineId}` } };
+  };
+  const fc = {
+    type: 'FeatureCollection',
+    features: [
+      point('a', 0, 'station', 'A'),
+      point('s', 50, 'switch'),
+      point('b', 100, 'station', 'B'),
+      point('c', 200, 'station', 'C'),
+      sharedLine('a', 's', 0, 50, '#0000ff', 'L2'),
+      sharedLine('a', 's', 0, 50, '#ff0000', 'L1'),
+      sharedLine('s', 'b', 50, 100, '#0000ff', 'L2'),
+      sharedLine('s', 'b', 50, 100, '#ff0000', 'L1'),
+      sharedLine('b', 'c', 100, 200, '#ff0000', 'L1'),
+    ],
+  } as unknown as FeatureCollection;
+
+  it('共线段按路线延续的线路取色', () => {
+    const axis = buildExpressAxis(['a', 's', 'b', 'c'], fc, RouteGraph.fromFeatureCollection(fc))!;
+    expect(axis.spans).toEqual([{ color: '#ff0000', from: 0, to: 1 }]);
+  });
+
+  it('逐段 lineId 优先于连续性推断', () => {
+    const axis = buildExpressAxis(['a', 's', 'b', 'c'], fc, RouteGraph.fromFeatureCollection(fc), ['L2', 'L2', 'L1'])!;
+    expect(axis.spans).toEqual([
+      { color: '#0000ff', from: 0, to: 0.5 },
+      { color: '#ff0000', from: 0.5, to: 1 },
+    ]);
+  });
+});

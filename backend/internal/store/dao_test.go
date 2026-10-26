@@ -364,7 +364,7 @@ type fakeGeometry struct {
 	meters float64
 }
 
-func (f fakeGeometry) RouteGeometry([]string) (*model.RouteGeometry, float64, bool) {
+func (f fakeGeometry) RouteGeometry(_, _, _ []string) (*model.RouteGeometry, float64, bool) {
 	return f.geom, f.meters, true
 }
 
@@ -417,5 +417,50 @@ func TestEnsureColumnAddsGeometryToLegacyTable(t *testing.T) {
 	ok, err := s.columnExists("ride_history", "geometry")
 	if err != nil || !ok {
 		t.Fatalf("expected geometry column after migrate, ok=%v err=%v", ok, err)
+	}
+}
+
+// 快速车付费事件带逐段 lineId 时，历史记录原样保存并返回，供前端共线段取色；长度对不上节点序列时丢弃。
+func TestExpressRideHistoryStoresSegmentLineIDs(t *testing.T) {
+	s := openTestStore(t)
+	player := model.Player{UUID: "player-seg", Name: "Seg"}
+	route := []string{"node-a", "switch-1", "node-b"}
+	cases := []struct {
+		train string
+		lines []string
+		want  []string
+	}{
+		{"train-seg", []string{"L2", "L1"}, []string{"L2", "L1"}},
+		{"train-bad", []string{"L2"}, nil},
+	}
+	for i, tc := range cases {
+		pay := payment(tc.train, player, route)
+		pay.RouteLineIDs = tc.lines
+		if err := s.RecordRidePayment(pay); err != nil {
+			t.Fatal(err)
+		}
+		base := int64(i+1) * 10000
+		for j, node := range route {
+			name := map[string]string{"node-a": "A", "node-b": "B"}[node]
+			if err := s.RecordRideEvent(expressEvent(tc.train, node, name, base+int64(j)*1000, player)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := s.FinalizeRide(tc.train); err != nil {
+			t.Fatal(err)
+		}
+	}
+	history, err := s.ListRideHistory(player.UUID, 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for _, item := range history.Items {
+		got[item.TrainID] = item.SegmentLineIDs
+	}
+	for _, tc := range cases {
+		if !reflect.DeepEqual(got[tc.train], tc.want) {
+			t.Errorf("%s segmentLineIds = %v, want %v", tc.train, got[tc.train], tc.want)
+		}
 	}
 }

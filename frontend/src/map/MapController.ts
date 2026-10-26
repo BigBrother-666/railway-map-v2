@@ -9,6 +9,7 @@ import type { FeatureCollection, LineStringProps, PointProps, RouteGeometry, Tra
 import { gameToLngLat, gameLineToLngLat } from './coords';
 import { getConfig, CONTACT_SYSTEM_ID } from '../config';
 import { RouteGraph } from '../routing/graph';
+import { resolveRouteEdges } from '../routing/routeEdges';
 
 const SRC_LINES = 'lines';
 const SRC_STATIONS = 'stations';
@@ -351,11 +352,20 @@ export class MapController {
    *
    * expressRoute=true（快速车路线）时，仅各段首尾节点（起点 / 终点 / 联程票换乘站）保持不透明，
    * 中途车站淡化；否则路线上所有车站均不透明。
+   *
+   * 共线段（同一 from→to 有多条线路的边）按 lineHints（各 leg 的逐段 lineId，如 lineIdSequence）选边；
+   * 无提示时在 allowedLines 内按连续性推断，见 resolveRouteEdges。
    */
-  highlightRoute(legs: string[][] | null, expressRoute = false) {
+  highlightRoute(
+    legs: string[][] | null,
+    expressRoute = false,
+    opts: { lineHints?: (readonly string[] | undefined)[]; allowedLines?: readonly string[] } = {},
+  ) {
     if (!this.fc || !this.map.getLayer('lines-highlight')) return;
     this.setHistoryGeometry(null);
-    const validLegs = (legs ?? []).filter((leg) => leg.length >= 2);
+    const validLegs = (legs ?? [])
+      .map((nodeIds, i) => ({ nodeIds, lineHints: opts.lineHints?.[i] }))
+      .filter((leg) => leg.nodeIds.length >= 2);
     if (validLegs.length === 0) {
       // 清除高亮：highlight 边集合清空（filter 变空集，不渲染），base 恢复本色与正常透明度，车站恢复不透明
       this.highlightEdges = new Set();
@@ -372,16 +382,16 @@ export class MapController {
     const edgeIds = new Set<string>();
     const stationIds = new Set<string>();
     const edgeByEndpoints = this.edgeIdIndex();
-    for (const leg of validLegs) {
+    const edgesOf = (from: string, to: string) => edgeByEndpoints.get(`${from}__${to}`) ?? [];
+    for (const { nodeIds: leg, lineHints } of validLegs) {
       if (expressRoute) {
         stationIds.add(leg[0]);
         stationIds.add(leg[leg.length - 1]);
       } else {
         for (const nodeId of leg) stationIds.add(nodeId);
       }
-      for (let i = 0; i < leg.length - 1; i++) {
-        const id = edgeByEndpoints.get(`${leg[i]}__${leg[i + 1]}`);
-        if (id) edgeIds.add(id);
+      for (const e of resolveRouteEdges(leg, edgesOf, { lineHints, allowedLines: opts.allowedLines })) {
+        if (e) edgeIds.add(e.id);
       }
     }
     this.highlightEdges = edgeIds;
@@ -393,8 +403,8 @@ export class MapController {
     // 非高亮车站淡化（任务 2）
     this.updateStationSource();
     // 端点：整程起点（首段首节点）、终点（末段末节点）
-    const first = validLegs[0];
-    const last = validLegs[validLegs.length - 1];
+    const first = validLegs[0].nodeIds;
+    const last = validLegs[validLegs.length - 1].nodeIds;
     this.setRouteEndpoints(first[0], last[last.length - 1]);
   }
 
@@ -570,14 +580,21 @@ export class MapController {
     src.setData({ type: 'FeatureCollection', features });
   }
 
-  /** from__to → edge id 索引（按当前世界，懒构建一次性使用）。 */
-  private edgeIdIndex(): Map<string, string> {
-    const idx = new Map<string, string>();
+  /**
+   * from__to → 该区间全部边（懒构建一次性使用）。共线段同一 from→to 有多条线路各一条边，
+   * 故为一对多；同 id 的重复要素（两个遍历单元各产出一份）只保留一条。
+   */
+  private edgeIdIndex(): Map<string, { id: string; lineId: string }[]> {
+    const idx = new Map<string, { id: string; lineId: string }[]>();
     if (!this.fc) return idx;
     for (const f of this.fc.features) {
       if (f.geometry?.type !== 'LineString') continue;
       const l = f.properties as LineStringProps;
-      if (l.from && l.to && l.id) idx.set(`${l.from}__${l.to}`, l.id);
+      if (!l.from || !l.to || !l.id) continue;
+      const key = `${l.from}__${l.to}`;
+      const arr = idx.get(key) ?? [];
+      if (!arr.some((e) => e.id === l.id)) arr.push({ id: l.id, lineId: l.lineId });
+      idx.set(key, arr);
     }
     return idx;
   }

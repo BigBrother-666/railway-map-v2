@@ -3,6 +3,7 @@ import { getConfig } from '../config';
 import { useStore } from '../store/useStore';
 import type { FeatureCollection, LineStringProps, Train } from '../types';
 import type { RouteGraph } from '../routing/graph';
+import { resolveRouteEdges } from '../routing/routeEdges';
 import {
   DIAGRAM_PAD,
   LABEL_EDGE_MARGIN,
@@ -64,9 +65,13 @@ export function ExpressRouteDiagram({ train }: { train: Train }) {
 
   // 依赖路线内容而非整个 train 对象，避免位置刷新时反复重建路线轴。
   const routeKey = train.routeNodeIds && train.routeNodeIds.length > 1 ? train.routeNodeIds.join(',') : '';
+  const lineKey = train.routeLineIds?.join(',') ?? '';
   const axis = useMemo(
-    () => (routeKey && geojson && graph ? buildExpressAxis(routeKey.split(','), geojson, graph) : null),
-    [routeKey, geojson, graph],
+    () =>
+      routeKey && geojson && graph
+        ? buildExpressAxis(routeKey.split(','), geojson, graph, lineKey ? lineKey.split(',') : undefined)
+        : null,
+    [routeKey, lineKey, geojson, graph],
   );
   if (!axis || !graph) return null;
 
@@ -166,9 +171,23 @@ export function ExpressRouteDiagram({ train }: { train: Train }) {
 /**
  * 按快速车 routeNodeIds 逐段构建路线轴：段长取 geojson length（缺省按几何长度），颜色取轨道段 color（加载时已按线路配置覆盖，含联络线）。
  * geojson 缺失某段时以两端节点直线兜底，颜色沿用相邻段。
+ * 共线段（同一 from→to 有多条线路）优先按 lineHints（逐段 lineId）选边，无提示时按连续性推断（resolveRouteEdges）。
  */
-export function buildExpressAxis(nodeIds: string[], fc: FeatureCollection, graph: RouteGraph): ExpressAxis | null {
-  const features = new Map<string, { props: LineStringProps; coords: Point2[] }>();
+export function buildExpressAxis(
+  nodeIds: string[],
+  fc: FeatureCollection,
+  graph: RouteGraph,
+  lineHints?: readonly string[],
+): ExpressAxis | null {
+  type EdgeFeature = { lineId: string; props: LineStringProps; coords: Point2[] };
+  // 正向区间优先；仅反向存在时用反向几何兜底
+  const forward = new Map<string, EdgeFeature[]>();
+  const reverse = new Map<string, EdgeFeature[]>();
+  const push = (m: Map<string, EdgeFeature[]>, key: string, f: EdgeFeature) => {
+    const arr = m.get(key) ?? [];
+    if (!arr.some((e) => e.lineId === f.lineId)) arr.push(f);
+    m.set(key, arr);
+  };
   for (const feature of fc.features) {
     if (feature.geometry?.type !== 'LineString') continue;
     const props = feature.properties as LineStringProps;
@@ -177,11 +196,13 @@ export function buildExpressAxis(nodeIds: string[], fc: FeatureCollection, graph
       .map((c) => ({ x: c[0], z: c[1] }))
       .filter((c) => Number.isFinite(c.x) && Number.isFinite(c.z));
     if (coords.length < 2) continue;
-    const key = edgeKey(props.from, props.to);
-    if (!features.has(key)) features.set(key, { props, coords });
-    const reverseKey = edgeKey(props.to, props.from);
-    if (!features.has(reverseKey)) features.set(reverseKey, { props, coords: [...coords].reverse() });
+    push(forward, edgeKey(props.from, props.to), { lineId: props.lineId, props, coords });
+    push(reverse, edgeKey(props.to, props.from), { lineId: props.lineId, props, coords: [...coords].reverse() });
   }
+  const picked = resolveRouteEdges(nodeIds, (from, to) => {
+    const key = edgeKey(from, to);
+    return forward.get(key) ?? reverse.get(key) ?? [];
+  }, { lineHints });
 
   const segments: ExpressSegment[] = [];
   const stationDistances: { name: string; distance: number }[] = [];
@@ -202,7 +223,7 @@ export function buildExpressAxis(nodeIds: string[], fc: FeatureCollection, graph
   for (let i = 0; i < nodeIds.length - 1; i++) {
     const from = nodeIds[i];
     const to = nodeIds[i + 1];
-    const feature = features.get(edgeKey(from, to));
+    const feature = picked[i];
     let coords: Point2[];
     let color: string | null = null;
     let length: number;

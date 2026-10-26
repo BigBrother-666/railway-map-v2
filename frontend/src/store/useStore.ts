@@ -576,7 +576,9 @@ export const useStore = create<AppState>((set, get) => ({
         stationSteps: [{ stationName: item.startStation }, { stationName: item.endStation }],
         nodeIds,
         historyGeometry,
-        lineIdSequence: [],
+        // 逐段 lineId 只对原始节点序列有效；修补过的序列改用经过线路约束推断
+        lineIdSequence: nodeIds === item.nodeIds ? item.segmentLineIds ?? [] : [],
+        allowedLineIds: item.lineIds,
         distance: item.distance,
         segments: [],
         estimatedFare: item.paidFare ?? 0,

@@ -131,12 +131,13 @@ func (s *Store) RecordRidePayment(pay model.RidePaymentData) error {
 		return err
 	}
 	routeJSON, _ := json.Marshal(pay.RouteNodeIDs)
+	routeLineJSON := nullableJSON(pay.RouteLineIDs)
 	var query string
 	if s.dialect == dialectMySQL {
 		query = `INSERT INTO ride_payments
 			(train_id, player_uuid, player_name, train_type, express, start_station, end_station,
-			 distance, paid_fare, route_node_ids, paid_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 distance, paid_fare, route_node_ids, route_line_ids, paid_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON DUPLICATE KEY UPDATE
 			player_name = VALUES(player_name),
 			train_type = VALUES(train_type),
@@ -146,17 +147,18 @@ func (s *Store) RecordRidePayment(pay model.RidePaymentData) error {
 			distance = VALUES(distance),
 			paid_fare = VALUES(paid_fare),
 			route_node_ids = VALUES(route_node_ids),
+			route_line_ids = VALUES(route_line_ids),
 			paid_at = VALUES(paid_at)`
 	} else {
 		query = `INSERT OR REPLACE INTO ride_payments
 			(train_id, player_uuid, player_name, train_type, express, start_station, end_station,
-			 distance, paid_fare, route_node_ids, paid_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			 distance, paid_fare, route_node_ids, route_line_ids, paid_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	}
 	_, err := s.db.Exec(
 		query,
 		pay.TrainID, pay.Player.UUID, pay.Player.Name, pay.TrainType, boolToInt(pay.Express),
-		pay.StartStation, pay.EndStation, round2(pay.Distance), round2(pay.PaidFare), string(routeJSON), pay.PaidAt,
+		pay.StartStation, pay.EndStation, round2(pay.Distance), round2(pay.PaidFare), string(routeJSON), routeLineJSON, pay.PaidAt,
 	)
 	return err
 }
@@ -296,21 +298,23 @@ type ridePayment struct {
 	Distance     float64
 	PaidFare     float64
 	RouteNodeIDs []string
+	RouteLineIDs []string
 	PaidAt       int64
 }
 
 func (s *Store) loadRidePayment(playerUUID, trainID string) (*ridePayment, error) {
 	row := s.db.QueryRow(
 		`SELECT train_id, player_uuid, player_name, train_type, express, start_station, end_station,
-			distance, paid_fare, route_node_ids, paid_at
+			distance, paid_fare, route_node_ids, route_line_ids, paid_at
 		 FROM ride_payments WHERE player_uuid = ? AND train_id = ?`,
 		playerUUID, trainID,
 	)
 	var pay ridePayment
 	var express int
 	var routeJSON string
+	var routeLineJSON sql.NullString
 	if err := row.Scan(&pay.TrainID, &pay.PlayerUUID, &pay.PlayerName, &pay.TrainType, &express,
-		&pay.StartStation, &pay.EndStation, &pay.Distance, &pay.PaidFare, &routeJSON, &pay.PaidAt); err != nil {
+		&pay.StartStation, &pay.EndStation, &pay.Distance, &pay.PaidFare, &routeJSON, &routeLineJSON, &pay.PaidAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -318,6 +322,9 @@ func (s *Store) loadRidePayment(playerUUID, trainID string) (*ridePayment, error
 	}
 	pay.Express = intToBool(express)
 	_ = json.Unmarshal([]byte(routeJSON), &pay.RouteNodeIDs)
+	if routeLineJSON.Valid && routeLineJSON.String != "" {
+		_ = json.Unmarshal([]byte(routeLineJSON.String), &pay.RouteLineIDs)
+	}
 	return &pay, nil
 }
 
@@ -381,7 +388,8 @@ func (s *Store) finalizeExpress(playerUUID, playerName, trainID, trainType strin
 		endedAt:   endedAt,
 		distance:  pay.Distance, paidFare: pay.PaidFare,
 		startStation: pay.StartStation, endStation: pay.EndStation, nodeIDs: pay.RouteNodeIDs,
-		lineIDs: lineIDsBetween(stops, startedAt, endedAt),
+		lineIDs:        lineIDsBetween(stops, startedAt, endedAt),
+		segmentLineIDs: segmentLineIDsOf(pay),
 	})
 }
 
@@ -461,6 +469,25 @@ type rideHistoryRow struct {
 	endStation   string
 	nodeIDs      []string
 	lineIDs      []string
+	// segmentLineIDs 是逐段 lineId（与 nodeIDs 相邻对一一对应）；无逐段信息时为 nil。
+	segmentLineIDs []string
+}
+
+// segmentLineIDsOf 返回付费路线的逐段 lineId；旧版插件未下发或长度对不上节点序列时返回 nil。
+func segmentLineIDsOf(pay *ridePayment) []string {
+	if len(pay.RouteLineIDs) == 0 || len(pay.RouteLineIDs) != len(pay.RouteNodeIDs)-1 {
+		return nil
+	}
+	return pay.RouteLineIDs
+}
+
+// nullableJSON 把字符串数组序列化为 JSON；空数组写 NULL。
+func nullableJSON(ids []string) any {
+	if len(ids) == 0 {
+		return nil
+	}
+	b, _ := json.Marshal(ids)
+	return string(b)
 }
 
 // lineIDsBetween 按乘车顺序收集 [from, to] 时间区间内经过的线路 ID（去重，保持首次出现顺序）。
@@ -484,13 +511,14 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 		h.lineIDs = []string{}
 	}
 	lineJSON, _ := json.Marshal(h.lineIDs)
+	segmentJSON := nullableJSON(h.segmentLineIDs)
 	geomJSON, distance := s.snapshotGeometry(h)
 	var query string
 	if s.dialect == dialectMySQL {
 		query = `INSERT INTO ride_history
 			(player_uuid, player_name, train_id, train_type, express, started_at, ended_at, distance,
-			 start_station, end_station, paid_fare, node_ids, geometry, line_ids)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 start_station, end_station, paid_fare, node_ids, geometry, line_ids, segment_line_ids)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON DUPLICATE KEY UPDATE
 			player_name = VALUES(player_name),
 			train_type = VALUES(train_type),
@@ -502,12 +530,13 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 			paid_fare = VALUES(paid_fare),
 			node_ids = VALUES(node_ids),
 			line_ids = VALUES(line_ids),
+			segment_line_ids = VALUES(segment_line_ids),
 			geometry = COALESCE(geometry, VALUES(geometry))`
 	} else {
 		query = `INSERT INTO ride_history
 			(player_uuid, player_name, train_id, train_type, express, started_at, ended_at, distance,
-			 start_station, end_station, paid_fare, node_ids, geometry, line_ids)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 start_station, end_station, paid_fare, node_ids, geometry, line_ids, segment_line_ids)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(player_uuid, train_id, started_at) DO UPDATE SET
 			player_name = excluded.player_name,
 			train_type = excluded.train_type,
@@ -519,13 +548,14 @@ func (s *Store) insertRideHistory(h rideHistoryRow) error {
 			paid_fare = excluded.paid_fare,
 			node_ids = excluded.node_ids,
 			line_ids = excluded.line_ids,
+			segment_line_ids = excluded.segment_line_ids,
 			geometry = COALESCE(ride_history.geometry, excluded.geometry)`
 	}
 	_, err := s.db.Exec(
 		query,
 		h.playerUUID, h.playerName, h.trainID, h.trainType, boolToInt(h.express),
 		h.startedAt, h.endedAt, round2(distance), h.startStation, h.endStation,
-		round2(h.paidFare), string(nodeJSON), geomJSON, string(lineJSON),
+		round2(h.paidFare), string(nodeJSON), geomJSON, string(lineJSON), segmentJSON,
 	)
 	return err
 }
@@ -540,7 +570,7 @@ func (s *Store) snapshotGeometry(h rideHistoryRow) (geomJSON any, distance float
 	if s.geometry == nil {
 		return nil, distance
 	}
-	geom, meters, complete := s.geometry.RouteGeometry(h.nodeIDs)
+	geom, meters, complete := s.geometry.RouteGeometry(h.nodeIDs, h.segmentLineIDs, h.lineIDs)
 	if distance <= 0 && complete {
 		distance = meters / 1000
 	}
@@ -593,7 +623,7 @@ func (s *Store) ListRideHistory(playerUUID string, page, pageSize int) (model.Ri
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
 		`SELECT id, train_id, train_type, express, started_at, ended_at, distance,
-			start_station, end_station, paid_fare, node_ids, geometry
+			start_station, end_station, paid_fare, node_ids, geometry, line_ids, segment_line_ids
 		 FROM ride_history WHERE player_uuid = ?
 		 ORDER BY ended_at DESC, id DESC LIMIT ? OFFSET ?`,
 		playerUUID, pageSize, offset,
@@ -608,13 +638,19 @@ func (s *Store) ListRideHistory(playerUUID string, page, pageSize int) (model.Ri
 		var item model.RideHistoryItem
 		var express int
 		var nodeJSON string
-		var geomJSON sql.NullString
+		var geomJSON, lineJSON, segmentJSON sql.NullString
 		if err := rows.Scan(&item.ID, &item.TrainID, &item.TrainType, &express, &item.StartedAt, &item.EndedAt,
-			&item.Distance, &item.StartStation, &item.EndStation, &item.PaidFare, &nodeJSON, &geomJSON); err != nil {
+			&item.Distance, &item.StartStation, &item.EndStation, &item.PaidFare, &nodeJSON, &geomJSON, &lineJSON, &segmentJSON); err != nil {
 			return model.RideHistoryResponse{}, err
 		}
 		item.Express = intToBool(express)
 		_ = json.Unmarshal([]byte(nodeJSON), &item.NodeIDs)
+		if lineJSON.Valid && lineJSON.String != "" {
+			_ = json.Unmarshal([]byte(lineJSON.String), &item.LineIDs)
+		}
+		if segmentJSON.Valid && segmentJSON.String != "" {
+			_ = json.Unmarshal([]byte(segmentJSON.String), &item.SegmentLineIDs)
+		}
 		if geomJSON.Valid && geomJSON.String != "" {
 			var geom model.RouteGeometry
 			if json.Unmarshal([]byte(geomJSON.String), &geom) == nil {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -92,6 +93,14 @@ func TestFinalizeRecordsLineIDsAndStats(t *testing.T) {
 	}
 	if lineIDs != `["L1","L2"]` {
 		t.Errorf("line_ids = %s", lineIDs)
+	}
+	// 历史接口返回经过的线路，供前端共线段选色
+	hist, err := s.ListRideHistory("u1", 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist.Items) != 1 || !reflect.DeepEqual(hist.Items[0].LineIDs, []string{"L1", "L2"}) {
+		t.Errorf("history lineIds = %+v", hist.Items)
 	}
 	st, err := s.PlayerStats("u1")
 	if err != nil {
