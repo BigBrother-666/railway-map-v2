@@ -119,6 +119,8 @@ export interface PrivateLine {
   bossbarColor?: string;
   noticeArrival?: string;
   noticeDeparture?: string;
+  /** 仅展示线路（railway_routes.yml 的 display-only）：寻路 / 购票不经过该线路。 */
+  displayOnly: boolean;
 }
 
 export interface StationAliasesResponse {

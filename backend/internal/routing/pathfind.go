@@ -12,6 +12,9 @@ import (
 // ReversePredicate 判断 (lineId, stationName) 是否为折返站。
 type ReversePredicate func(lineID, stationName string) bool
 
+// LinePredicate 判断线路是否满足某条件（如是否为仅展示线路）。
+type LinePredicate func(lineID string) bool
+
 // kspSafetyCap 是未限制条数时每站台 K-最短路的安全上限（复刻插件 GeoRouteEngine）。
 const kspSafetyCap = 16
 
@@ -26,7 +29,9 @@ type searcher struct {
 	g         *Graph
 	ix        *searchIndex
 	isReverse ReversePredicate
-	targets   map[string]*target
+	// isDisplayOnly 判断线路是否为仅展示线路（寻路不经过）；nil 表示没有仅展示线路。
+	isDisplayOnly LinePredicate
+	targets       map[string]*target
 	// ksp 缓存 (起点节点, 终点站名) 的 kShortest 结果。kShortest 是确定性的，且只在出队前检查条数，
 	// 故 k 条的结果恰是更大 k 结果的前缀：已算过更大 k、或已穷尽（结果不足 k 条且未被取消）时直接取前缀。
 	ksp map[kspKey]kspResult
@@ -43,8 +48,8 @@ type kspResult struct {
 	exhausted bool // 结果少于 k 条且未被 ctx 打断：再大的 k 也不会多出结果
 }
 
-func newSearcher(ctx context.Context, g *Graph, isReverse ReversePredicate) *searcher {
-	return &searcher{ctx: ctx, g: g, ix: g.index(), isReverse: isReverse, targets: make(map[string]*target), ksp: make(map[kspKey]kspResult)}
+func newSearcher(ctx context.Context, g *Graph, isReverse ReversePredicate, isDisplayOnly LinePredicate) *searcher {
+	return &searcher{ctx: ctx, g: g, ix: g.index(), isReverse: isReverse, isDisplayOnly: isDisplayOnly, targets: make(map[string]*target), ksp: make(map[kspKey]kspResult)}
 }
 
 // kShortestCached 是带查询内缓存的 kShortest，返回的切片只读。
@@ -82,7 +87,7 @@ func (s *searcher) target(endStation string) *target {
 	if t, ok := s.targets[endStation]; ok {
 		return t
 	}
-	t := computeTarget(s.ctx, s.ix, endStation, s.isReverse)
+	t := computeTarget(s.ctx, s.ix, endStation, s.isReverse, s.isDisplayOnly)
 	if t != nil {
 		s.targets[endStation] = t
 	}
@@ -184,7 +189,7 @@ func (h *minHeap) size() int { return len(h.items) }
 // GeoRouteEngine.findByStation：枚举起点各站台各求 K 条 → 一级按 departDirectionSequence 去重 →
 // 二级按 stationSequence 去重，择优规则 isBetterRoute（转线次数少者优先，相同则距离短者）。
 func FindByStation(ctx context.Context, g *Graph, startStation, endStation string, maxResults int, isReverse ReversePredicate) []model.RoutePath {
-	return newSearcher(ctx, g, isReverse).findByStation(startStation, endStation, maxResults)
+	return newSearcher(ctx, g, isReverse, nil).findByStation(startStation, endStation, maxResults)
 }
 
 func (s *searcher) findByStation(startStation, endStation string, maxResults int) []model.RoutePath {
@@ -257,7 +262,7 @@ func lineTransferCount(seq []string) int {
 
 // kShortest 从单一起点节点求 K 条无环最短路线，终点为任一名为 endStation 的 station 节点。
 func kShortest(ctx context.Context, g *Graph, startID, endStation string, k int, isReverse ReversePredicate) []model.RoutePath {
-	return newSearcher(ctx, g, isReverse).kShortest(startID, endStation, k)
+	return newSearcher(ctx, g, isReverse, nil).kShortest(startID, endStation, k)
 }
 
 // kShortest 按「已走距离 + 剩余距离下界」（A*，见 target）扩展部分路径，跳过已在当前路径前缀中的节点
@@ -320,7 +325,7 @@ func (s *searcher) kShortest(startID, endStation string, k int) []model.RoutePat
 		}
 		uIsSwitch := !ix.isStation[u]
 		for _, li := range ix.out[u] {
-			// h=+Inf 已涵盖：目标节点不存在、经停靠线进入中途站、折返站，以及之后无论如何到不了终点
+			// h=+Inf 已涵盖：目标节点不存在、经停靠线进入中途站、折返站、仅展示线路，以及之后无论如何到不了终点
 			h := t.h[li]
 			if math.IsInf(h, 1) {
 				continue
@@ -521,7 +526,7 @@ type GroupMembersFunc func(stationName string) []string
 // minImprovement：最低改善比例 [0,1)：换乘总距离须 < 最短直达 ×(1-此值)；两站无直达时门槛不生效。
 // groupMembers：站组查询函数，为 nil 时视为没有任何站组（只能同站换乘）。
 func FindTransferJourneys(ctx context.Context, g *Graph, startStation, endStation string, maxResults int, minImprovement float64, isReverse ReversePredicate, groupMembers GroupMembersFunc) []RawJourney {
-	return newSearcher(ctx, g, isReverse).findTransferJourneys(startStation, endStation, maxResults, minImprovement, groupMembers)
+	return newSearcher(ctx, g, isReverse, nil).findTransferJourneys(startStation, endStation, maxResults, minImprovement, groupMembers)
 }
 
 func (s *searcher) findTransferJourneys(startStation, endStation string, maxResults int, minImprovement float64, groupMembers GroupMembersFunc) []RawJourney {

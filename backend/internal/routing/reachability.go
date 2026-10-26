@@ -26,7 +26,7 @@ var posInf = math.Inf(1)
 //
 // h[l] 是「沿边 l 到达 l.To 之后」到任一终点站节点的最短剩余距离（米）：套用 kShortest 除
 // 「不可重复经过同一节点 / 同名站」之外的全部边约束（入向面门控 / 停靠线中途站跳过 / 折返站跳过 /
-// 终点站不再穿越），不可达为 +Inf。状态取「到达所经的边」，因为入向面门控只取决于它的 enterTo。
+// 仅展示线路跳过 / 终点站不再穿越），不可达为 +Inf。状态取「到达所经的边」，因为入向面门控只取决于它的 enterTo。
 //
 // 忽略重复经过约束只会让剩余距离更短，故 h 是 kShortest 真实剩余距离的下界（可采纳）；又因
 // h[l] <= w(l') + h[l'] 对每个合法接续 l→l' 成立（一致），A* 按 g+h 出队时终点仍按 g 非降序出队，
@@ -53,7 +53,7 @@ func (t *target) startH(ix *searchIndex, start int32) float64 {
 }
 
 // computeTarget 在边状态图上从全部终点站反向跑 Dijkstra 得到 h。ctx 取消时返回 nil。
-func computeTarget(ctx context.Context, ix *searchIndex, endStation string, isReverse ReversePredicate) *target {
+func computeTarget(ctx context.Context, ix *searchIndex, endStation string, isReverse ReversePredicate, isDisplayOnly LinePredicate) *target {
 	if testReachabilityEntryHook != nil {
 		testReachabilityEntryHook()
 	}
@@ -61,13 +61,13 @@ func computeTarget(ctx context.Context, ix *searchIndex, endStation string, isRe
 	if id, ok := ix.nameIdx[endStation]; ok {
 		t.endName = id
 	}
-	// blocked：kShortest 必然剪掉的边——目标节点不存在，或是「非终点」中途车站且经停靠线进入 / 属于折返站。
+	// blocked：kShortest 必然剪掉的边——目标节点不存在、属于仅展示线路，或是「非终点」中途车站且经停靠线进入 / 属于折返站。
 	blocked := make([]bool, len(ix.links))
 	h := &idxHeap{}
 	for li := range ix.links {
 		t.h[li] = posInf
 		to := ix.linkTo[li]
-		if !ix.exists[to] {
+		if !ix.exists[to] || (isDisplayOnly != nil && isDisplayOnly(ix.links[li].LineID)) {
 			blocked[li] = true
 			continue
 		}
@@ -125,7 +125,7 @@ func reachableIgnoringRevisit(ctx context.Context, g *Graph, startID, endStation
 	if !ok || !ix.exists[start] {
 		return false
 	}
-	t := computeTarget(ctx, ix, endStation, isReverse)
+	t := computeTarget(ctx, ix, endStation, isReverse, nil)
 	if t == nil {
 		return false
 	}

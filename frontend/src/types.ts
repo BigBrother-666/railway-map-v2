@@ -48,6 +48,8 @@ export interface Line {
   ring: boolean;
   /** 折返站（:RV）干净站名，寻路时跳过（与插件同步）。 */
   reverseStations?: string[];
+  /** 仅展示线路：只在地图上展示，寻路 / 购票不经过该线路。 */
+  displayOnly?: boolean;
 }
 
 /** 铁路系统（GET /api/v1/systems）。 */

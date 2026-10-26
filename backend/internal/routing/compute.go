@@ -14,7 +14,9 @@ type ComputeInput struct {
 	Systems      map[string]System
 	// IsReverse 判断 (lineId, stationName) 是否为折返站，寻路时跳过。
 	IsReverse ReversePredicate
-	Cfg       config.RouteConfig
+	// IsDisplayOnly 判断线路是否为仅展示线路，寻路不经过该线路的任何区间；nil 表示没有仅展示线路。
+	IsDisplayOnly LinePredicate
+	Cfg           config.RouteConfig
 	// GroupMembers 查询车站所在站组成员，仅用于联程票换乘（站组内可步行换乘）；nil 表示无站组。
 	GroupMembers GroupMembersFunc
 	// GlobalPricePerKm 是系统未显式配置票价时的默认每公里价格（对齐 frontend.defaultPricePerKm）。
@@ -39,7 +41,7 @@ func ComputeCandidates(ctx context.Context, g *Graph, input ComputeInput) []mode
 		directPool = cfg.MaxDistanceResults + cfg.MaxPriceResults
 	}
 	// 直达与联程票共享同一个 searcher：以终点站为终点的 A* 启发式（直达 + 全部联程第二段）只算一次
-	s := newSearcher(ctx, g, input.IsReverse)
+	s := newSearcher(ctx, g, input.IsReverse, input.IsDisplayOnly)
 	// 联程票求改善阈值要用每站台 kspSafetyCap 条直达；先按两者较大值算一遍，较小的一次直接取缓存前缀
 	if directPool > 0 && directPool < kspSafetyCap {
 		s.findByStation(input.StartStation, input.EndStation, 0)

@@ -199,7 +199,7 @@ func (a *API) Tile(w http.ResponseWriter, r *http.Request) {
 
 // Lines / Systems 返回线路 / 系统数组（原始 JSON 透传）。
 func (a *API) Lines(w http.ResponseWriter, r *http.Request) {
-	if b := a.cache.Lines(); b != nil {
+	if b, _ := a.cache.Lines(); b != nil {
 		writeRaw(w, http.StatusOK, b)
 		return
 	}

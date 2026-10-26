@@ -497,6 +497,8 @@ body,
 .hint {
   font-size: 12px;
   margin-top: 6px;
+  margin-bottom: 3px;
+  text-align: center;
 }
 
 .chips {

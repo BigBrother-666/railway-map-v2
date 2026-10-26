@@ -20,10 +20,13 @@ type fakeGeoSource struct {
 	// stations / stationsVer 模拟站组快照，测试可中途替换
 	stations    []byte
 	stationsVer string
+	// lines / linesVer 模拟线路快照（折返站 / 仅展示线路），测试可中途替换
+	lines    []byte
+	linesVer string
 }
 
 func (f *fakeGeoSource) Geojson() ([]byte, string)  { return f.geojson, f.version }
-func (f *fakeGeoSource) Lines() []byte              { return nil }
+func (f *fakeGeoSource) Lines() ([]byte, string)    { return f.lines, f.linesVer }
 func (f *fakeGeoSource) Systems() []byte            { return nil }
 func (f *fakeGeoSource) Stations() ([]byte, string) { return f.stations, f.stationsVer }
 

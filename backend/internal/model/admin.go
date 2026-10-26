@@ -66,6 +66,8 @@ type PrivateLine struct {
 	BossbarColor         string   `json:"bossbarColor,omitempty"`
 	NoticeArrival        string   `json:"noticeArrival,omitempty"`
 	NoticeDeparture      string   `json:"noticeDeparture,omitempty"`
+	// DisplayOnly 对应 railway_routes.yml 的 display-only：仅展示线路，寻路 / 购票不经过。
+	DisplayOnly bool `json:"displayOnly"`
 }
 
 // RevenueEventData 是 revenue.event 的负载。

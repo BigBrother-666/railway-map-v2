@@ -79,6 +79,7 @@ export function LineEditor({
   const [bossbarColor, setBossbarColor] = useState(line.bossbarColor ?? '');
   const [noticeArrival, setNoticeArrival] = useState<NoticeRow[]>(parseNotices(line.noticeArrival));
   const [noticeDeparture, setNoticeDeparture] = useState<NoticeRow[]>(parseNotices(line.noticeDeparture));
+  const [displayOnly, setDisplayOnly] = useState(line.displayOnly ?? false);
 
   // 全服线路加载完成后重新识别末项（可能是转入其它系统线路的转线目标）；仅在用户尚未改动车站列表时进行
   useEffect(() => {
@@ -130,6 +131,7 @@ export function LineEditor({
         bossbarColor,
         noticeArrival: formatNotices(noticeArrival),
         noticeDeparture: formatNotices(noticeDeparture),
+        displayOnly,
       });
       onSaved(res.warnings);
       onClose();
@@ -181,6 +183,10 @@ export function LineEditor({
                 </option>
               ))}
             </select>
+          </label>
+          <label className="c-check" title="仅在地图上展示，查询车票 / 寻路时不会经过该线路">
+            <input type="checkbox" checked={displayOnly} onChange={(e) => setDisplayOnly(e.target.checked)} />
+            仅展示线路（不参与购票）
           </label>
         </div>
       </fieldset>

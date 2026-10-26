@@ -64,6 +64,8 @@ function StationPanel() {
     });
   }
   const lineList = lines.filter((l) => lineIds.has(l.id) && l.systemId !== CONTACT_SYSTEM_ID);
+  // 车站只经过仅展示线路（不计联络线）时不能购票，禁用路线查询
+  const displayOnlyStation = lineList.length > 0 && lineList.every((l) => l.displayOnly);
 
   return (
     <div className="panel">
@@ -124,10 +126,11 @@ function StationPanel() {
           </div>
         </div>
       </div>
+      {!player ? <div className="hint muted">请先登录后查询路线</div> : displayOnlyStation ? <div className="hint muted">该车站仅展示，无法查询路线</div> : undefined}
       <button
         className="btn primary"
-        disabled={!player}
-        title={player ? undefined : '请先登录后查询路线'}
+        disabled={!player || displayOnlyStation}
+        title={!player ? '请先登录后查询路线' : displayOnlyStation ? '该车站仅展示，无法查询路线' : undefined}
         onClick={() => openRoutePanel(name)}
       >
         路线

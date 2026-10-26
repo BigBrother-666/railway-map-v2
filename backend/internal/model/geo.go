@@ -30,6 +30,8 @@ type Line struct {
 	Stations        []string `json:"stations"`
 	Ring            bool     `json:"ring"`
 	ReverseStations []string `json:"reverseStations,omitempty"`
+	// DisplayOnly 为 true 表示仅展示线路：只在地图上展示，寻路 / 购票不经过该线路。
+	DisplayOnly bool `json:"displayOnly,omitempty"`
 }
 
 // System 是向前端暴露的铁路系统公开信息（不含 creator/income/withdrawn/members）。

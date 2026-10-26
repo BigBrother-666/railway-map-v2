@@ -18,7 +18,9 @@ type Cache struct {
 	geojson    []byte // 合并后的 FeatureCollection 原始 JSON
 	geoVersion string
 	lines      []byte // 线路数组 JSON
-	systems    []byte // 系统数组 JSON
+	// linesVersion 是线路快照内容的 sha1 前缀（折返站 / 仅展示线路变化时寻路结果缓存要作废）
+	linesVersion string
+	systems      []byte // 系统数组 JSON
 	// stations 是车站英文名映射与站组的原始 JSON（形如 {"aliases":{...},"groups":{...}}）
 	stations        []byte
 	stationsVersion string
@@ -55,6 +57,10 @@ func (c *Cache) restore() {
 	}
 	if snap, err := c.store.LoadSnapshot("lines"); err == nil && snap != nil {
 		c.lines = snap.Payload
+		c.linesVersion = snap.Version
+		if c.linesVersion == "" { // 旧库里的线路快照未记录版本号
+			c.linesVersion = shortHash(snap.Payload)
+		}
 	}
 	if snap, err := c.store.LoadSnapshot("systems"); err == nil && snap != nil {
 		c.systems = snap.Payload
@@ -76,14 +82,17 @@ func (c *Cache) SetGeojson(featureCollection []byte) {
 	c.persist("geo", version, featureCollection)
 }
 
-// SetLines / SetSystems 整体替换线路 / 系统缓存并落库。
+// SetLines 整体替换线路缓存并落库，版本号取内容的 sha1 前缀（供寻路结果缓存失效判断）。
 func (c *Cache) SetLines(lines []byte) {
+	version := shortHash(lines)
 	c.mu.Lock()
 	c.lines = lines
+	c.linesVersion = version
 	c.mu.Unlock()
-	c.persist("lines", "", lines)
+	c.persist("lines", version, lines)
 }
 
+// SetSystems 整体替换系统缓存并落库。
 func (c *Cache) SetSystems(systems []byte) {
 	c.mu.Lock()
 	c.systems = systems
@@ -128,13 +137,14 @@ func (c *Cache) GeoVersion() string {
 	return c.geoVersion
 }
 
-// Lines / Systems 返回线路 / 系统数组的原始 JSON（可能为 nil）。
-func (c *Cache) Lines() []byte {
+// Lines 返回线路数组的原始 JSON（可能为 nil）及其版本号。
+func (c *Cache) Lines() ([]byte, string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.lines
+	return c.lines, c.linesVersion
 }
 
+// Systems 返回系统数组的原始 JSON（可能为 nil）。
 func (c *Cache) Systems() []byte {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

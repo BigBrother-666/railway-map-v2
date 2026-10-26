@@ -57,6 +57,14 @@ npm run dev
 - `/api/v1/admin/rbac`、`/admin/settings`、`/admin/audit`：权限管理、服务器配置、操作日志；`GET /admin/settings/tiles/status` 查看外部地图来源的世界发现情况。
 - `GET /internal/plugin`：插件内部 WebSocket，需要 Bearer token 认证。
 
+## 仅展示线路
+
+线路可以标记为「仅展示」（插件 `railway_routes.yml` 的 `display-only: true`，默认否），在个人中心线路编辑页或游戏内 `/ticketconfig editRoute` 向导的最后一步设置：
+
+- 只在地图上展示，路线/车票查询不会经过该线路（直达和联程票都不会）。
+- 只有仅展示线路经过的车站（不计联络线），车站面板的「路线」按钮不可用，并显示提示。
+- 修改后立即生效，不需要重新遍历线路。
+
 ## 世界底图
 
 - 外部地图来源：填写网页地图的前端地址（目前支持 dynmap，如 `https://map.example.com/dynmap/` ），发现的世界自动在「世界参数」中添加外部地图配置。
