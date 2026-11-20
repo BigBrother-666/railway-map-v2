@@ -1215,8 +1215,8 @@ function absoluteTileUrl(url: string): string {
 type SymbolLayout = NonNullable<Extract<maplibregl.LayerSpecification, { type: 'symbol' }>['layout']>;
 
 /**
- * 车站名 text-field 表达式：有英文名时第一行中文、第二行英文（按 stationEnTextSize / stationTextSize 缩放）；
- * 无英文名（缺失或空串）时只显示中文名，避免多出一行空白。
+ * 车站名 text-field 表达式：有别名时第一行中文、第二行英文（按 stationEnTextSize / stationTextSize 缩放）；
+ * 无别名（缺失或空串）时只显示中文名，避免多出一行空白。
  */
 function stationLabelField(): SymbolLayout['text-field'] {
   const { stationTextSize, stationEnTextSize } = getConfig().mapStyle;

@@ -127,7 +127,7 @@ func (s *Server) onSnapshotGeo(env model.Envelope) {
 	s.logger.Info("Received geo snapshot", "version", s.cache.GeoVersion())
 }
 
-// onSnapshotStations 整体替换车站英文名 / 站组缓存。data 形如 { "aliases": {...}, "groups": {...} }。
+// onSnapshotStations 整体替换车站别名 / 站组缓存。data 形如 { "aliases": {...}, "groups": {...} }。
 // 缺失的字段规范化为空对象后再落库，保证 REST 输出稳定。
 func (s *Server) onSnapshotStations(env model.Envelope) {
 	var d model.SnapshotStationsData

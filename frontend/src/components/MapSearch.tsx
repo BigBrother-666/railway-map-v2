@@ -13,7 +13,7 @@ type SearchItem =
 const MAX_SUGGESTIONS = 20;
 
 /**
- * 地图左上角搜索框：按线路名 / 车站名 / 车站英文名模糊搜索，选中后定位到线路或车站。
+ * 地图左上角搜索框：按线路名 / 车站名 / 车站别名模糊搜索，选中后定位到线路或车站。
  * 手机端（≤640px）未使用时收起为一个搜索图标，点击后展开并聚焦；失焦且没有输入时再收起（见 styles.css .map-search.collapsed）。
  */
 export function MapSearch() {

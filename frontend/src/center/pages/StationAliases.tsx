@@ -41,7 +41,7 @@ export function StationAliasPage({ ctx }: { ctx: CenterContext }) {
       {node}
       <PageHeader
         title="车站别名"
-        sub="为车站设置英文名，显示在地图与游戏内。全服共享。"
+        sub="为车站设置别名，显示在地图与游戏内。"
         actions={
           <button className="c-btn primary" disabled={!online} onClick={() => setEdit({ station: '', english: '', isNew: true })}>
             新增别名
@@ -66,7 +66,7 @@ export function StationAliasPage({ ctx }: { ctx: CenterContext }) {
               <thead>
                 <tr>
                   <th>中文站名</th>
-                  <th>英文名</th>
+                  <th>别名</th>
                   <th className="c-right">操作</th>
                 </tr>
               </thead>
@@ -77,7 +77,7 @@ export function StationAliasPage({ ctx }: { ctx: CenterContext }) {
                       {r.station}
                       {!r.exists && <span className="c-tag warn" title="当前线路图中找不到该车站">车站不存在</span>}
                     </td>
-                    <td data-label="英文名">{r.english}</td>
+                    <td data-label="别名">{r.english}</td>
                     <td className="c-right c-actions">
                       <button className="c-btn small" disabled={!online} onClick={() => setEdit({ station: r.station, english: r.english, isNew: false })}>
                         编辑
@@ -110,7 +110,7 @@ export function StationAliasPage({ ctx }: { ctx: CenterContext }) {
         <ConfirmModal
           title="删除车站别名"
           confirmText="删除"
-          message={<p>删除车站「{del}」的英文名？</p>}
+          message={<p>删除车站「{del}」的别名？</p>}
           onConfirm={async () => {
             await centerApi.deleteStationAlias(del);
             notify('success', '已删除');
@@ -146,7 +146,7 @@ function AliasModal({
   const submit = async () => {
     setErr(null);
     if (!station.trim()) return setErr(new CenterError(400, 'invalid', '请选择车站', 'station'));
-    if (!english.trim()) return setErr(new CenterError(400, 'invalid', '英文名不能为空', 'englishName'));
+    if (!english.trim()) return setErr(new CenterError(400, 'invalid', '别名不能为空', 'englishName'));
     setBusy(true);
     try {
       const res = await centerApi.upsertStationAlias(station.trim(), english);
@@ -177,10 +177,10 @@ function AliasModal({
           ))}
         </datalist>
         {unknown && <span className="c-help warn">当前线路图中找不到该车站，仍可保存。</span>}
-        {overwrite && <span className="c-help warn">该车站已有英文名「{existing[station.trim()]}」，保存会覆盖。</span>}
+        {overwrite && <span className="c-help warn">该车站已有别名「{existing[station.trim()]}」，保存会覆盖。</span>}
       </label>
       <label className="c-field">
-        <span className="c-label">英文名</span>
+        <span className="c-label">别名</span>
         <input
           className={`c-input ${err?.field === 'englishName' ? 'invalid' : ''}`}
           value={english}

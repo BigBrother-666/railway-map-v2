@@ -37,7 +37,7 @@ func (c *Center) ListStationAliases(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpsertStationAlias 新增 / 修改车站英文名（PUT /me/station-aliases/{station}）。
+// UpsertStationAlias 新增 / 修改车站别名（PUT /me/station-aliases/{station}）。
 func (c *Center) UpsertStationAlias(w http.ResponseWriter, r *http.Request) {
 	station := strings.TrimSpace(chi.URLParam(r, "station"))
 	var req struct {
@@ -65,12 +65,12 @@ func (c *Center) UpsertStationAlias(w http.ResponseWriter, r *http.Request) {
 		map[string]string{"station": station, "englishName": en}, detail)
 }
 
-// DeleteStationAlias 删除车站英文名（DELETE /me/station-aliases/{station}）。
+// DeleteStationAlias 删除车站别名（DELETE /me/station-aliases/{station}）。
 func (c *Center) DeleteStationAlias(w http.ResponseWriter, r *http.Request) {
 	station := strings.TrimSpace(chi.URLParam(r, "station"))
 	old, existed := c.stationsSnapshot().Aliases[station]
 	if !existed {
-		writeError(w, http.StatusNotFound, "not-found", "该车站没有设置英文名")
+		writeError(w, http.StatusNotFound, "not-found", "该车站没有设置别名")
 		return
 	}
 	c.pluginCall(w, r, pluginconfig.OpStationAliasDelete, "station_alias.delete", station,

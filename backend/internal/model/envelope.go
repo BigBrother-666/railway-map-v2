@@ -19,7 +19,7 @@ const (
 	TypeSnapshotGeo     = "snapshot.geo"
 	TypeSnapshotSystems = "snapshot.systems"
 	TypeSnapshotLines   = "snapshot.lines"
-	// TypeSnapshotStations 是车站英文名映射 + 站组快照，负载见 SnapshotStationsData
+	// TypeSnapshotStations 是车站别名映射 + 站组快照，负载见 SnapshotStationsData
 	TypeSnapshotStations = "snapshot.stations"
 	TypeRealtimeTrains   = "realtime.trains"
 	TypeRealtimeRemoved  = "realtime.removed"
@@ -55,7 +55,7 @@ type SyncRequestData struct {
 	What string `json:"what"` // geo|systems|lines|stations|all
 }
 
-// SnapshotStationsData 是插件推送的车站英文名映射与站组快照负载。
+// SnapshotStationsData 是插件推送的车站别名映射与站组快照负载。
 // Aliases：中文站名 → 英文站名；Groups：组名 → 组内站名列表（一个车站至多属于一个组）。
 type SnapshotStationsData struct {
 	Aliases map[string]string   `json:"aliases"`

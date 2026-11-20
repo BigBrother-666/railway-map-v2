@@ -282,7 +282,7 @@ type MapStyleConfig struct {
 	StationRadius             float64 `yaml:"stationRadius" json:"stationRadius"`
 	StationStrokeWidth        float64 `yaml:"stationStrokeWidth" json:"stationStrokeWidth"`
 	StationTextSize           float64 `yaml:"stationTextSize" json:"stationTextSize"`
-	StationEnTextSize         float64 `yaml:"stationEnTextSize" json:"stationEnTextSize"` // 车站英文名（显示在中文名下方）的字号
+	StationEnTextSize         float64 `yaml:"stationEnTextSize" json:"stationEnTextSize"` // 车站别名（显示在中文名下方）的字号
 	StationMergePixelDistance float64 `yaml:"stationMergePixelDistance" json:"stationMergePixelDistance"`
 	TrainIconSize             float64 `yaml:"trainIconSize" json:"trainIconSize"`
 	TrainFocusZoom            float64 `yaml:"trainFocusZoom" json:"trainFocusZoom"`

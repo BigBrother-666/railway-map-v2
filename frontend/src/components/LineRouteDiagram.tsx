@@ -342,7 +342,7 @@ interface DiagramProps {
   enOf: (name: string) => string | undefined;
 }
 
-/** 站名标签：中文名在上（超出 maxWidth 时自动换行）、英文名（如有）在下（仅一行，超出以"…"截断），整体以 y 垂直居中。 */
+/** 站名标签：中文名在上（超出 maxWidth 时自动换行）、别名（如有）在下（仅一行，超出以"…"截断），整体以 y 垂直居中。 */
 export function StationLabel({
   name,
   nameEn,

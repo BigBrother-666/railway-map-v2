@@ -21,7 +21,7 @@ type Cache struct {
 	// linesVersion 是线路快照内容的 sha1 前缀（折返站 / 仅展示线路变化时寻路结果缓存要作废）
 	linesVersion string
 	systems      []byte // 系统数组 JSON
-	// stations 是车站英文名映射与站组的原始 JSON（形如 {"aliases":{...},"groups":{...}}）
+	// stations 是车站别名映射与站组的原始 JSON（形如 {"aliases":{...},"groups":{...}}）
 	stations        []byte
 	stationsVersion string
 
@@ -100,7 +100,7 @@ func (c *Cache) SetSystems(systems []byte) {
 	c.persist("systems", "", systems)
 }
 
-// SetStations 整体替换车站英文名 / 站组缓存并落库，版本号取内容的 sha1 前缀（供寻路结果缓存失效判断）。
+// SetStations 整体替换车站别名 / 站组缓存并落库，版本号取内容的 sha1 前缀（供寻路结果缓存失效判断）。
 func (c *Cache) SetStations(stations []byte) {
 	version := shortHash(stations)
 	c.mu.Lock()
@@ -110,7 +110,7 @@ func (c *Cache) SetStations(stations []byte) {
 	c.persist("stations", version, stations)
 }
 
-// Stations 返回车站英文名 / 站组的原始 JSON（可能为 nil）及其版本号。
+// Stations 返回车站别名 / 站组的原始 JSON（可能为 nil）及其版本号。
 func (c *Cache) Stations() ([]byte, string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

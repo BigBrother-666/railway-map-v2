@@ -64,7 +64,7 @@ const FRONTEND_GROUPS: GroupDef[] = [
       { path: 'mapStyle.stationRadius', label: '车站半径', type: 'number', step: 0.5, min: 0 },
       { path: 'mapStyle.stationStrokeWidth', label: '车站描边宽度', type: 'number', step: 0.5, min: 0 },
       { path: 'mapStyle.stationTextSize', label: '车站字号', type: 'number', step: 1, min: 0 },
-      { path: 'mapStyle.stationEnTextSize', label: '车站英文名字号', type: 'number', step: 1, min: 0 },
+      { path: 'mapStyle.stationEnTextSize', label: '车站别名字号', type: 'number', step: 1, min: 0 },
       { path: 'mapStyle.stationMergePixelDistance', label: '车站合并像素距离', type: 'number', step: 1, min: 0 },
       { path: 'mapStyle.trainIconSize', label: '列车图标大小', type: 'number', step: 0.05, min: 0 },
       { path: 'mapStyle.trainFocusZoom', label: '聚焦列车时缩放级别', type: 'number', step: 0.5, min: 0 },

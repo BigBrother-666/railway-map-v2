@@ -59,7 +59,7 @@ export const api = {
   geojson: () => getJSON<FeatureCollection>('/geojson'),
   lines: () => getJSON<Line[]>('/lines'),
   systems: () => getJSON<RailwaySystem[]>('/systems'),
-  /** 车站英文名映射与站组。 */
+  /** 车站别名映射与站组。 */
   stations: () => getJSON<StationsInfo>('/stations'),
   trains: () => getJSON<Train[]>('/trains'),
 

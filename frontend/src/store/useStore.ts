@@ -202,7 +202,7 @@ export const useStore = create<AppState>((set, get) => ({
         api.geojson(),
         api.lines(),
         api.systems(),
-        // 英文名 / 站组非必需：拉取失败时按无数据处理，不影响地图加载
+        // 别名 / 站组非必需：拉取失败时按无数据处理，不影响地图加载
         api.stations().catch(() => ({ aliases: {}, groups: {} })),
       ]);
       const stationAliases = stations.aliases ?? {};
@@ -598,7 +598,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 }));
 
-/** 按站名给 geojson 中每个车站 Point 要素写入英文名属性 nameEn（原地修改；无对应英文名则不写）。 */
+/** 按站名给 geojson 中每个车站 Point 要素写入别名属性 nameEn（原地修改；无对应别名则不写）。 */
 function attachStationNameEn(fc: FeatureCollection, aliases: Record<string, string>): void {
   for (const f of fc.features) {
     if (f.geometry?.type !== 'Point') continue;

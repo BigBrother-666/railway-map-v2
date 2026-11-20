@@ -31,7 +31,7 @@ type PermissionInfo struct {
 // AllPermissions 是全部权限点，顺序即前端展示顺序。
 var AllPermissions = []PermissionInfo{
 	{PermSystemManage, "管理全部铁路系统", "编辑 / 删除任意铁路系统及其线路、Logo，侧栏显示全部系统"},
-	{PermStationAlias, "车站别名", "新增 / 修改 / 删除车站英文名"},
+	{PermStationAlias, "车站别名", "新增 / 修改 / 删除车站别名"},
 	{PermStationGroup, "车站组", "新增 / 修改 / 删除车站组"},
 	{PermSettings, "服务器配置", "查看并修改前端与寻路配置"},
 	{PermAudit, "操作日志", "查看管理操作日志"},

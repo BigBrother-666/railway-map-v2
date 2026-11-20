@@ -214,7 +214,7 @@ func (a *API) Systems(w http.ResponseWriter, r *http.Request) {
 	writeRaw(w, http.StatusOK, []byte("[]"))
 }
 
-// Stations 返回车站英文名映射与站组：{ "aliases": {中文站名: 英文名}, "groups": {组名: [站名...]} }；
+// Stations 返回车站别名映射与站组：{ "aliases": {中文站名: 别名}, "groups": {组名: [站名...]} }；
 // 插件从未推送过时返回两个空对象。
 func (a *API) Stations(w http.ResponseWriter, r *http.Request) {
 	if b, _ := a.cache.Stations(); b != nil {

@@ -21,7 +21,7 @@ type GeoSource interface {
 	// Lines 返回线路数组原始 JSON 及其版本号。
 	Lines() ([]byte, string)
 	Systems() []byte
-	// Stations 返回车站英文名 / 站组原始 JSON（{"aliases":{...},"groups":{...}}，可能为 nil）及其版本号。
+	// Stations 返回车站别名 / 站组原始 JSON（{"aliases":{...},"groups":{...}}，可能为 nil）及其版本号。
 	Stations() ([]byte, string)
 }
 
@@ -111,7 +111,7 @@ type graphSnapshot struct {
 	cache       *sync.Map           // (version+startStation+endStation) → []model.RoutePath
 }
 
-// stationsPayload 是 snapshot.stations 中寻路关心的部分（只用站组，英文名仅供前端展示）。
+// stationsPayload 是 snapshot.stations 中寻路关心的部分（只用站组，别名仅供前端展示）。
 type stationsPayload struct {
 	Groups map[string][]string `json:"groups"`
 }
